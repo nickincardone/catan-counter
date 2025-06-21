@@ -1,0 +1,28 @@
+#colonist-stats-overlay {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 10px;
+  font-size: 14px;
+  font-family: sans-serif;
+  border-radius: 8px;
+  z-index: 9999;
+  max-width: 200px;
+}
+
+#colonist-stats-overlay h4 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+}
+
+#colonist-stats-overlay ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#colonist-stats-overlay li {
+  line-height: 1.4;
+}

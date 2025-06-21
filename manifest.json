@@ -1,0 +1,15 @@
+{
+  "manifest_version": 5,
+  "name": "Colonist.io Dice Stats",
+  "version": "1.0",
+  "description": "Tracks dice rolls in colonist.io games.",
+  "permissions": ["scripting"],
+  "host_permissions": ["https://colonist.io/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://colonist.io/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
