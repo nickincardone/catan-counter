@@ -11,10 +11,23 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - **Building Counts**: Tracks settlements, cities, and roads remaining for each player
 - **Victory Points**: Monitors VP progress for all players
 
+### 📊 **Enhanced User Interface**
+- **Modern Overlay**: Clean, organized display with resource tables and dice roll charts
+- **Draggable & Resizable**: Move and scale the overlay to your preference
+- **Minimize/Maximize**: Collapse to header-only for minimal screen usage
+- **Responsive Tables**: Color-coded resource tracking with remaining bank resources
+- **Interactive Charts**: Visual dice roll frequency with statistical bars
+
+### 🎯 **Smart Player Identification**
+- **"You" Player Setup**: One-time dialog to identify your player for accurate tracking
+- **Automatic Detection**: Triggers on first dice roll when all players are loaded
+- **Message Reprocessing**: Re-analyzes all chat history once your identity is known
+- **Enhanced Theft Tracking**: Properly handles "stole [resource] from you" messages
+
 ### 📊 **Real-time Monitoring**
 - **Live Updates**: Game state updates automatically as chat messages appear
-- **Draggable Overlay**: Visual display of current game state in JSON format
 - **Page Refresh Support**: Processes existing chat history when page is refreshed
+- **Intelligent Processing**: Pauses during setup, then reprocesses for accuracy
 - **Comprehensive Logging**: Detailed console output for debugging
 
 ### 🎯 **Supported Game Events**
@@ -24,6 +37,7 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - Player-to-player trades
 - Bank trades (4:1 and port trades)
 - Resource stealing (robber and knight)
+- **"From you" theft tracking** (requires player identification)
 - Development card effects (Year of Plenty, Monopoly, Road Building)
 - Resource discarding
 - Starting resource distribution
@@ -86,31 +100,35 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 
 2. **Extension activates automatically** when it detects a game chat
 
-3. **View game state** in the draggable overlay that appears in the top-right corner
+3. **Player identification setup** - On the first dice roll, a dialog will appear asking you to identify which player you are. This enables accurate tracking of "from you" messages.
 
-4. **Monitor real-time updates** as the game progresses
+4. **View game state** in the enhanced overlay that appears in the top-right corner
+
+5. **Interact with the overlay**:
+   - **Drag** the header to move the overlay
+   - **Minimize** using the (−) button to collapse to header only
+   - **Resize** by dragging the bottom-right corner to scale proportionally
+   
+6. **Monitor real-time updates** as the game progresses
 
 ### Game State Display
-The overlay shows a JSON object containing:
-```json
-{
-  "players": [
-    {
-      "name": "PlayerName",
-      "resources": { "sheep": 2, "wheat": 1, "brick": 0, "tree": 3, "ore": 1 },
-      "settlements": 3,
-      "cities": 4,
-      "roads": 12,
-      "victoryPoints": 4,
-      "knights": 1,
-      "totalRobbers": 2
-    }
-  ],
-  "gameResources": { "sheep": 17, "wheat": 18, "brick": 19, "tree": 16, "ore": 18 },
-  "diceRolls": { "2": 0, "3": 1, "4": 2, "5": 3, "6": 4, "7": 2, "8": 3, "9": 2, "10": 1, "11": 1, "12": 0 },
-  "devCards": 22
-}
-```
+
+The overlay features an organized, visual layout with:
+
+#### 📋 **Resource Table**
+- **Player rows** showing current resource counts for each player
+- **Header columns** with resource emojis (🐑🌾🧱🌲⛰️) and remaining bank resources
+- **Color-coded cells** for easy resource identification
+
+#### 📊 **Dice Roll Chart**
+- **Visual bar graph** showing frequency of each dice roll (2-12)
+- **Roll counts** displayed above each bar
+- **Color coding**: Red for 7, teal for 6&8, blue for others
+
+#### 🎛️ **Interactive Controls**
+- **Header bar** for dragging and minimizing
+- **Resize handle** in bottom-right corner for proportional scaling
+- **Minimize button** to collapse to header-only view
 
 ## Technical Details
 
@@ -123,11 +141,18 @@ The overlay shows a JSON object containing:
 - **State Management**: Maintains game state in memory with automatic persistence
 
 ### Message Processing
-The extension recognizes 24+ different game scenarios including:
+The extension recognizes 25+ different game scenarios including:
 - Building placement and purchases
 - Resource collection and trading
 - Development card usage
+- **Player theft scenarios** (including "from you" messages)
 - Special game events (robber movement, discarding, etc.)
+
+### Smart Reprocessing System
+- **Player Detection**: Automatically identifies when player setup is needed
+- **Processing Pause**: Stops processing new messages during player identification
+- **Complete Reanalysis**: Re-examines all chat history with "you" player context
+- **Accurate Attribution**: Ensures proper resource tracking for all theft events
 
 ### Modular Architecture
 The codebase is organized into focused modules for better maintainability:

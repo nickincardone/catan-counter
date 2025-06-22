@@ -41,6 +41,37 @@ export function getDefaultGame(): GameType {
 
 export let game: GameType = getDefaultGame();
 
+// Track the "you" player
+export let youPlayerName: string | null = null;
+export let hasAskedForYouPlayer = false;
+export let isWaitingForYouPlayerSelection = false;
+
+export function setYouPlayer(playerName: string): void {
+  youPlayerName = playerName;
+  isWaitingForYouPlayerSelection = false;
+}
+
+export function markYouPlayerAsked(): void {
+  hasAskedForYouPlayer = true;
+  isWaitingForYouPlayerSelection = true;
+}
+
+export function resetGameState(): void {
+  // Reset game state but keep "you" player info
+  const previousYouPlayer = youPlayerName;
+  const previousAskedStatus = hasAskedForYouPlayer;
+  const previousWaitingStatus = isWaitingForYouPlayerSelection;
+  
+  game = getDefaultGame();
+  
+  // Restore "you" player info
+  youPlayerName = previousYouPlayer;
+  hasAskedForYouPlayer = previousAskedStatus;
+  isWaitingForYouPlayerSelection = previousWaitingStatus;
+  
+  console.log('🔄 Game state reset, reprocessing messages...');
+}
+
 export function ensurePlayerExists(playerName: string): void {
   const existingPlayer = game.players.find(p => p.name === playerName);
   if (!existingPlayer) {

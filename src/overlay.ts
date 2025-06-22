@@ -1,9 +1,14 @@
-import { game } from './gameState.js';
+import { game, setYouPlayer, markYouPlayerAsked } from './gameState.js';
 
 // Create draggable overlay for game state display
 let gameStateOverlay: HTMLDivElement | null = null;
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
+let isMinimized = false;
+let isResizing = false;
+let currentScale = 1;
+let resizeStartData = { x: 0, y: 0, scale: 1 };
+let youPlayerSelectedCallback: (() => void) | null = null;
 
 function createGameStateOverlay(): HTMLDivElement {
   const overlay = document.createElement('div');
@@ -12,27 +17,25 @@ function createGameStateOverlay(): HTMLDivElement {
     position: fixed;
     top: 20px;
     right: 20px;
-    width: 400px;
-    max-height: 500px;
+    width: 450px;
+    max-height: 600px;
     background: white;
     border: 2px solid #333;
     border-radius: 8px;
-    padding: 10px;
-    font-family: monospace;
+    font-family: Arial, sans-serif;
     font-size: 12px;
-    overflow-y: auto;
+    overflow: visible;
     z-index: 10000;
-    cursor: move;
     box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-    resize: both;
     color: black;
-    font-size: 8px;
+    transform-origin: top left;
+    transform: scale(${currentScale});
   `;
 
-  // Add drag functionality
+  // Add drag and resize functionality
   overlay.addEventListener('mousedown', startDrag);
-  document.addEventListener('mousemove', drag);
-  document.addEventListener('mouseup', stopDrag);
+  document.addEventListener('mousemove', handleMouseMove);
+  document.addEventListener('mouseup', stopDragAndResize);
 
   // Initial content
   updateOverlayContent(overlay);
@@ -42,6 +45,24 @@ function createGameStateOverlay(): HTMLDivElement {
 
 function startDrag(e: MouseEvent): void {
   if (!gameStateOverlay) return;
+  
+  const target = e.target as HTMLElement;
+  
+  // Check if clicking on resize handle
+  if (target.classList.contains('resize-handle')) {
+    isResizing = true;
+    resizeStartData = {
+      x: e.clientX,
+      y: e.clientY,
+      scale: currentScale
+    };
+    e.preventDefault();
+    return;
+  }
+  
+  // Only allow dragging from the header
+  const header = gameStateOverlay.querySelector('#overlay-header');
+  if (!header?.contains(target) || target.id === 'minimize-btn') return;
 
   isDragging = true;
   const rect = gameStateOverlay.getBoundingClientRect();
@@ -52,42 +73,179 @@ function startDrag(e: MouseEvent): void {
   e.preventDefault();
 }
 
-function drag(e: MouseEvent): void {
+function handleMouseMove(e: MouseEvent): void {
+  if (isResizing && gameStateOverlay) {
+    const deltaX = e.clientX - resizeStartData.x;
+    const deltaY = e.clientY - resizeStartData.y;
+    const avgDelta = (deltaX + deltaY) / 2;
+    
+    // Calculate new scale (minimum 0.5, maximum 2.0)
+    const scaleFactor = avgDelta / 300; // Adjust sensitivity
+    currentScale = Math.max(0.5, Math.min(2.0, resizeStartData.scale + scaleFactor));
+    
+    // Apply the new scale
+    gameStateOverlay.style.transform = `scale(${currentScale})`;
+    e.preventDefault();
+    return;
+  }
+
   if (!isDragging || !gameStateOverlay) return;
 
   const x = e.clientX - dragOffset.x;
   const y = e.clientY - dragOffset.y;
 
-  // Keep overlay within viewport
-  const maxX = window.innerWidth - gameStateOverlay.offsetWidth;
-  const maxY = window.innerHeight - gameStateOverlay.offsetHeight;
+  // Keep overlay within viewport (accounting for scale)
+  const scaledWidth = gameStateOverlay.offsetWidth * currentScale;
+  const scaledHeight = gameStateOverlay.offsetHeight * currentScale;
+  const maxX = window.innerWidth - scaledWidth;
+  const maxY = window.innerHeight - scaledHeight;
 
   gameStateOverlay.style.left = Math.max(0, Math.min(x, maxX)) + 'px';
   gameStateOverlay.style.top = Math.max(0, Math.min(y, maxY)) + 'px';
   gameStateOverlay.style.right = 'auto'; // Remove right positioning when dragging
 }
 
-function stopDrag(): void {
+function stopDragAndResize(): void {
   isDragging = false;
+  isResizing = false;
+}
+
+function generateResourceTable(): string {
+  if (game.players.length === 0) {
+    return '<div style="padding: 20px; text-align: center; color: #666;">No players found</div>';
+  }
+
+  const resourceNames = ['sheep', 'wheat', 'brick', 'tree', 'ore'];
+  const resourceEmojis = ['🐑', '🌾', '🧱', '🌲', '⛰️'];
+  const resourceColors = ['#f0f8ff', '#fff8dc', '#ffeaa7', '#a8e6cf', '#ddd6fe'];
+  
+  let table = '<table style="width: 100%; border-collapse: collapse; margin: 10px 0;">';
+  
+  // Header row with resource totals
+  table += '<thead><tr style="background: #f5f5f5;">';
+  table += '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Player</th>';
+  
+  resourceNames.forEach((resource, index) => {
+    const remaining = game.gameResources[resource as keyof typeof game.gameResources];
+    const total = 19; // Standard Catan has 19 of each resource
+    table += `<th style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]};">
+      ${resourceEmojis[index]}<br>
+      <small>${remaining}/${total}</small>
+    </th>`;
+  });
+  
+  table += '</tr></thead><tbody>';
+  
+  // Player rows
+  game.players.forEach(player => {
+    table += '<tr>';
+    table += `<td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${player.name}</td>`;
+    
+    resourceNames.forEach((resource, index) => {
+      const count = player.resources[resource as keyof typeof player.resources];
+      table += `<td style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]}; font-weight: bold;">
+        ${count}
+      </td>`;
+    });
+    
+    table += '</tr>';
+  });
+  
+  table += '</tbody></table>';
+  return table;
+}
+
+function generateDiceChart(): string {
+  const maxRolls = Math.max(...Object.values(game.diceRolls), 1);
+  const chartHeight = 120;
+  
+  let chart = '<div style="margin: 15px 0;"><h4 style="margin: 0 0 10px 0; text-align: center;">Dice Roll Frequency</h4>';
+  chart += '<div style="display: flex; align-items: end; justify-content: space-between; height: ' + chartHeight + 'px; border-bottom: 2px solid #333; padding: 0 5px;">';
+  
+  for (let i = 2; i <= 12; i++) {
+    const rolls = game.diceRolls[i as keyof typeof game.diceRolls];
+    const barHeight = maxRolls > 0 ? (rolls / maxRolls) * (chartHeight - 20) : 0;
+    const barColor = i === 7 ? '#ff6b6b' : (i === 6 || i === 8) ? '#4ecdc4' : '#45b7d1';
+    
+    chart += `
+      <div style="display: flex; flex-direction: column; align-items: center; min-width: 25px;">
+        <div style="font-size: 10px; font-weight: bold; margin-bottom: 2px;">${rolls}</div>
+        <div style="
+          width: 20px; 
+          height: ${barHeight}px; 
+          background: ${barColor}; 
+          border-radius: 2px 2px 0 0;
+          display: flex;
+          align-items: end;
+          justify-content: center;
+          margin-bottom: 2px;
+        "></div>
+        <div style="font-size: 10px; font-weight: bold;">${i}</div>
+      </div>
+    `;
+  }
+  
+  chart += '</div></div>';
+  return chart;
 }
 
 function updateOverlayContent(overlay: HTMLDivElement): void {
-  const gameStateJson = JSON.stringify(game, null, 2);
+  const contentDisplay = isMinimized ? 'none' : 'block';
+  
   overlay.innerHTML = `
-    <div style="font-weight: bold; margin-bottom: 10px; cursor: move;">
-      🎲 Catan Game State
-      <button id="close-overlay" style="float: right; cursor: pointer; background: #ff4444; color: white; border: none; border-radius: 3px; padding: 2px 6px;">×</button>
+    <div id="overlay-header" style="
+      background: #2c3e50; 
+      color: white; 
+      padding: 10px; 
+      border-radius: 6px 6px ${isMinimized ? '6px 6px' : '0 0'}; 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center;
+      cursor: move;
+      user-select: none;
+    ">
+      <div style="font-weight: bold;">🎲 Catan Counter</div>
+      <button id="minimize-btn" style="
+        background: none; 
+        border: none; 
+        color: white; 
+        cursor: pointer; 
+        font-size: 16px; 
+        padding: 2px 6px;
+        border-radius: 3px;
+      " title="${isMinimized ? 'Expand' : 'Minimize'}">${isMinimized ? '□' : '−'}</button>
     </div>
-    <pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">${gameStateJson}</pre>
-  `;
+    
+         <div id="overlay-content" style="display: ${contentDisplay}; padding: 15px; max-height: 500px; overflow-y: auto; position: relative;">
+       ${generateResourceTable()}
+       ${generateDiceChart()}
+       <div class="resize-handle" style="
+         position: absolute;
+         bottom: 0;
+         right: 0;
+         width: 20px;
+         height: 20px;
+         cursor: nw-resize;
+         background: linear-gradient(-45deg, transparent 0%, transparent 30%, #ccc 30%, #ccc 40%, transparent 40%, transparent 60%, #ccc 60%, #ccc 70%, transparent 70%);
+         border-radius: 0 0 6px 0;
+       " title="Drag to resize"></div>
+     </div>
+   `;
 
-  // Add close button functionality
-  const closeBtn = overlay.querySelector('#close-overlay') as HTMLButtonElement;
-  if (closeBtn) {
-    closeBtn.addEventListener('click', e => {
-      e.stopPropagation(); // Prevent dragging when clicking close
-      hideGameStateOverlay();
+  // Add minimize button functionality
+  const minimizeBtn = overlay.querySelector('#minimize-btn') as HTMLButtonElement;
+  if (minimizeBtn) {
+    minimizeBtn.addEventListener('click', e => {
+      e.stopPropagation(); // Prevent dragging when clicking minimize
+      toggleMinimize();
     });
+  }
+}
+
+function toggleMinimize(): void {
+  isMinimized = !isMinimized;
+  if (gameStateOverlay) {
+    updateOverlayContent(gameStateOverlay);
   }
 }
 
@@ -110,5 +268,100 @@ export function hideGameStateOverlay(): void {
 export function updateGameStateDisplay(): void {
   if (gameStateOverlay && gameStateOverlay.style.display !== 'none') {
     updateOverlayContent(gameStateOverlay);
+    // Reapply the current scale after updating content
+    gameStateOverlay.style.transform = `scale(${currentScale})`;
   }
+}
+
+export function setYouPlayerSelectedCallback(callback: () => void): void {
+  youPlayerSelectedCallback = callback;
+}
+
+export function showYouPlayerDialog(): void {
+  if (game.players.length === 0) return;
+
+  // Mark that we've asked to prevent multiple dialogs
+  markYouPlayerAsked();
+
+  // Create modal backdrop
+  const backdrop = document.createElement('div');
+  backdrop.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10001;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  `;
+
+  // Create dialog
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+    width: 90%;
+    font-family: Arial, sans-serif;
+  `;
+
+  dialog.innerHTML = `
+    <h3 style="margin: 0 0 15px 0; color: #2c3e50;">🎲 Catan Counter Setup</h3>
+    <p style="margin: 0 0 20px 0; color: #555;">
+      Which player are you? This helps the extension track when resources are stolen "from you".
+    </p>
+    <div id="player-buttons" style="display: flex; flex-direction: column; gap: 10px;">
+      ${game.players.map(player => `
+        <button 
+          data-player="${player.name}" 
+          style="
+            padding: 12px; 
+            border: 2px solid #3498db; 
+            background: #ecf0f1; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-weight: bold;
+            transition: all 0.2s;
+          "
+          onmouseover="this.style.background='#3498db'; this.style.color='white';"
+          onmouseout="this.style.background='#ecf0f1'; this.style.color='black';"
+        >
+          ${player.name}
+        </button>
+      `).join('')}
+    </div>
+  `;
+
+  backdrop.appendChild(dialog);
+  document.body.appendChild(backdrop);
+
+  // Add click handlers
+  const buttons = dialog.querySelectorAll('[data-player]');
+  buttons.forEach(button => {
+    button.addEventListener('click', () => {
+      const playerName = button.getAttribute('data-player');
+      if (playerName) {
+        setYouPlayer(playerName);
+        console.log(`🎯 "You" player set to: ${playerName}`);
+        document.body.removeChild(backdrop);
+        
+        // Trigger reprocessing callback if provided
+        if (youPlayerSelectedCallback) {
+          youPlayerSelectedCallback();
+        }
+      }
+    });
+  });
+
+  // Close on backdrop click
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) {
+      document.body.removeChild(backdrop);
+    }
+  });
 } 

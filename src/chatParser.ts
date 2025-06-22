@@ -1,5 +1,5 @@
 import { ResourceObjectType } from './types.js';
-import { game, ensurePlayerExists, updateResources } from './gameState.js';
+import { game, ensurePlayerExists, updateResources, youPlayerName, hasAskedForYouPlayer, markYouPlayerAsked, isWaitingForYouPlayerSelection, resetGameState } from './gameState.js';
 import { 
   getPlayerName, 
   getDiceRollTotal, 
@@ -9,13 +9,18 @@ import {
   getResourcesFromImages, 
   RESOURCE_STRING 
 } from './domUtils.js';
-import { updateGameStateDisplay } from './overlay.js';
+import { updateGameStateDisplay, showYouPlayerDialog } from './overlay.js';
 
 export function updateGameFromChat(element: HTMLElement): void {
+  // If we're waiting for "you" player selection, don't process new messages
+  if (isWaitingForYouPlayerSelection) {
+    return;
+  }
+
   const messageText = element.textContent || '';
   let playerName = getPlayerName(element);
 
-  // getting correct player name for you stealing
+  // getting correct player name when it says "You stole"
   if (messageText.includes('You stole') && messageText.includes('from')) {
     // Get the previous sibling element to find the actual player name
     const previousElement = element.previousElementSibling as HTMLElement;
@@ -25,6 +30,19 @@ export function updateGameFromChat(element: HTMLElement): void {
         // Override the playerName with the actual player from previous element
         playerName = actualPlayerName;
       }
+    }
+  }
+
+  // Handle "[Player] stole [resource] from you" scenario
+  if (messageText.includes('stole') && messageText.includes('from you')) {
+    const stolenResource = getResourceType(element);
+    if (stolenResource && playerName && youPlayerName) {
+      // Player stole from "you"
+      updateResources(playerName, { [stolenResource]: 1 } as any);
+      updateResources(youPlayerName, { [stolenResource]: -1 } as any);
+      console.log(`🦹 ${playerName} stole ${stolenResource} from you (${youPlayerName})`);
+      updateGameStateDisplay();
+      return; // Exit early since we've handled this message
     }
   }
 
@@ -52,6 +70,12 @@ export function updateGameFromChat(element: HTMLElement): void {
       console.log(
         `🎲 Dice rolled: ${diceTotal}. Total rolls for ${diceTotal}: ${(game.diceRolls as any)[diceTotal]}`
       );
+      
+      // Show "you" player dialog on the first dice roll
+      if (!hasAskedForYouPlayer && game.players.length > 0) {
+        markYouPlayerAsked();
+        showYouPlayerDialog();
+      }
     }
   }
   // Scenario 3: Place road (keyword: "placed a" + road image)
