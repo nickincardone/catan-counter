@@ -62,11 +62,11 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 
 ### Available Scripts
 
-- **`npm run build`** - Compile TypeScript to JavaScript
-- **`npm run watch`** - Watch for TypeScript changes and auto-compile
+- **`npm run build`** - Bundle TypeScript modules into single JavaScript file using Rollup
+- **`npm run watch`** - Watch for TypeScript changes and auto-bundle
 - **`npm run format`** - Format all files with Prettier
 - **`npm run format:check`** - Check if files are properly formatted
-- **`npm run dev`** - Development mode: auto-format and compile on file changes
+- **`npm run dev`** - Development mode: auto-format and bundle on file changes
 
 ### Development Workflow
 1. **Start development mode**
@@ -74,7 +74,7 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
    npm run dev
    ```
 
-2. **Make changes** to `src/content.ts`
+2. **Make changes** to any TypeScript files in the `src/` directory
 
 3. **Reload extension** in Chrome (click refresh icon on extension card)
 
@@ -115,6 +115,8 @@ The overlay shows a JSON object containing:
 ## Technical Details
 
 ### Architecture
+- **Modular TypeScript**: Organized into separate modules for maintainability
+- **Rollup Bundling**: Multiple TypeScript files compiled into single JavaScript output
 - **Content Script**: Injected into colonist.io pages
 - **Chat Monitoring**: Uses MutationObserver to detect new messages
 - **Pattern Matching**: Analyzes chat messages and HTML structure
@@ -127,6 +129,18 @@ The extension recognizes 24+ different game scenarios including:
 - Development card usage
 - Special game events (robber movement, discarding, etc.)
 
+### Modular Architecture
+The codebase is organized into focused modules for better maintainability:
+
+- **`types.ts`** - All TypeScript interface definitions and type declarations
+- **`gameState.ts`** - Game state initialization, player management, and resource tracking
+- **`domUtils.ts`** - DOM element querying, resource parsing, and utility functions
+- **`overlay.ts`** - Draggable game state overlay UI with drag-and-drop functionality
+- **`chatParser.ts`** - Core chat message parsing logic handling 24+ game scenarios
+- **`content.ts`** - Main entry point, initialization, and mutation observer setup
+
+All modules are bundled into a single `content.js` file using Rollup for optimal browser performance.
+
 ### Browser Compatibility
 - Chrome (primary target)
 - Other Chromium-based browsers (Edge, Brave, etc.)
@@ -136,10 +150,16 @@ The extension recognizes 24+ different game scenarios including:
 ```
 catan-counter/
 ├── src/
-│   └── content.ts          # Main extension logic
+│   ├── content.ts          # Main entry point and initialization
+│   ├── types.ts            # TypeScript interface definitions
+│   ├── gameState.ts        # Game state management and utilities
+│   ├── domUtils.ts         # DOM querying and utility functions
+│   ├── overlay.ts          # Draggable overlay UI functionality
+│   └── chatParser.ts       # Chat message parsing logic
 ├── manifest.json           # Chrome extension manifest
 ├── overlay.css            # Styling for game overlay
-├── content.js             # Compiled JavaScript (generated)
+├── content.js             # Bundled JavaScript output (generated)
+├── rollup.config.js       # Rollup bundler configuration
 ├── package.json           # Dependencies and scripts
 ├── tsconfig.json          # TypeScript configuration
 ├── .prettierrc            # Code formatting rules
