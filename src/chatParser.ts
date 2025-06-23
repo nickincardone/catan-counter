@@ -1,5 +1,5 @@
 import { ResourceObjectType } from './types.js';
-import { game, ensurePlayerExists, updateResources, youPlayerName, hasAskedForYouPlayer, markYouPlayerAsked, isWaitingForYouPlayerSelection, resetGameState } from './gameState.js';
+import { game, ensurePlayerExists, updateResources, youPlayerName, hasAskedForYouPlayer, markYouPlayerAsked, isWaitingForYouPlayerSelection, resetGameState, addUnknownSteal, attemptToResolveUnknownTransactions } from './gameState.js';
 import { 
   getPlayerName, 
   getDiceRollTotal, 
@@ -17,7 +17,7 @@ export function updateGameFromChat(element: HTMLElement): void {
     return;
   }
 
-  const messageText = element.textContent || '';
+  const messageText = element.textContent?.replace(/\s+/g, ' ').trim() || '';
   let playerName = getPlayerName(element);
 
   // getting correct player name when it says "You stole"
@@ -210,16 +210,22 @@ export function updateGameFromChat(element: HTMLElement): void {
   }
   // Scenario 6: Steal known (keyword: "stole" and "from")
   else if (messageText.includes('stole') && messageText.includes('from')) {
-    const stolenResource = getResourceType(element);
-    if (stolenResource) {
-      const victimSpan = element.querySelector(
-        'span[style*="font-weight:600"]'
-      );
-      const victim = victimSpan?.textContent || null;
-      if (victim && playerName) {
+    // Get the victim (second span with font-weight:600, after "from")
+    const victimSpans = element.querySelectorAll('span[style*="font-weight:600"]');
+    // if there are not two spans then the first user is "you"
+    const victim = victimSpans.length >= 2 ? victimSpans[1].textContent : victimSpans[0].textContent;
+    
+    if (victim && playerName) {
+      const stolenResource = getResourceType(element);
+      if (stolenResource) {
+        // Known steal - we know what resource was stolen
         updateResources(playerName, { [stolenResource]: 1 } as any);
         updateResources(victim, { [stolenResource]: -1 } as any);
         console.log(`🦹 ${playerName} stole ${stolenResource} from ${victim}`);
+      } else {
+        // Unknown steal - we don't know what resource was stolen
+        const transactionId = addUnknownSteal(playerName, victim);
+        console.log(`🔍 ${playerName} stole unknown resource from ${victim} (Transaction: ${transactionId})`);
       }
     }
   }
@@ -231,7 +237,7 @@ export function updateGameFromChat(element: HTMLElement): void {
     if (playerName) {
       ensurePlayerExists(playerName);
       game.devCards--;
-      // Cost: 1 wheat, 1 sheep, 1 ore
+      // Cost: 1 wheat, 1 sheep, 1 ore (updateResources will handle unknown transaction resolution)
       updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
       console.log(
         `🃏 ${playerName} bought a development card. Remaining dev cards: ${game.devCards}`
@@ -292,7 +298,7 @@ export function updateGameFromChat(element: HTMLElement): void {
       ensurePlayerExists(playerName);
       const player = game.players.find(p => p.name === playerName);
       if (player) {
-        // Cost: 1 wood, 1 wheat, 1 brick, 1 sheep
+        // Cost: 1 wood, 1 wheat, 1 brick, 1 sheep (updateResources will handle unknown transaction resolution)
         updateResources(playerName, {
           tree: -1,
           wheat: -1,
@@ -316,6 +322,7 @@ export function updateGameFromChat(element: HTMLElement): void {
       ensurePlayerExists(playerName);
       const player = game.players.find(p => p.name === playerName);
       if (player) {
+        // Cost: 3 ore, 2 wheat (updateResources will handle unknown transaction resolution)
         updateResources(playerName, { ore: -3, wheat: -2 });
         player.cities--;
         player.settlements++; // City replaces settlement
@@ -335,7 +342,7 @@ export function updateGameFromChat(element: HTMLElement): void {
       ensurePlayerExists(playerName);
       const player = game.players.find(p => p.name === playerName);
       if (player) {
-        // Cost: 1 wood, 1 brick
+        // Cost: 1 wood, 1 brick (updateResources will handle unknown transaction resolution)
         updateResources(playerName, { tree: -1, brick: -1 });
         player.roads--;
         console.log(
@@ -484,10 +491,28 @@ export function updateGameFromChat(element: HTMLElement): void {
   ) {
     console.log(`🚫 Robber blocking message (ignored)`);
   }
-  // Scenario 23: Wants to give (ignore - no actual trade happens)
+  // Scenario 23: Wants to give (can resolve unknown transactions)
   else if (messageText.includes('wants to give')) {
-    // Ignore these messages as they don't represent actual trades
-    console.log(`💭 ${playerName} wants to trade (ignored - no actual trade)`);
+    if (playerName) {
+      ensurePlayerExists(playerName);
+      
+      // Parse what resources the player is offering to give
+      const offeredResources = getResourcesFromImages(element, RESOURCE_STRING);
+      
+      // For each resource they're offering, they must have it
+      // This can resolve unknown transactions
+      Object.keys(offeredResources).forEach(resource => {
+        const key = resource as keyof ResourceObjectType;
+        const offeredCount = offeredResources[key];
+        
+        if (offeredCount > 0) {
+          // Try to resolve unknown transactions for this resource
+          attemptToResolveUnknownTransactions(playerName, key, offeredCount);
+        }
+      });
+      
+      console.log(`💭 ${playerName} wants to trade (offering: ${JSON.stringify(offeredResources)}) - checking for unknown transaction resolution`);
+    }
   }
   // Scenario 24: Discards (keyword: "discarded")
   else if (messageText.includes('discarded')) {

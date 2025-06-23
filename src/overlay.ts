@@ -143,8 +143,18 @@ function generateResourceTable(): string {
     
     resourceNames.forEach((resource, index) => {
       const count = player.resources[resource as keyof typeof player.resources];
+      const probability = player.resourceProbabilities[resource as keyof typeof player.resourceProbabilities];
+      
+      // Show both actual count and probability if there's a probability
+      let displayText = count.toString();
+      if (probability !== 0) {
+        const sign = probability > 0 ? '+' : '';
+        const color = probability > 0 ? '#e74c3c' : '#3498db';
+        displayText = `${count} <span style="color: ${color}; font-size: 10px;">${sign}${probability.toFixed(2)}</span>`;
+      }
+      
       table += `<td style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]}; font-weight: bold;">
-        ${count}
+        ${displayText}
       </td>`;
     });
     
@@ -153,6 +163,36 @@ function generateResourceTable(): string {
   
   table += '</tbody></table>';
   return table;
+}
+
+function generateUnknownTransactionsDisplay(): string {
+  const unresolvedTransactions = game.unknownTransactions.filter(t => !t.isResolved);
+  
+  if (unresolvedTransactions.length === 0) {
+    return '';
+  }
+  
+  let display = '<div style="margin: 15px 0; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px;">';
+  display += '<h4 style="margin: 0 0 10px 0; color: #856404;">🔍 Unknown Transactions</h4>';
+  
+  unresolvedTransactions.forEach(transaction => {
+    const timestamp = new Date(transaction.timestamp).toLocaleTimeString();
+    display += `<div style="margin-bottom: 8px; padding: 8px; background: white; border-radius: 4px; font-size: 11px;">`;
+    display += `<strong>${transaction.thief}</strong> stole from <strong>${transaction.victim}</strong> `;
+    display += `<span style="color: #666;">(${timestamp})</span><br>`;
+    
+    // Show what could have been stolen
+    const possibleResources = Object.entries(transaction.possibleResources)
+      .filter(([_, count]) => count > 0)
+      .map(([resource, count]) => `${resource}: ${count}`)
+      .join(', ');
+    
+    display += `<small style="color: #666;">Could be: ${possibleResources}</small>`;
+    display += '</div>';
+  });
+  
+  display += '</div>';
+  return display;
 }
 
 function generateDiceChart(): string {
@@ -218,6 +258,7 @@ function updateOverlayContent(overlay: HTMLDivElement): void {
     
          <div id="overlay-content" style="display: ${contentDisplay}; padding: 15px; max-height: 500px; overflow-y: auto; position: relative;">
        ${generateResourceTable()}
+       ${generateUnknownTransactionsDisplay()}
        ${generateDiceChart()}
        <div class="resize-handle" style="
          position: absolute;

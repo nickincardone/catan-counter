@@ -82,6 +82,13 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - **`npm run format:check`** - Check if files are properly formatted
 - **`npm run dev`** - Development mode: auto-format and bundle on file changes
 
+#### Testing Scripts
+- **`npm test`** - Run all tests with Jest
+- **`npm run test:watch`** - Run tests in watch mode (auto-rerun on changes)
+- **`npm run test:coverage`** - Run tests and generate coverage report
+- **`npm run test:ci`** - Run tests in CI mode (no watch, with coverage)
+- **`npm run test:update`** - Update Jest snapshots
+
 ### Development Workflow
 1. **Start development mode**
    ```bash
@@ -90,9 +97,53 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 
 2. **Make changes** to any TypeScript files in the `src/` directory
 
-3. **Reload extension** in Chrome (click refresh icon on extension card)
+3. **Run tests** to ensure your changes work correctly
+   ```bash
+   npm test
+   ```
 
-4. **Test on colonist.io** by starting or joining a game
+4. **Reload extension** in Chrome (click refresh icon on extension card)
+
+5. **Test on colonist.io** by starting or joining a game
+
+### Testing
+
+The project uses Jest 30.0.2 with TypeScript support for comprehensive testing.
+
+#### Running Tests
+```bash
+# Run all tests once
+npm test
+
+# Run tests in watch mode (reruns on file changes)
+npm run test:watch
+
+# Run tests with coverage report
+npm run test:coverage
+
+# Run tests in CI mode
+npm run test:ci
+```
+
+#### Test Structure
+- **`src/__tests__/`** - Contains all test files
+- **`gameState.test.ts`** - Tests for game state management and unknown transaction system
+- **`chatParser.simple.test.ts`** - Tests for chat parsing logic and message identification
+- **`jest.config.js`** - Jest configuration with TypeScript support
+- **`jest.setup.ts`** - Test environment setup with DOM mocking
+
+#### Writing Tests
+- Tests use TypeScript with Jest globals (`@jest/globals`)
+- DOM environment is mocked for browser extension testing
+- Game state functions are thoroughly tested including the probabilistic unknown transaction system
+- Coverage targets: 80% for branches, functions, lines, and statements
+
+#### Unknown Transaction Testing
+The test suite includes comprehensive testing of the probabilistic resource tracking system:
+- **Unknown steal creation** and probability calculation
+- **Transaction resolution** when players use resources they shouldn't have
+- **Multiple steal scenarios** and resolution priority
+- **Real-world scenarios** matching the user's example cases
 
 ## Usage
 
@@ -180,11 +231,16 @@ catan-counter/
 │   ├── gameState.ts        # Game state management and utilities
 │   ├── domUtils.ts         # DOM querying and utility functions
 │   ├── overlay.ts          # Draggable overlay UI functionality
-│   └── chatParser.ts       # Chat message parsing logic
+│   ├── chatParser.ts       # Chat message parsing logic
+│   └── __tests__/          # Test files directory
+│       ├── gameState.test.ts        # Game state management tests
+│       └── chatParser.simple.test.ts # Chat parser logic tests
 ├── manifest.json           # Chrome extension manifest
 ├── overlay.css            # Styling for game overlay
 ├── content.js             # Bundled JavaScript output (generated)
 ├── rollup.config.js       # Rollup bundler configuration
+├── jest.config.js         # Jest testing configuration
+├── jest.setup.ts          # Test environment setup
 ├── package.json           # Dependencies and scripts
 ├── tsconfig.json          # TypeScript configuration
 ├── .prettierrc            # Code formatting rules

@@ -23,4 +23,14 @@ Thumbs.db
 *.backup
 .sass-cache/
 .connect.lock
-.typings/ 
+.typings/
+
+# Testing
+coverage/
+.nyc_output/
+junit.xml
+test-results/
+*.lcov
+
+# Jest
+.jest/ 

@@ -66,4 +66,9 @@ yarn.lock
 
 # Chrome extension files
 *.crx
-*.pem 
+*.pem
+
+# Test artifacts
+test-results/
+junit.xml
+*.lcov 

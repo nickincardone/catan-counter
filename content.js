@@ -37,6 +37,7 @@
                 roadBuilders: 0,
                 monopolies: 0,
             },
+            unknownTransactions: [],
         };
     }
     let game = getDefaultGame();
@@ -98,18 +99,218 @@
     function updateResources(playerName, resourceChanges) {
         ensurePlayerExists(playerName);
         const player = game.players.find(p => p.name === playerName);
-        if (player) {
-            Object.keys(resourceChanges).forEach(resource => {
-                const key = resource;
-                const change = resourceChanges[key];
-                if (change !== undefined) {
-                    // Update player resources
-                    player.resources[key] += change;
-                    // Update game resources (opposite of player change)
-                    game.gameResources[key] -= change;
+        if (!player)
+            return;
+        // For negative resource changes (spending), check if we need to resolve unknown transactions
+        Object.keys(resourceChanges).forEach(resource => {
+            const key = resource;
+            const change = resourceChanges[key];
+            if (change !== undefined && change < 0) {
+                // Player is trying to spend resources
+                const requiredAmount = Math.abs(change);
+                const currentAmount = player.resources[key];
+                if (currentAmount < requiredAmount) {
+                    // Player doesn't have enough, try to resolve unknown transactions
+                    const shortfall = requiredAmount - currentAmount;
+                    console.log(`⚠️  ${playerName} needs ${shortfall} more ${key}, attempting to resolve unknown transactions...`);
+                    if (!attemptToResolveUnknownTransactions(playerName, key, shortfall)) {
+                        console.log(`❌ Could not resolve unknown transactions for ${playerName} to get ${shortfall} ${key}`);
+                        // Still apply the change - this could result in negative resources which might be useful for debugging
+                    }
                 }
-            });
+            }
+        });
+        // Apply all resource changes
+        Object.keys(resourceChanges).forEach(resource => {
+            const key = resource;
+            const change = resourceChanges[key];
+            if (change !== undefined) {
+                // Update player resources
+                player.resources[key] += change;
+                // Update game resources (opposite of player change)
+                game.gameResources[key] -= change;
+                // Check if bank reached maximum for this resource type (19 = all cards back in bank)
+                if (game.gameResources[key] === 19) {
+                    resolveUnknownProbabilitiesForResource(key);
+                }
+            }
+        });
+    }
+    // New functions for unknown transaction handling
+    function addUnknownSteal(thief, victim) {
+        const victimPlayer = game.players.find(p => p.name === victim);
+        if (!victimPlayer) {
+            console.error(`❌ Victim player ${victim} not found`);
+            return '';
         }
+        // Calculate what resources the victim had that could be stolen
+        const possibleResources = Object.assign({}, victimPlayer.resources);
+        // Generate unique ID for this transaction
+        const transactionId = `steal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const unknownTransaction = {
+            id: transactionId,
+            type: 'steal',
+            timestamp: Date.now(),
+            thief,
+            victim,
+            possibleResources,
+            isResolved: false,
+        };
+        game.unknownTransactions.push(unknownTransaction);
+        // Update probabilities for both players
+        updateProbabilitiesAfterUnknownSteal(thief, victim, possibleResources);
+        console.log(`🔍 Added unknown steal: ${thief} stole from ${victim} (Transaction ID: ${transactionId})`);
+        console.log(`📊 Victim had: ${JSON.stringify(possibleResources)}`);
+        return transactionId;
+    }
+    function updateProbabilitiesAfterUnknownSteal(thief, victim, possibleResources) {
+        const thiefPlayer = game.players.find(p => p.name === thief);
+        const victimPlayer = game.players.find(p => p.name === victim);
+        if (!thiefPlayer || !victimPlayer)
+            return;
+        // Calculate total possible cards that could be stolen
+        const totalPossibleCards = Object.values(possibleResources).reduce((sum, count) => sum + count, 0);
+        if (totalPossibleCards === 0) {
+            console.log(`⚠️  ${victim} had no cards to steal`);
+            return;
+        }
+        // Update thief's resource probabilities (they gained one of these resources)
+        Object.keys(possibleResources).forEach(resource => {
+            const key = resource;
+            const resourceCount = possibleResources[key];
+            if (resourceCount > 0) {
+                const probability = resourceCount / totalPossibleCards;
+                thiefPlayer.resourceProbabilities[key] += probability;
+            }
+        });
+        // Update victim's resource probabilities (they lost one card, but we don't know which)
+        Object.keys(possibleResources).forEach(resource => {
+            const key = resource;
+            const resourceCount = possibleResources[key];
+            if (resourceCount > 0) {
+                const probability = resourceCount / totalPossibleCards;
+                victimPlayer.resourceProbabilities[key] -= probability;
+            }
+        });
+        console.log(`📈 Updated probabilities for ${thief} and ${victim}`);
+    }
+    function attemptToResolveUnknownTransactions(playerName, requiredResource, requiredAmount = 1) {
+        const player = game.players.find(p => p.name === playerName);
+        if (!player)
+            return false;
+        // Check if player has enough of the required resource
+        if (player.resources[requiredResource] >= requiredAmount) {
+            return true; // No need to resolve, player has the resource
+        }
+        // Check if player has enough including probabilities
+        const totalAvailable = player.resources[requiredResource] + player.resourceProbabilities[requiredResource];
+        if (totalAvailable < requiredAmount) {
+            console.log(`❌ ${playerName} doesn't have enough ${requiredResource} even with probabilities`);
+            return false;
+        }
+        // Find unresolved transactions where this player was the thief and could have stolen this resource
+        const unresolvedSteals = game.unknownTransactions.filter(transaction => !transaction.isResolved &&
+            transaction.type === 'steal' &&
+            transaction.thief === playerName &&
+            transaction.possibleResources[requiredResource] > 0);
+        if (unresolvedSteals.length === 0) {
+            console.log(`❌ No unresolved steals found for ${playerName} involving ${requiredResource}`);
+            return false;
+        }
+        // For now, resolve the most recent steal that could provide this resource
+        // In a more sophisticated system, you might want to resolve based on highest probability
+        const stealToResolve = unresolvedSteals[unresolvedSteals.length - 1];
+        console.log(`🔍 Resolving unknown steal: ${stealToResolve.id}`);
+        console.log(`   ${playerName} stole ${requiredResource} from ${stealToResolve.victim}`);
+        // Resolve the transaction
+        stealToResolve.isResolved = true;
+        stealToResolve.resolvedResource = requiredResource;
+        // Update actual resources
+        player.resources[requiredResource] += requiredAmount;
+        const victimPlayer = game.players.find(p => p.name === stealToResolve.victim);
+        if (victimPlayer) {
+            victimPlayer.resources[requiredResource] -= requiredAmount;
+        }
+        // Clear probabilities for this resolved transaction
+        clearProbabilitiesForResolvedTransaction(stealToResolve);
+        console.log(`✅ Resolved steal: ${playerName} stole ${requiredResource} from ${stealToResolve.victim}`);
+        return true;
+    }
+    function clearProbabilitiesForResolvedTransaction(transaction) {
+        const thiefPlayer = game.players.find(p => p.name === transaction.thief);
+        const victimPlayer = game.players.find(p => p.name === transaction.victim);
+        if (!thiefPlayer || !victimPlayer || !transaction.resolvedResource)
+            return;
+        // Calculate original probabilities to subtract
+        const totalPossibleCards = Object.values(transaction.possibleResources).reduce((sum, count) => sum + count, 0);
+        if (totalPossibleCards === 0)
+            return;
+        // Clear the resolved resource probabilities
+        const resolvedResource = transaction.resolvedResource;
+        const originalProbability = transaction.possibleResources[resolvedResource] / totalPossibleCards;
+        // Remove the resolved probability from thief and add back to victim
+        thiefPlayer.resourceProbabilities[resolvedResource] -= originalProbability;
+        victimPlayer.resourceProbabilities[resolvedResource] += originalProbability;
+        // Clear other probabilities that are no longer valid
+        Object.keys(transaction.possibleResources).forEach(resource => {
+            const key = resource;
+            if (key !== resolvedResource && transaction.possibleResources[key] > 0) {
+                const probability = transaction.possibleResources[key] / totalPossibleCards;
+                thiefPlayer.resourceProbabilities[key] -= probability;
+                victimPlayer.resourceProbabilities[key] += probability;
+            }
+        });
+        console.log(`🧹 Cleared probabilities for resolved transaction ${transaction.id}`);
+    }
+    function resolveUnknownProbabilitiesForResource(resourceType) {
+        console.log(`📈 Bank reached 19 ${resourceType} cards - resolving unknown probabilities`);
+        // Find all unresolved transactions that could have involved this resource type
+        const affectedTransactions = game.unknownTransactions.filter(transaction => !transaction.isResolved && transaction.possibleResources[resourceType] > 0);
+        if (affectedTransactions.length === 0) {
+            console.log(`📊 No unresolved transactions involving ${resourceType} found`);
+            return;
+        }
+        // For each affected transaction, remove the probability for this resource type
+        affectedTransactions.forEach(transaction => {
+            const thiefPlayer = game.players.find(p => p.name === transaction.thief);
+            const victimPlayer = game.players.find(p => p.name === transaction.victim);
+            if (!thiefPlayer || !victimPlayer)
+                return;
+            // Calculate original probabilities
+            const totalPossibleCards = Object.values(transaction.possibleResources).reduce((sum, count) => sum + count, 0);
+            if (totalPossibleCards === 0)
+                return;
+            // Calculate the probability that was assigned to this resource type
+            const eliminatedProbability = transaction.possibleResources[resourceType] / totalPossibleCards;
+            // Remove this probability from both players
+            thiefPlayer.resourceProbabilities[resourceType] -= eliminatedProbability;
+            victimPlayer.resourceProbabilities[resourceType] += eliminatedProbability;
+            // Update the transaction to reflect that this resource is no longer possible
+            transaction.possibleResources[resourceType] = 0;
+            // Recalculate probabilities for remaining possible resources
+            const remainingTotal = Object.values(transaction.possibleResources).reduce((sum, count) => sum + count, 0);
+            if (remainingTotal > 0) {
+                // Redistribute the eliminated probability among remaining possible resources
+                Object.keys(transaction.possibleResources).forEach(resource => {
+                    const key = resource;
+                    const resourceCount = transaction.possibleResources[key];
+                    if (resourceCount > 0) {
+                        const newProbability = resourceCount / remainingTotal;
+                        const oldProbability = resourceCount / totalPossibleCards;
+                        const probabilityIncrease = newProbability - oldProbability;
+                        // Update player probabilities
+                        thiefPlayer.resourceProbabilities[key] += probabilityIncrease;
+                        victimPlayer.resourceProbabilities[key] -= probabilityIncrease;
+                    }
+                });
+                console.log(`📊 Updated probabilities for transaction ${transaction.id} - eliminated ${resourceType}`);
+            }
+            else {
+                // No possible resources left - this shouldn't happen but handle gracefully
+                console.log(`⚠️  Transaction ${transaction.id} has no remaining possible resources after eliminating ${resourceType}`);
+            }
+        });
+        console.log(`✅ Resolved ${affectedTransactions.length} unknown transactions involving ${resourceType}`);
     }
 
     const RESOURCE_STRING = 'img[alt="grain"], img[alt="wool"], img[alt="lumber"], img[alt="brick"], img[alt="ore"]';
@@ -318,14 +519,45 @@
             table += `<td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${player.name}</td>`;
             resourceNames.forEach((resource, index) => {
                 const count = player.resources[resource];
+                const probability = player.resourceProbabilities[resource];
+                // Show both actual count and probability if there's a probability
+                let displayText = count.toString();
+                if (probability !== 0) {
+                    const sign = probability > 0 ? '+' : '';
+                    const color = probability > 0 ? '#e74c3c' : '#3498db';
+                    displayText = `${count} <span style="color: ${color}; font-size: 10px;">${sign}${probability.toFixed(2)}</span>`;
+                }
                 table += `<td style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]}; font-weight: bold;">
-        ${count}
+        ${displayText}
       </td>`;
             });
             table += '</tr>';
         });
         table += '</tbody></table>';
         return table;
+    }
+    function generateUnknownTransactionsDisplay() {
+        const unresolvedTransactions = game.unknownTransactions.filter(t => !t.isResolved);
+        if (unresolvedTransactions.length === 0) {
+            return '';
+        }
+        let display = '<div style="margin: 15px 0; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px;">';
+        display += '<h4 style="margin: 0 0 10px 0; color: #856404;">🔍 Unknown Transactions</h4>';
+        unresolvedTransactions.forEach(transaction => {
+            const timestamp = new Date(transaction.timestamp).toLocaleTimeString();
+            display += `<div style="margin-bottom: 8px; padding: 8px; background: white; border-radius: 4px; font-size: 11px;">`;
+            display += `<strong>${transaction.thief}</strong> stole from <strong>${transaction.victim}</strong> `;
+            display += `<span style="color: #666;">(${timestamp})</span><br>`;
+            // Show what could have been stolen
+            const possibleResources = Object.entries(transaction.possibleResources)
+                .filter(([_, count]) => count > 0)
+                .map(([resource, count]) => `${resource}: ${count}`)
+                .join(', ');
+            display += `<small style="color: #666;">Could be: ${possibleResources}</small>`;
+            display += '</div>';
+        });
+        display += '</div>';
+        return display;
     }
     function generateDiceChart() {
         const maxRolls = Math.max(...Object.values(game.diceRolls), 1);
@@ -384,6 +616,7 @@
     
          <div id="overlay-content" style="display: ${contentDisplay}; padding: 15px; max-height: 500px; overflow-y: auto; position: relative;">
        ${generateResourceTable()}
+       ${generateUnknownTransactionsDisplay()}
        ${generateDiceChart()}
        <div class="resize-handle" style="
          position: absolute;
@@ -673,14 +906,22 @@
         }
         // Scenario 6: Steal known (keyword: "stole" and "from")
         else if (messageText.includes('stole') && messageText.includes('from')) {
-            const stolenResource = getResourceType(element);
-            if (stolenResource) {
-                const victimSpan = element.querySelector('span[style*="font-weight:600"]');
-                const victim = (victimSpan === null || victimSpan === void 0 ? void 0 : victimSpan.textContent) || null;
-                if (victim && playerName) {
+            // Get the victim (second span with font-weight:600, after "from")
+            const victimSpans = element.querySelectorAll('span[style*="font-weight:600"]');
+            // if there are not two spans then the first user is "you"
+            const victim = victimSpans.length >= 2 ? victimSpans[1].textContent : victimSpans[0].textContent;
+            if (victim && playerName) {
+                const stolenResource = getResourceType(element);
+                if (stolenResource) {
+                    // Known steal - we know what resource was stolen
                     updateResources(playerName, { [stolenResource]: 1 });
                     updateResources(victim, { [stolenResource]: -1 });
                     console.log(`🦹 ${playerName} stole ${stolenResource} from ${victim}`);
+                }
+                else {
+                    // Unknown steal - we don't know what resource was stolen
+                    const transactionId = addUnknownSteal(playerName, victim);
+                    console.log(`🔍 ${playerName} stole unknown resource from ${victim} (Transaction: ${transactionId})`);
                 }
             }
         }
@@ -690,7 +931,7 @@
             if (playerName) {
                 ensurePlayerExists(playerName);
                 game.devCards--;
-                // Cost: 1 wheat, 1 sheep, 1 ore
+                // Cost: 1 wheat, 1 sheep, 1 ore (updateResources will handle unknown transaction resolution)
                 updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
                 console.log(`🃏 ${playerName} bought a development card. Remaining dev cards: ${game.devCards}`);
             }
@@ -738,7 +979,7 @@
                 ensurePlayerExists(playerName);
                 const player = game.players.find(p => p.name === playerName);
                 if (player) {
-                    // Cost: 1 wood, 1 wheat, 1 brick, 1 sheep
+                    // Cost: 1 wood, 1 wheat, 1 brick, 1 sheep (updateResources will handle unknown transaction resolution)
                     updateResources(playerName, {
                         tree: -1,
                         wheat: -1,
@@ -758,6 +999,7 @@
                 ensurePlayerExists(playerName);
                 const player = game.players.find(p => p.name === playerName);
                 if (player) {
+                    // Cost: 3 ore, 2 wheat (updateResources will handle unknown transaction resolution)
                     updateResources(playerName, { ore: -3, wheat: -2 });
                     player.cities--;
                     player.settlements++; // City replaces settlement
@@ -773,7 +1015,7 @@
                 ensurePlayerExists(playerName);
                 const player = game.players.find(p => p.name === playerName);
                 if (player) {
-                    // Cost: 1 wood, 1 brick
+                    // Cost: 1 wood, 1 brick (updateResources will handle unknown transaction resolution)
                     updateResources(playerName, { tree: -1, brick: -1 });
                     player.roads--;
                     console.log(`🛣️ ${playerName} built a road. Remaining roads: ${player.roads}`);
@@ -887,10 +1129,24 @@
             messageText.includes('No resources produced')) {
             console.log(`🚫 Robber blocking message (ignored)`);
         }
-        // Scenario 23: Wants to give (ignore - no actual trade happens)
+        // Scenario 23: Wants to give (can resolve unknown transactions)
         else if (messageText.includes('wants to give')) {
-            // Ignore these messages as they don't represent actual trades
-            console.log(`💭 ${playerName} wants to trade (ignored - no actual trade)`);
+            if (playerName) {
+                ensurePlayerExists(playerName);
+                // Parse what resources the player is offering to give
+                const offeredResources = getResourcesFromImages(element, RESOURCE_STRING);
+                // For each resource they're offering, they must have it
+                // This can resolve unknown transactions
+                Object.keys(offeredResources).forEach(resource => {
+                    const key = resource;
+                    const offeredCount = offeredResources[key];
+                    if (offeredCount > 0) {
+                        // Try to resolve unknown transactions for this resource
+                        attemptToResolveUnknownTransactions(playerName, key, offeredCount);
+                    }
+                });
+                console.log(`💭 ${playerName} wants to trade (offering: ${JSON.stringify(offeredResources)}) - checking for unknown transaction resolution`);
+            }
         }
         // Scenario 24: Discards (keyword: "discarded")
         else if (messageText.includes('discarded')) {

@@ -14,6 +14,18 @@ export interface DiscoveryCardType {
   monopolies: number;
 }
 
+// New type for tracking unknown transactions
+export interface UnknownTransaction {
+  id: string;
+  type: 'steal' | 'trade'; // Can extend for other transaction types
+  timestamp: number;
+  thief: string;
+  victim: string;
+  possibleResources: ResourceObjectType; // The resources the victim had that could be stolen
+  isResolved: boolean;
+  resolvedResource?: keyof ResourceObjectType;
+}
+
 export interface PlayerType {
   name: string;
   resources: ResourceObjectType;
@@ -40,6 +52,7 @@ export interface GameType {
   monopolies: number;
   diceRolls: DiceRollsType;
   remainingDiscoveryCardsProbabilities: DiscoveryCardType;
+  unknownTransactions: UnknownTransaction[];
 }
 
 export interface DiceRollsType {
