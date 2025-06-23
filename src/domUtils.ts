@@ -82,10 +82,25 @@ export function getTradePartner(element: HTMLElement): string | null {
 
 export function getResourcesFromImages(
   element: HTMLElement,
-  selector: string
+  selector: string,
+  stopAt?: string
 ): { [key in keyof ResourceObjectType]: number } {
   const resources = { sheep: 0, wheat: 0, brick: 0, tree: 0, ore: 0 };
-  const images = element.querySelectorAll(selector);
+  
+  let targetElement = element;
+  
+  // If stopAt is provided, create a truncated element
+  if (stopAt) {
+    const htmlContent = element.innerHTML;
+    const stopIndex = htmlContent.indexOf(stopAt);
+    if (stopIndex !== -1) {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = htmlContent.substring(0, stopIndex);
+      targetElement = tempDiv;
+    }
+  }
+  
+  const images = targetElement.querySelectorAll(selector);
 
   images.forEach(img => {
     const alt = img.getAttribute('alt');

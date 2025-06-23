@@ -223,9 +223,22 @@ export function updateGameFromChat(element: HTMLElement): void {
         updateResources(victim, { [stolenResource]: -1 } as any);
         console.log(`🦹 ${playerName} stole ${stolenResource} from ${victim}`);
       } else {
-        // Unknown steal - we don't know what resource was stolen
-        const transactionId = addUnknownSteal(playerName, victim);
-        console.log(`🔍 ${playerName} stole unknown resource from ${victim} (Transaction: ${transactionId})`);
+        // Check if victim has only one type of resource (with non-zero count)
+        const victimPlayer = game.players.find(p => p.name === victim);
+        const nonZeroResources = victimPlayer ? 
+          Object.entries(victimPlayer.resources).filter(([_, count]) => count > 0) : [];
+        
+        if (nonZeroResources.length === 1) {
+          // Victim has only one type of resource - we can deduce what was stolen
+          const [deductedStolenResource] = nonZeroResources[0];
+          updateResources(playerName, { [deductedStolenResource]: 1 } as any);
+          updateResources(victim, { [deductedStolenResource]: -1 } as any);
+          console.log(`🦹 ${playerName} stole ${deductedStolenResource} from ${victim} (deduced - victim had only one resource type)`);
+        } else {
+          // Unknown steal - we don't know what resource was stolen
+          const transactionId = addUnknownSteal(playerName, victim);
+          console.log(`🔍 ${playerName} stole unknown resource from ${victim} (Transaction: ${transactionId})`);
+        }
       }
     }
   }
@@ -496,8 +509,8 @@ export function updateGameFromChat(element: HTMLElement): void {
     if (playerName) {
       ensurePlayerExists(playerName);
       
-      // Parse what resources the player is offering to give
-      const offeredResources = getResourcesFromImages(element, RESOURCE_STRING);
+      // Parse what resources the player is offering to give (only before " for ")
+      const offeredResources = getResourcesFromImages(element, RESOURCE_STRING, ' for ');
       
       // For each resource they're offering, they must have it
       // This can resolve unknown transactions
@@ -543,6 +556,9 @@ export function updateGameFromChat(element: HTMLElement): void {
   }
   // Scenario 25: Ignore hr elements
   else if (element.querySelector('hr')) {
+  }
+  // Scenario 26: Ignore learn how to play messages
+  else if (messageText.includes('Learn how to play')) {
   }
   // Log any unknown messages
   else {

@@ -133,7 +133,7 @@ export function updateResources(
         const shortfall = requiredAmount - currentAmount;
         console.log(`⚠️  ${playerName} needs ${shortfall} more ${key}, attempting to resolve unknown transactions...`);
         
-        if (!attemptToResolveUnknownTransactions(playerName, key, shortfall)) {
+        if (!attemptToResolveUnknownTransactions(playerName, key, requiredAmount)) {
           console.log(`❌ Could not resolve unknown transactions for ${playerName} to get ${shortfall} ${key}`);
           // Still apply the change - this could result in negative resources which might be useful for debugging
         }
@@ -158,8 +158,6 @@ export function updateResources(
     }
   });
 }
-
-// New functions for unknown transaction handling
 
 export function addUnknownSteal(thief: string, victim: string): string {
   const victimPlayer = game.players.find(p => p.name === victim);
@@ -249,9 +247,21 @@ export function attemptToResolveUnknownTransactions(
     return true; // No need to resolve, player has the resource
   }
 
+  const shortfall = requiredAmount - player.resources[requiredResource];
+
   // Check if player has enough including probabilities
-  const totalAvailable = player.resources[requiredResource] + player.resourceProbabilities[requiredResource];
-  if (totalAvailable < requiredAmount) {
+  // Count how many unresolved transactions could potentially provide this resource
+  const unresolvedStealsForResource = game.unknownTransactions.filter(
+    transaction => 
+      !transaction.isResolved && 
+      transaction.type === 'steal' && 
+      transaction.thief === playerName &&
+      transaction.possibleResources[requiredResource] > 0
+  );
+  
+  const maxPossibleFromUnresolvedSteals = unresolvedStealsForResource.length;
+  const totalMaxAvailable = player.resources[requiredResource] + maxPossibleFromUnresolvedSteals;
+  if (totalMaxAvailable < requiredAmount) {
     console.log(`❌ ${playerName} doesn't have enough ${requiredResource} even with probabilities`);
     return false;
   }
@@ -282,10 +292,10 @@ export function attemptToResolveUnknownTransactions(
   stealToResolve.resolvedResource = requiredResource;
 
   // Update actual resources
-  player.resources[requiredResource] += requiredAmount;
+  player.resources[requiredResource] += shortfall;
   const victimPlayer = game.players.find(p => p.name === stealToResolve.victim);
   if (victimPlayer) {
-    victimPlayer.resources[requiredResource] -= requiredAmount;
+    victimPlayer.resources[requiredResource] -= shortfall;
   }
 
   // Clear probabilities for this resolved transaction

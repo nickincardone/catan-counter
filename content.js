@@ -113,7 +113,7 @@
                     // Player doesn't have enough, try to resolve unknown transactions
                     const shortfall = requiredAmount - currentAmount;
                     console.log(`⚠️  ${playerName} needs ${shortfall} more ${key}, attempting to resolve unknown transactions...`);
-                    if (!attemptToResolveUnknownTransactions(playerName, key, shortfall)) {
+                    if (!attemptToResolveUnknownTransactions(playerName, key, requiredAmount)) {
                         console.log(`❌ Could not resolve unknown transactions for ${playerName} to get ${shortfall} ${key}`);
                         // Still apply the change - this could result in negative resources which might be useful for debugging
                     }
@@ -136,7 +136,6 @@
             }
         });
     }
-    // New functions for unknown transaction handling
     function addUnknownSteal(thief, victim) {
         const victimPlayer = game.players.find(p => p.name === victim);
         if (!victimPlayer) {
@@ -202,9 +201,16 @@
         if (player.resources[requiredResource] >= requiredAmount) {
             return true; // No need to resolve, player has the resource
         }
+        const shortfall = requiredAmount - player.resources[requiredResource];
         // Check if player has enough including probabilities
-        const totalAvailable = player.resources[requiredResource] + player.resourceProbabilities[requiredResource];
-        if (totalAvailable < requiredAmount) {
+        // Count how many unresolved transactions could potentially provide this resource
+        const unresolvedStealsForResource = game.unknownTransactions.filter(transaction => !transaction.isResolved &&
+            transaction.type === 'steal' &&
+            transaction.thief === playerName &&
+            transaction.possibleResources[requiredResource] > 0);
+        const maxPossibleFromUnresolvedSteals = unresolvedStealsForResource.length;
+        const totalMaxAvailable = player.resources[requiredResource] + maxPossibleFromUnresolvedSteals;
+        if (totalMaxAvailable < requiredAmount) {
             console.log(`❌ ${playerName} doesn't have enough ${requiredResource} even with probabilities`);
             return false;
         }
@@ -226,10 +232,10 @@
         stealToResolve.isResolved = true;
         stealToResolve.resolvedResource = requiredResource;
         // Update actual resources
-        player.resources[requiredResource] += requiredAmount;
+        player.resources[requiredResource] += shortfall;
         const victimPlayer = game.players.find(p => p.name === stealToResolve.victim);
         if (victimPlayer) {
-            victimPlayer.resources[requiredResource] -= requiredAmount;
+            victimPlayer.resources[requiredResource] -= shortfall;
         }
         // Clear probabilities for this resolved transaction
         clearProbabilitiesForResolvedTransaction(stealToResolve);
@@ -373,9 +379,20 @@
         const spans = element.querySelectorAll('span[style*="font-weight:600"]');
         return spans.length > 1 ? spans[1].textContent || null : null;
     }
-    function getResourcesFromImages(element, selector) {
+    function getResourcesFromImages(element, selector, stopAt) {
         const resources = { sheep: 0, wheat: 0, brick: 0, tree: 0, ore: 0 };
-        const images = element.querySelectorAll(selector);
+        let targetElement = element;
+        // If stopAt is provided, create a truncated element
+        if (stopAt) {
+            const htmlContent = element.innerHTML;
+            const stopIndex = htmlContent.indexOf(stopAt);
+            if (stopIndex !== -1) {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = htmlContent.substring(0, stopIndex);
+                targetElement = tempDiv;
+            }
+        }
+        const images = targetElement.querySelectorAll(selector);
         images.forEach(img => {
             const alt = img.getAttribute('alt');
             switch (alt) {
@@ -748,11 +765,12 @@
     }
 
     function updateGameFromChat(element) {
+        var _a, _b, _c;
         // If we're waiting for "you" player selection, don't process new messages
         if (isWaitingForYouPlayerSelection) {
             return;
         }
-        const messageText = element.textContent || '';
+        const messageText = ((_a = element.textContent) === null || _a === void 0 ? void 0 : _a.replace(/\s+/g, ' ').trim()) || '';
         let playerName = getPlayerName(element);
         // getting correct player name when it says "You stole"
         if (messageText.includes('You stole') && messageText.includes('from')) {
@@ -917,6 +935,12 @@
                     updateResources(playerName, { [stolenResource]: 1 });
                     updateResources(victim, { [stolenResource]: -1 });
                     console.log(`🦹 ${playerName} stole ${stolenResource} from ${victim}`);
+                }
+                else if (Object.keys(((_b = game.players.find(p => p.name === playerName)) === null || _b === void 0 ? void 0 : _b.resources) || {}).length === 1) {
+                    const deductedStolenResource = Object.keys(((_c = game.players.find(p => p.name === playerName)) === null || _c === void 0 ? void 0 : _c.resources) || {})[0];
+                    updateResources(playerName, { [deductedStolenResource]: 1 });
+                    updateResources(victim, { [deductedStolenResource]: -1 });
+                    console.log(`🦹 ${playerName} stole ${deductedStolenResource} from ${victim}`);
                 }
                 else {
                     // Unknown steal - we don't know what resource was stolen
@@ -1133,8 +1157,8 @@
         else if (messageText.includes('wants to give')) {
             if (playerName) {
                 ensurePlayerExists(playerName);
-                // Parse what resources the player is offering to give
-                const offeredResources = getResourcesFromImages(element, RESOURCE_STRING);
+                // Parse what resources the player is offering to give (only before " for ")
+                const offeredResources = getResourcesFromImages(element, RESOURCE_STRING, ' for ');
                 // For each resource they're offering, they must have it
                 // This can resolve unknown transactions
                 Object.keys(offeredResources).forEach(resource => {
@@ -1168,6 +1192,8 @@
         }
         // Scenario 25: Ignore hr elements
         else if (element.querySelector('hr')) ;
+        // Scenario 26: Ignore learn how to play messages
+        else if (messageText.includes('Learn how to play')) ;
         // Log any unknown messages
         else {
             console.log('💬💬💬  New unknown message:', element);
