@@ -5,11 +5,11 @@ export default {
   output: {
     file: 'content.js',
     format: 'iife', // Immediately Invoked Function Expression - perfect for browser extensions
-    name: 'CatanCounter'
+    name: 'CatanCounter',
   },
   plugins: [
     typescript({
-      tsconfig: './tsconfig.json'
-    })
-  ]
-}; 
+      tsconfig: './tsconfig.json',
+    }),
+  ],
+};

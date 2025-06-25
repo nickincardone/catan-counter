@@ -31,6 +31,27 @@ export function getPlayerName(element: HTMLElement): string | null {
   return playerSpan ? playerSpan.textContent || null : null;
 }
 
+/**
+ * Automatically detects the current player from the header profile username
+ * This eliminates the need for user input popups
+ */
+export function getCurrentPlayerFromHeader(): string | null {
+  const headerElement = document.getElementById('header_profile_username');
+  if (!headerElement) {
+    console.log('🔍 header_profile_username element not found');
+    return null;
+  }
+
+  const currentPlayer = headerElement.textContent?.trim() || null;
+  if (currentPlayer) {
+    console.log(`🎯 Auto-detected current player: ${currentPlayer}`);
+  } else {
+    console.log('🔍 header_profile_username element found but empty');
+  }
+
+  return currentPlayer;
+}
+
 export function getDiceRollTotal(element: HTMLElement): number | null {
   const diceImages = element.querySelectorAll('img[alt^="dice_"]');
   if (diceImages.length === 2) {
@@ -86,9 +107,9 @@ export function getResourcesFromImages(
   stopAt?: string
 ): { [key in keyof ResourceObjectType]: number } {
   const resources = { sheep: 0, wheat: 0, brick: 0, tree: 0, ore: 0 };
-  
+
   let targetElement = element;
-  
+
   // If stopAt is provided, create a truncated element
   if (stopAt) {
     const htmlContent = element.innerHTML;
@@ -99,7 +120,7 @@ export function getResourcesFromImages(
       targetElement = tempDiv;
     }
   }
-  
+
   const images = targetElement.querySelectorAll(selector);
 
   images.forEach(img => {
@@ -124,4 +145,4 @@ export function getResourcesFromImages(
   });
 
   return resources;
-} 
+}

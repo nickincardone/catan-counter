@@ -5,6 +5,7 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 ## Features
 
 ### 🎲 **Game State Tracking**
+
 - **Player Resources**: Tracks wheat, sheep, brick, wood, and ore for all players
 - **Development Cards**: Monitors knights, victory points, year of plenty, road builders, and monopolies
 - **Dice Rolls**: Records frequency of all dice roll results (2-12)
@@ -12,6 +13,7 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - **Victory Points**: Monitors VP progress for all players
 
 ### 📊 **Enhanced User Interface**
+
 - **Modern Overlay**: Clean, organized display with resource tables and dice roll charts
 - **Draggable & Resizable**: Move and scale the overlay to your preference
 - **Minimize/Maximize**: Collapse to header-only for minimal screen usage
@@ -19,18 +21,21 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - **Interactive Charts**: Visual dice roll frequency with statistical bars
 
 ### 🎯 **Smart Player Identification**
+
 - **"You" Player Setup**: One-time dialog to identify your player for accurate tracking
 - **Automatic Detection**: Triggers on first dice roll when all players are loaded
 - **Message Reprocessing**: Re-analyzes all chat history once your identity is known
 - **Enhanced Theft Tracking**: Properly handles "stole [resource] from you" messages
 
 ### 📊 **Real-time Monitoring**
+
 - **Live Updates**: Game state updates automatically as chat messages appear
 - **Page Refresh Support**: Processes existing chat history when page is refreshed
 - **Intelligent Processing**: Pauses during setup, then reprocesses for accuracy
 - **Comprehensive Logging**: Detailed console output for debugging
 
 ### 🎯 **Supported Game Events**
+
 - Resource collection from dice rolls
 - Building placement (settlements, cities, roads)
 - Development card purchases and usage
@@ -45,23 +50,28 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 ## Installation
 
 ### Prerequisites
+
 - Node.js (v14 or higher)
 - npm
 - Google Chrome browser
 
 ### Setup
+
 1. **Clone the repository**
+
    ```bash
    git clone <repository-url>
    cd catan-counter
    ```
 
 2. **Install dependencies**
+
    ```bash
    npm install
    ```
 
 3. **Build the extension**
+
    ```bash
    npm run build
    ```
@@ -83,6 +93,7 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - **`npm run dev`** - Development mode: auto-format and bundle on file changes
 
 #### Testing Scripts
+
 - **`npm test`** - Run all tests with Jest
 - **`npm run test:watch`** - Run tests in watch mode (auto-rerun on changes)
 - **`npm run test:coverage`** - Run tests and generate coverage report
@@ -90,7 +101,9 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - **`npm run test:update`** - Update Jest snapshots
 
 ### Development Workflow
+
 1. **Start development mode**
+
    ```bash
    npm run dev
    ```
@@ -98,6 +111,7 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 2. **Make changes** to any TypeScript files in the `src/` directory
 
 3. **Run tests** to ensure your changes work correctly
+
    ```bash
    npm test
    ```
@@ -111,6 +125,7 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 The project uses Jest 30.0.2 with TypeScript support for comprehensive testing.
 
 #### Running Tests
+
 ```bash
 # Run all tests once
 npm test
@@ -126,6 +141,7 @@ npm run test:ci
 ```
 
 #### Test Structure
+
 - **`src/__tests__/`** - Contains all test files
 - **`gameState.test.ts`** - Tests for game state management and unknown transaction system
 - **`chatParser.simple.test.ts`** - Tests for chat parsing logic and message identification
@@ -133,13 +149,16 @@ npm run test:ci
 - **`jest.setup.ts`** - Test environment setup with DOM mocking
 
 #### Writing Tests
+
 - Tests use TypeScript with Jest globals (`@jest/globals`)
 - DOM environment is mocked for browser extension testing
 - Game state functions are thoroughly tested including the probabilistic unknown transaction system
 - Coverage targets: 80% for branches, functions, lines, and statements
 
 #### Unknown Transaction Testing
+
 The test suite includes comprehensive testing of the probabilistic resource tracking system:
+
 - **Unknown steal creation** and probability calculation
 - **Transaction resolution** when players use resources they shouldn't have
 - **Multiple steal scenarios** and resolution priority
@@ -159,7 +178,6 @@ The test suite includes comprehensive testing of the probabilistic resource trac
    - **Drag** the header to move the overlay
    - **Minimize** using the (−) button to collapse to header only
    - **Resize** by dragging the bottom-right corner to scale proportionally
-   
 6. **Monitor real-time updates** as the game progresses
 
 ### Game State Display
@@ -167,16 +185,19 @@ The test suite includes comprehensive testing of the probabilistic resource trac
 The overlay features an organized, visual layout with:
 
 #### 📋 **Resource Table**
+
 - **Player rows** showing current resource counts for each player
 - **Header columns** with resource emojis (🐑🌾🧱🌲⛰️) and remaining bank resources
 - **Color-coded cells** for easy resource identification
 
 #### 📊 **Dice Roll Chart**
+
 - **Visual bar graph** showing frequency of each dice roll (2-12)
 - **Roll counts** displayed above each bar
 - **Color coding**: Red for 7, teal for 6&8, blue for others
 
 #### 🎛️ **Interactive Controls**
+
 - **Header bar** for dragging and minimizing
 - **Resize handle** in bottom-right corner for proportional scaling
 - **Minimize button** to collapse to header-only view
@@ -184,6 +205,7 @@ The overlay features an organized, visual layout with:
 ## Technical Details
 
 ### Architecture
+
 - **Modular TypeScript**: Organized into separate modules for maintainability
 - **Rollup Bundling**: Multiple TypeScript files compiled into single JavaScript output
 - **Content Script**: Injected into colonist.io pages
@@ -192,7 +214,9 @@ The overlay features an organized, visual layout with:
 - **State Management**: Maintains game state in memory with automatic persistence
 
 ### Message Processing
+
 The extension recognizes 25+ different game scenarios including:
+
 - Building placement and purchases
 - Resource collection and trading
 - Development card usage
@@ -200,12 +224,14 @@ The extension recognizes 25+ different game scenarios including:
 - Special game events (robber movement, discarding, etc.)
 
 ### Smart Reprocessing System
+
 - **Player Detection**: Automatically identifies when player setup is needed
 - **Processing Pause**: Stops processing new messages during player identification
 - **Complete Reanalysis**: Re-examines all chat history with "you" player context
 - **Accurate Attribution**: Ensures proper resource tracking for all theft events
 
 ### Modular Architecture
+
 The codebase is organized into focused modules for better maintainability:
 
 - **`types.ts`** - All TypeScript interface definitions and type declarations
@@ -218,6 +244,7 @@ The codebase is organized into focused modules for better maintainability:
 All modules are bundled into a single `content.js` file using Rollup for optimal browser performance.
 
 ### Browser Compatibility
+
 - Chrome (primary target)
 - Other Chromium-based browsers (Edge, Brave, etc.)
 
@@ -264,4 +291,4 @@ This project is licensed under the ISC License - see the package.json file for d
 
 ## Disclaimer
 
-This extension is designed for educational and analytical purposes. It does not provide any unfair advantage in gameplay and only tracks information that is already visible in the game chat. 
+This extension is designed for educational and analytical purposes. It does not provide any unfair advantage in gameplay and only tracks information that is already visible in the game chat.

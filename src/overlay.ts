@@ -45,21 +45,21 @@ function createGameStateOverlay(): HTMLDivElement {
 
 function startDrag(e: MouseEvent): void {
   if (!gameStateOverlay) return;
-  
+
   const target = e.target as HTMLElement;
-  
+
   // Check if clicking on resize handle
   if (target.classList.contains('resize-handle')) {
     isResizing = true;
     resizeStartData = {
       x: e.clientX,
       y: e.clientY,
-      scale: currentScale
+      scale: currentScale,
     };
     e.preventDefault();
     return;
   }
-  
+
   // Only allow dragging from the header
   const header = gameStateOverlay.querySelector('#overlay-header');
   if (!header?.contains(target) || target.id === 'minimize-btn') return;
@@ -78,11 +78,14 @@ function handleMouseMove(e: MouseEvent): void {
     const deltaX = e.clientX - resizeStartData.x;
     const deltaY = e.clientY - resizeStartData.y;
     const avgDelta = (deltaX + deltaY) / 2;
-    
+
     // Calculate new scale (minimum 0.5, maximum 2.0)
     const scaleFactor = avgDelta / 300; // Adjust sensitivity
-    currentScale = Math.max(0.5, Math.min(2.0, resizeStartData.scale + scaleFactor));
-    
+    currentScale = Math.max(
+      0.5,
+      Math.min(2.0, resizeStartData.scale + scaleFactor)
+    );
+
     // Apply the new scale
     gameStateOverlay.style.transform = `scale(${currentScale})`;
     e.preventDefault();
@@ -117,34 +120,46 @@ function generateResourceTable(): string {
 
   const resourceNames = ['sheep', 'wheat', 'brick', 'tree', 'ore'];
   const resourceEmojis = ['🐑', '🌾', '🧱', '🌲', '⛰️'];
-  const resourceColors = ['#f0f8ff', '#fff8dc', '#ffeaa7', '#a8e6cf', '#ddd6fe'];
-  
-  let table = '<table style="width: 100%; border-collapse: collapse; margin: 10px 0;">';
-  
+  const resourceColors = [
+    '#f0f8ff',
+    '#fff8dc',
+    '#ffeaa7',
+    '#a8e6cf',
+    '#ddd6fe',
+  ];
+
+  let table =
+    '<table style="width: 100%; border-collapse: collapse; margin: 10px 0;">';
+
   // Header row with resource totals
   table += '<thead><tr style="background: #f5f5f5;">';
-  table += '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Player</th>';
-  
+  table +=
+    '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Player</th>';
+
   resourceNames.forEach((resource, index) => {
-    const remaining = game.gameResources[resource as keyof typeof game.gameResources];
+    const remaining =
+      game.gameResources[resource as keyof typeof game.gameResources];
     const total = 19; // Standard Catan has 19 of each resource
     table += `<th style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]};">
       ${resourceEmojis[index]}<br>
       <small>${remaining}/${total}</small>
     </th>`;
   });
-  
+
   table += '</tr></thead><tbody>';
-  
+
   // Player rows
   game.players.forEach(player => {
     table += '<tr>';
     table += `<td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${player.name}</td>`;
-    
+
     resourceNames.forEach((resource, index) => {
       const count = player.resources[resource as keyof typeof player.resources];
-      const probability = player.resourceProbabilities[resource as keyof typeof player.resourceProbabilities];
-      
+      const probability =
+        player.resourceProbabilities[
+          resource as keyof typeof player.resourceProbabilities
+        ];
+
       // Show both actual count and probability if there's a probability
       let displayText = count.toString();
       if (probability !== 0) {
@@ -152,45 +167,49 @@ function generateResourceTable(): string {
         const color = probability > 0 ? '#e74c3c' : '#3498db';
         displayText = `${count} <span style="color: ${color}; font-size: 10px;">${sign}${probability.toFixed(2)}</span>`;
       }
-      
+
       table += `<td style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]}; font-weight: bold;">
         ${displayText}
       </td>`;
     });
-    
+
     table += '</tr>';
   });
-  
+
   table += '</tbody></table>';
   return table;
 }
 
 function generateUnknownTransactionsDisplay(): string {
-  const unresolvedTransactions = game.unknownTransactions.filter(t => !t.isResolved);
-  
+  const unresolvedTransactions = game.unknownTransactions.filter(
+    t => !t.isResolved
+  );
+
   if (unresolvedTransactions.length === 0) {
     return '';
   }
-  
-  let display = '<div style="margin: 15px 0; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px;">';
-  display += '<h4 style="margin: 0 0 10px 0; color: #856404;">🔍 Unknown Transactions</h4>';
-  
+
+  let display =
+    '<div style="margin: 15px 0; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px;">';
+  display +=
+    '<h4 style="margin: 0 0 10px 0; color: #856404;">🔍 Unknown Transactions</h4>';
+
   unresolvedTransactions.forEach(transaction => {
     const timestamp = new Date(transaction.timestamp).toLocaleTimeString();
     display += `<div style="margin-bottom: 8px; padding: 8px; background: white; border-radius: 4px; font-size: 11px;">`;
     display += `<strong>${transaction.thief}</strong> stole from <strong>${transaction.victim}</strong> `;
     display += `<span style="color: #666;">(${timestamp})</span><br>`;
-    
+
     // Show what could have been stolen
     const possibleResources = Object.entries(transaction.possibleResources)
       .filter(([_, count]) => count > 0)
       .map(([resource, count]) => `${resource}: ${count}`)
       .join(', ');
-    
+
     display += `<small style="color: #666;">Could be: ${possibleResources}</small>`;
     display += '</div>';
   });
-  
+
   display += '</div>';
   return display;
 }
@@ -198,15 +217,21 @@ function generateUnknownTransactionsDisplay(): string {
 function generateDiceChart(): string {
   const maxRolls = Math.max(...Object.values(game.diceRolls), 1);
   const chartHeight = 120;
-  
-  let chart = '<div style="margin: 15px 0;"><h4 style="margin: 0 0 10px 0; text-align: center;">Dice Roll Frequency</h4>';
-  chart += '<div style="display: flex; align-items: end; justify-content: space-between; height: ' + chartHeight + 'px; border-bottom: 2px solid #333; padding: 0 5px;">';
-  
+
+  let chart =
+    '<div style="margin: 15px 0;"><h4 style="margin: 0 0 10px 0; text-align: center;">Dice Roll Frequency</h4>';
+  chart +=
+    '<div style="display: flex; align-items: end; justify-content: space-between; height: ' +
+    chartHeight +
+    'px; border-bottom: 2px solid #333; padding: 0 5px;">';
+
   for (let i = 2; i <= 12; i++) {
     const rolls = game.diceRolls[i as keyof typeof game.diceRolls];
-    const barHeight = maxRolls > 0 ? (rolls / maxRolls) * (chartHeight - 20) : 0;
-    const barColor = i === 7 ? '#ff6b6b' : (i === 6 || i === 8) ? '#4ecdc4' : '#45b7d1';
-    
+    const barHeight =
+      maxRolls > 0 ? (rolls / maxRolls) * (chartHeight - 20) : 0;
+    const barColor =
+      i === 7 ? '#ff6b6b' : i === 6 || i === 8 ? '#4ecdc4' : '#45b7d1';
+
     chart += `
       <div style="display: flex; flex-direction: column; align-items: center; min-width: 25px;">
         <div style="font-size: 10px; font-weight: bold; margin-bottom: 2px;">${rolls}</div>
@@ -224,14 +249,14 @@ function generateDiceChart(): string {
       </div>
     `;
   }
-  
+
   chart += '</div></div>';
   return chart;
 }
 
 function updateOverlayContent(overlay: HTMLDivElement): void {
   const contentDisplay = isMinimized ? 'none' : 'block';
-  
+
   overlay.innerHTML = `
     <div id="overlay-header" style="
       background: #2c3e50; 
@@ -274,7 +299,9 @@ function updateOverlayContent(overlay: HTMLDivElement): void {
    `;
 
   // Add minimize button functionality
-  const minimizeBtn = overlay.querySelector('#minimize-btn') as HTMLButtonElement;
+  const minimizeBtn = overlay.querySelector(
+    '#minimize-btn'
+  ) as HTMLButtonElement;
   if (minimizeBtn) {
     minimizeBtn.addEventListener('click', e => {
       e.stopPropagation(); // Prevent dragging when clicking minimize
@@ -357,7 +384,9 @@ export function showYouPlayerDialog(): void {
       Which player are you? This helps the extension track when resources are stolen "from you".
     </p>
     <div id="player-buttons" style="display: flex; flex-direction: column; gap: 10px;">
-      ${game.players.map(player => `
+      ${game.players
+        .map(
+          player => `
         <button 
           data-player="${player.name}" 
           style="
@@ -374,7 +403,9 @@ export function showYouPlayerDialog(): void {
         >
           ${player.name}
         </button>
-      `).join('')}
+      `
+        )
+        .join('')}
     </div>
   `;
 
@@ -390,7 +421,7 @@ export function showYouPlayerDialog(): void {
         setYouPlayer(playerName);
         console.log(`🎯 "You" player set to: ${playerName}`);
         document.body.removeChild(backdrop);
-        
+
         // Trigger reprocessing callback if provided
         if (youPlayerSelectedCallback) {
           youPlayerSelectedCallback();
@@ -400,9 +431,9 @@ export function showYouPlayerDialog(): void {
   });
 
   // Close on backdrop click
-  backdrop.addEventListener('click', (e) => {
+  backdrop.addEventListener('click', e => {
     if (e.target === backdrop) {
       document.body.removeChild(backdrop);
     }
   });
-} 
+}

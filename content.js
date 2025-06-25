@@ -1,6 +1,123 @@
 (function () {
     'use strict';
 
+    const RESOURCE_STRING = 'img[alt="grain"], img[alt="wool"], img[alt="lumber"], img[alt="brick"], img[alt="ore"]';
+    function findChatContainer() {
+        const divs = document.querySelectorAll('div');
+        for (const outerDiv of Array.from(divs)) {
+            const firstChild = outerDiv.firstElementChild;
+            if ((firstChild === null || firstChild === void 0 ? void 0 : firstChild.tagName) === 'DIV') {
+                for (const child of Array.from(firstChild.children)) {
+                    if (child.tagName === 'SPAN') {
+                        const anchor = child.querySelector('a[href="#open-rulebook"]');
+                        if (anchor) {
+                            return outerDiv;
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+    function getPlayerName(element) {
+        const playerSpan = element.querySelector('span[style*="font-weight:600"]');
+        return playerSpan ? playerSpan.textContent || null : null;
+    }
+    /**
+     * Automatically detects the current player from the header profile username
+     * This eliminates the need for user input popups
+     */
+    function getCurrentPlayerFromHeader() {
+        var _a;
+        const headerElement = document.getElementById('header_profile_username');
+        if (!headerElement) {
+            console.log('🔍 header_profile_username element not found');
+            return null;
+        }
+        const currentPlayer = ((_a = headerElement.textContent) === null || _a === void 0 ? void 0 : _a.trim()) || null;
+        if (currentPlayer) {
+            console.log(`🎯 Auto-detected current player: ${currentPlayer}`);
+        }
+        else {
+            console.log('🔍 header_profile_username element found but empty');
+        }
+        return currentPlayer;
+    }
+    function getDiceRollTotal(element) {
+        var _a, _b;
+        const diceImages = element.querySelectorAll('img[alt^="dice_"]');
+        if (diceImages.length === 2) {
+            const dice1 = parseInt(((_a = diceImages[0].getAttribute('alt')) === null || _a === void 0 ? void 0 : _a.replace('dice_', '')) || '0');
+            const dice2 = parseInt(((_b = diceImages[1].getAttribute('alt')) === null || _b === void 0 ? void 0 : _b.replace('dice_', '')) || '0');
+            return dice1 + dice2;
+        }
+        return null;
+    }
+    function getResourceType(element) {
+        const resourceImg = element.querySelector(RESOURCE_STRING);
+        if (resourceImg) {
+            const alt = resourceImg.getAttribute('alt');
+            return getResourceTypeFromAlt(alt);
+        }
+        return null;
+    }
+    function getResourceTypeFromAlt(alt) {
+        switch (alt) {
+            case 'grain':
+                return 'wheat';
+            case 'wool':
+                return 'sheep';
+            case 'lumber':
+                return 'tree';
+            case 'brick':
+                return 'brick';
+            case 'ore':
+                return 'ore';
+            default:
+                return null;
+        }
+    }
+    function getTradePartner(element) {
+        const spans = element.querySelectorAll('span[style*="font-weight:600"]');
+        return spans.length > 1 ? spans[1].textContent || null : null;
+    }
+    function getResourcesFromImages(element, selector, stopAt) {
+        const resources = { sheep: 0, wheat: 0, brick: 0, tree: 0, ore: 0 };
+        let targetElement = element;
+        // If stopAt is provided, create a truncated element
+        if (stopAt) {
+            const htmlContent = element.innerHTML;
+            const stopIndex = htmlContent.indexOf(stopAt);
+            if (stopIndex !== -1) {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = htmlContent.substring(0, stopIndex);
+                targetElement = tempDiv;
+            }
+        }
+        const images = targetElement.querySelectorAll(selector);
+        images.forEach(img => {
+            const alt = img.getAttribute('alt');
+            switch (alt) {
+                case 'grain':
+                    resources.wheat++;
+                    break;
+                case 'wool':
+                    resources.sheep++;
+                    break;
+                case 'lumber':
+                    resources.tree++;
+                    break;
+                case 'brick':
+                    resources.brick++;
+                    break;
+                case 'ore':
+                    resources.ore++;
+                    break;
+            }
+        });
+        return resources;
+    }
+
     function getDefaultGame() {
         return {
             players: [],
@@ -43,27 +160,24 @@
     let game = getDefaultGame();
     // Track the "you" player
     let youPlayerName = null;
-    let hasAskedForYouPlayer = false;
     let isWaitingForYouPlayerSelection = false;
     function setYouPlayer(playerName) {
         youPlayerName = playerName;
         isWaitingForYouPlayerSelection = false;
     }
-    function markYouPlayerAsked() {
-        hasAskedForYouPlayer = true;
-        isWaitingForYouPlayerSelection = true;
-    }
-    function resetGameState() {
-        // Reset game state but keep "you" player info
-        const previousYouPlayer = youPlayerName;
-        const previousAskedStatus = hasAskedForYouPlayer;
-        const previousWaitingStatus = isWaitingForYouPlayerSelection;
-        game = getDefaultGame();
-        // Restore "you" player info
-        youPlayerName = previousYouPlayer;
-        hasAskedForYouPlayer = previousAskedStatus;
-        isWaitingForYouPlayerSelection = previousWaitingStatus;
-        console.log('🔄 Game state reset, reprocessing messages...');
+    /**
+     * Automatically sets the current player from header_profile_username
+     * Returns true if successful, false otherwise
+     */
+    function autoDetectCurrentPlayer() {
+        const detectedPlayer = getCurrentPlayerFromHeader();
+        if (detectedPlayer) {
+            setYouPlayer(detectedPlayer);
+            console.log(`✅ Auto-detected and set current player: ${detectedPlayer}`);
+            return true;
+        }
+        console.log('❌ Failed to auto-detect current player');
+        return false;
     }
     function ensurePlayerExists(playerName) {
         const existingPlayer = game.players.find(p => p.name === playerName);
@@ -319,103 +433,6 @@
         console.log(`✅ Resolved ${affectedTransactions.length} unknown transactions involving ${resourceType}`);
     }
 
-    const RESOURCE_STRING = 'img[alt="grain"], img[alt="wool"], img[alt="lumber"], img[alt="brick"], img[alt="ore"]';
-    function findChatContainer() {
-        const divs = document.querySelectorAll('div');
-        for (const outerDiv of Array.from(divs)) {
-            const firstChild = outerDiv.firstElementChild;
-            if ((firstChild === null || firstChild === void 0 ? void 0 : firstChild.tagName) === 'DIV') {
-                for (const child of Array.from(firstChild.children)) {
-                    if (child.tagName === 'SPAN') {
-                        const anchor = child.querySelector('a[href="#open-rulebook"]');
-                        if (anchor) {
-                            return outerDiv;
-                        }
-                    }
-                }
-            }
-        }
-        return null;
-    }
-    function getPlayerName(element) {
-        const playerSpan = element.querySelector('span[style*="font-weight:600"]');
-        return playerSpan ? playerSpan.textContent || null : null;
-    }
-    function getDiceRollTotal(element) {
-        var _a, _b;
-        const diceImages = element.querySelectorAll('img[alt^="dice_"]');
-        if (diceImages.length === 2) {
-            const dice1 = parseInt(((_a = diceImages[0].getAttribute('alt')) === null || _a === void 0 ? void 0 : _a.replace('dice_', '')) || '0');
-            const dice2 = parseInt(((_b = diceImages[1].getAttribute('alt')) === null || _b === void 0 ? void 0 : _b.replace('dice_', '')) || '0');
-            return dice1 + dice2;
-        }
-        return null;
-    }
-    function getResourceType(element) {
-        const resourceImg = element.querySelector(RESOURCE_STRING);
-        if (resourceImg) {
-            const alt = resourceImg.getAttribute('alt');
-            return getResourceTypeFromAlt(alt);
-        }
-        return null;
-    }
-    function getResourceTypeFromAlt(alt) {
-        switch (alt) {
-            case 'grain':
-                return 'wheat';
-            case 'wool':
-                return 'sheep';
-            case 'lumber':
-                return 'tree';
-            case 'brick':
-                return 'brick';
-            case 'ore':
-                return 'ore';
-            default:
-                return null;
-        }
-    }
-    function getTradePartner(element) {
-        const spans = element.querySelectorAll('span[style*="font-weight:600"]');
-        return spans.length > 1 ? spans[1].textContent || null : null;
-    }
-    function getResourcesFromImages(element, selector, stopAt) {
-        const resources = { sheep: 0, wheat: 0, brick: 0, tree: 0, ore: 0 };
-        let targetElement = element;
-        // If stopAt is provided, create a truncated element
-        if (stopAt) {
-            const htmlContent = element.innerHTML;
-            const stopIndex = htmlContent.indexOf(stopAt);
-            if (stopIndex !== -1) {
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = htmlContent.substring(0, stopIndex);
-                targetElement = tempDiv;
-            }
-        }
-        const images = targetElement.querySelectorAll(selector);
-        images.forEach(img => {
-            const alt = img.getAttribute('alt');
-            switch (alt) {
-                case 'grain':
-                    resources.wheat++;
-                    break;
-                case 'wool':
-                    resources.sheep++;
-                    break;
-                case 'lumber':
-                    resources.tree++;
-                    break;
-                case 'brick':
-                    resources.brick++;
-                    break;
-                case 'ore':
-                    resources.ore++;
-                    break;
-            }
-        });
-        return resources;
-    }
-
     // Create draggable overlay for game state display
     let gameStateOverlay = null;
     let isDragging = false;
@@ -424,7 +441,6 @@
     let isResizing = false;
     let currentScale = 1;
     let resizeStartData = { x: 0, y: 0, scale: 1 };
-    let youPlayerSelectedCallback = null;
     function createGameStateOverlay() {
         const overlay = document.createElement('div');
         overlay.id = 'catan-game-state-overlay';
@@ -464,7 +480,7 @@
             resizeStartData = {
                 x: e.clientX,
                 y: e.clientY,
-                scale: currentScale
+                scale: currentScale,
             };
             e.preventDefault();
             return;
@@ -516,11 +532,18 @@
         }
         const resourceNames = ['sheep', 'wheat', 'brick', 'tree', 'ore'];
         const resourceEmojis = ['🐑', '🌾', '🧱', '🌲', '⛰️'];
-        const resourceColors = ['#f0f8ff', '#fff8dc', '#ffeaa7', '#a8e6cf', '#ddd6fe'];
+        const resourceColors = [
+            '#f0f8ff',
+            '#fff8dc',
+            '#ffeaa7',
+            '#a8e6cf',
+            '#ddd6fe',
+        ];
         let table = '<table style="width: 100%; border-collapse: collapse; margin: 10px 0;">';
         // Header row with resource totals
         table += '<thead><tr style="background: #f5f5f5;">';
-        table += '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Player</th>';
+        table +=
+            '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Player</th>';
         resourceNames.forEach((resource, index) => {
             const remaining = game.gameResources[resource];
             const total = 19; // Standard Catan has 19 of each resource
@@ -559,7 +582,8 @@
             return '';
         }
         let display = '<div style="margin: 15px 0; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px;">';
-        display += '<h4 style="margin: 0 0 10px 0; color: #856404;">🔍 Unknown Transactions</h4>';
+        display +=
+            '<h4 style="margin: 0 0 10px 0; color: #856404;">🔍 Unknown Transactions</h4>';
         unresolvedTransactions.forEach(transaction => {
             const timestamp = new Date(transaction.timestamp).toLocaleTimeString();
             display += `<div style="margin-bottom: 8px; padding: 8px; background: white; border-radius: 4px; font-size: 11px;">`;
@@ -580,11 +604,14 @@
         const maxRolls = Math.max(...Object.values(game.diceRolls), 1);
         const chartHeight = 120;
         let chart = '<div style="margin: 15px 0;"><h4 style="margin: 0 0 10px 0; text-align: center;">Dice Roll Frequency</h4>';
-        chart += '<div style="display: flex; align-items: end; justify-content: space-between; height: ' + chartHeight + 'px; border-bottom: 2px solid #333; padding: 0 5px;">';
+        chart +=
+            '<div style="display: flex; align-items: end; justify-content: space-between; height: ' +
+                chartHeight +
+                'px; border-bottom: 2px solid #333; padding: 0 5px;">';
         for (let i = 2; i <= 12; i++) {
             const rolls = game.diceRolls[i];
             const barHeight = maxRolls > 0 ? (rolls / maxRolls) * (chartHeight - 20) : 0;
-            const barColor = i === 7 ? '#ff6b6b' : (i === 6 || i === 8) ? '#4ecdc4' : '#45b7d1';
+            const barColor = i === 7 ? '#ff6b6b' : i === 6 || i === 8 ? '#4ecdc4' : '#45b7d1';
             chart += `
       <div style="display: flex; flex-direction: column; align-items: center; min-width: 25px;">
         <div style="font-size: 10px; font-weight: bold; margin-bottom: 2px;">${rolls}</div>
@@ -679,93 +706,9 @@
             gameStateOverlay.style.transform = `scale(${currentScale})`;
         }
     }
-    function setYouPlayerSelectedCallback(callback) {
-        youPlayerSelectedCallback = callback;
-    }
-    function showYouPlayerDialog() {
-        if (game.players.length === 0)
-            return;
-        // Mark that we've asked to prevent multiple dialogs
-        markYouPlayerAsked();
-        // Create modal backdrop
-        const backdrop = document.createElement('div');
-        backdrop.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 10001;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-  `;
-        // Create dialog
-        const dialog = document.createElement('div');
-        dialog.style.cssText = `
-    background: white;
-    border-radius: 8px;
-    padding: 20px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    max-width: 400px;
-    width: 90%;
-    font-family: Arial, sans-serif;
-  `;
-        dialog.innerHTML = `
-    <h3 style="margin: 0 0 15px 0; color: #2c3e50;">🎲 Catan Counter Setup</h3>
-    <p style="margin: 0 0 20px 0; color: #555;">
-      Which player are you? This helps the extension track when resources are stolen "from you".
-    </p>
-    <div id="player-buttons" style="display: flex; flex-direction: column; gap: 10px;">
-      ${game.players.map(player => `
-        <button 
-          data-player="${player.name}" 
-          style="
-            padding: 12px; 
-            border: 2px solid #3498db; 
-            background: #ecf0f1; 
-            border-radius: 6px; 
-            cursor: pointer; 
-            font-weight: bold;
-            transition: all 0.2s;
-          "
-          onmouseover="this.style.background='#3498db'; this.style.color='white';"
-          onmouseout="this.style.background='#ecf0f1'; this.style.color='black';"
-        >
-          ${player.name}
-        </button>
-      `).join('')}
-    </div>
-  `;
-        backdrop.appendChild(dialog);
-        document.body.appendChild(backdrop);
-        // Add click handlers
-        const buttons = dialog.querySelectorAll('[data-player]');
-        buttons.forEach(button => {
-            button.addEventListener('click', () => {
-                const playerName = button.getAttribute('data-player');
-                if (playerName) {
-                    setYouPlayer(playerName);
-                    console.log(`🎯 "You" player set to: ${playerName}`);
-                    document.body.removeChild(backdrop);
-                    // Trigger reprocessing callback if provided
-                    if (youPlayerSelectedCallback) {
-                        youPlayerSelectedCallback();
-                    }
-                }
-            });
-        });
-        // Close on backdrop click
-        backdrop.addEventListener('click', (e) => {
-            if (e.target === backdrop) {
-                document.body.removeChild(backdrop);
-            }
-        });
-    }
 
     function updateGameFromChat(element) {
-        var _a, _b, _c;
+        var _a, _b;
         // If we're waiting for "you" player selection, don't process new messages
         if (isWaitingForYouPlayerSelection) {
             return;
@@ -814,10 +757,12 @@
             if (diceTotal && diceTotal >= 2 && diceTotal <= 12) {
                 game.diceRolls[diceTotal]++;
                 console.log(`🎲 Dice rolled: ${diceTotal}. Total rolls for ${diceTotal}: ${game.diceRolls[diceTotal]}`);
-                // Show "you" player dialog on the first dice roll
-                if (!hasAskedForYouPlayer && game.players.length > 0) {
-                    markYouPlayerAsked();
-                    showYouPlayerDialog();
+                // Auto-detect current player on the first dice roll instead of showing popup
+                if (!youPlayerName && game.players.length > 0) {
+                    const success = autoDetectCurrentPlayer();
+                    if (!success) {
+                        console.log('⚠️ Could not auto-detect current player. Manual selection may be needed.');
+                    }
                 }
             }
         }
@@ -927,7 +872,9 @@
             // Get the victim (second span with font-weight:600, after "from")
             const victimSpans = element.querySelectorAll('span[style*="font-weight:600"]');
             // if there are not two spans then the first user is "you"
-            const victim = victimSpans.length >= 2 ? victimSpans[1].textContent : victimSpans[0].textContent;
+            const victim = victimSpans.length >= 2
+                ? victimSpans[1].textContent
+                : victimSpans[0].textContent;
             if (victim && playerName) {
                 const stolenResource = getResourceType(element);
                 if (stolenResource) {
@@ -936,16 +883,24 @@
                     updateResources(victim, { [stolenResource]: -1 });
                     console.log(`🦹 ${playerName} stole ${stolenResource} from ${victim}`);
                 }
-                else if (Object.keys(((_b = game.players.find(p => p.name === playerName)) === null || _b === void 0 ? void 0 : _b.resources) || {}).length === 1) {
-                    const deductedStolenResource = Object.keys(((_c = game.players.find(p => p.name === playerName)) === null || _c === void 0 ? void 0 : _c.resources) || {})[0];
-                    updateResources(playerName, { [deductedStolenResource]: 1 });
-                    updateResources(victim, { [deductedStolenResource]: -1 });
-                    console.log(`🦹 ${playerName} stole ${deductedStolenResource} from ${victim}`);
-                }
                 else {
-                    // Unknown steal - we don't know what resource was stolen
-                    const transactionId = addUnknownSteal(playerName, victim);
-                    console.log(`🔍 ${playerName} stole unknown resource from ${victim} (Transaction: ${transactionId})`);
+                    // Check if victim has only one type of resource (with non-zero count)
+                    const victimPlayer = game.players.find(p => p.name === victim);
+                    const nonZeroResources = victimPlayer
+                        ? Object.entries(victimPlayer.resources).filter(([_, count]) => count > 0)
+                        : [];
+                    if (nonZeroResources.length === 1) {
+                        // Victim has only one type of resource - we can deduce what was stolen
+                        const [deductedStolenResource] = nonZeroResources[0];
+                        updateResources(playerName, { [deductedStolenResource]: 1 });
+                        updateResources(victim, { [deductedStolenResource]: -1 });
+                        console.log(`🦹 ${playerName} stole ${deductedStolenResource} from ${victim} (deduced - victim had only one resource type)`);
+                    }
+                    else {
+                        // Unknown steal - we don't know what resource was stolen
+                        const transactionId = addUnknownSteal(playerName, victim);
+                        console.log(`🔍 ${playerName} stole unknown resource from ${victim} (Transaction: ${transactionId})`);
+                    }
                 }
             }
         }
@@ -1194,6 +1149,42 @@
         else if (element.querySelector('hr')) ;
         // Scenario 26: Ignore learn how to play messages
         else if (messageText.includes('Learn how to play')) ;
+        // Scenario 27: Proposed counter offer
+        else if (messageText.includes('proposed counter offer to')) {
+            if (playerName) {
+                ensurePlayerExists(playerName);
+                // Parse the counter offer to extract what resources the player is offering
+                // Format: "Arop proposed counter offer to sadpanda10, offering [resources] for [resources]"
+                // Find the "offering" and "for" parts to extract what they're giving
+                const offeringMatch = messageText.match(/offering (.+?) for/);
+                if (offeringMatch) {
+                    // Get all images between "offering" and "for" to see what resources they have
+                    const messageHTML = element.innerHTML;
+                    const offeringSection = (_b = messageHTML
+                        .split('offering ')[1]) === null || _b === void 0 ? void 0 : _b.split(' for ')[0];
+                    if (offeringSection) {
+                        // Create a temporary element to parse the offering section
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = offeringSection;
+                        // Extract resources from the offering section
+                        const offeredResources = getResourcesFromImages(tempDiv, RESOURCE_STRING);
+                        if (Object.keys(offeredResources).length > 0) {
+                            console.log(`💰 ${playerName} proposed counter offer, confirming they have: ${JSON.stringify(offeredResources)}`);
+                            // This confirms the player has these resources, which can help resolve unknown transactions
+                            // Try to resolve unknown steals for each resource type they're offering
+                            Object.keys(offeredResources).forEach(resource => {
+                                const resourceKey = resource;
+                                const amount = offeredResources[resourceKey];
+                                if (amount > 0) {
+                                    // Try to resolve unknown transactions involving this resource
+                                    attemptToResolveUnknownTransactions(playerName, resourceKey, amount);
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
         // Log any unknown messages
         else {
             console.log('💬💬💬  New unknown message:', element);
@@ -1217,6 +1208,7 @@
         const chatContainer = findChatContainer();
         if (chatContainer) {
             console.log('✅ Chat container found!');
+            autoDetectCurrentPlayer();
             // Show the game state overlay
             showGameStateOverlay();
             // Process existing messages in case user refreshed the page
@@ -1238,42 +1230,6 @@
             console.log('⏳ Chat container not found, retrying...');
         }
     }
-    function reprocessAllMessages() {
-        // Find all chat messages
-        const chatElements = findAllChatMessages();
-        if (chatElements.length > 0) {
-            console.log(`🔄 Reprocessing ${chatElements.length} chat messages...`);
-            // Reset game state but keep "you" player info
-            resetGameState();
-            // Process all messages in order
-            chatElements.forEach((element, index) => {
-                console.log(`Processing message ${index + 1}/${chatElements.length}`);
-                updateGameFromChat(element);
-            });
-            console.log('✅ Finished reprocessing all messages');
-        }
-    }
-    function findAllChatMessages() {
-        // Try to find the chat container using the same logic as domUtils
-        const divs = document.querySelectorAll('div');
-        for (const outerDiv of Array.from(divs)) {
-            const firstChild = outerDiv.firstElementChild;
-            if ((firstChild === null || firstChild === void 0 ? void 0 : firstChild.tagName) === 'DIV') {
-                for (const child of Array.from(firstChild.children)) {
-                    if (child.tagName === 'SPAN') {
-                        const anchor = child.querySelector('a[href="#open-rulebook"]');
-                        if (anchor) {
-                            // Found the chat container, return all its child elements
-                            return Array.from(outerDiv.children);
-                        }
-                    }
-                }
-            }
-        }
-        return [];
-    }
-    // Set up the callback for when "you" player is selected
-    setYouPlayerSelectedCallback(reprocessAllMessages);
     // Start polling every 2 seconds
     const intervalId = window.setInterval(tryFindChat, 2000);
     // Optionally run immediately

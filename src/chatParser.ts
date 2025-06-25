@@ -1,15 +1,26 @@
 import { ResourceObjectType } from './types.js';
-import { game, ensurePlayerExists, updateResources, youPlayerName, hasAskedForYouPlayer, markYouPlayerAsked, isWaitingForYouPlayerSelection, resetGameState, addUnknownSteal, attemptToResolveUnknownTransactions } from './gameState.js';
-import { 
-  getPlayerName, 
-  getDiceRollTotal, 
-  getResourceType, 
-  getResourceTypeFromAlt, 
-  getTradePartner, 
-  getResourcesFromImages, 
-  RESOURCE_STRING 
+import {
+  game,
+  ensurePlayerExists,
+  updateResources,
+  youPlayerName,
+  markYouPlayerAsked,
+  isWaitingForYouPlayerSelection,
+  resetGameState,
+  addUnknownSteal,
+  attemptToResolveUnknownTransactions,
+  autoDetectCurrentPlayer,
+} from './gameState.js';
+import {
+  getPlayerName,
+  getDiceRollTotal,
+  getResourceType,
+  getResourceTypeFromAlt,
+  getTradePartner,
+  getResourcesFromImages,
+  RESOURCE_STRING,
 } from './domUtils.js';
-import { updateGameStateDisplay, showYouPlayerDialog } from './overlay.js';
+import { updateGameStateDisplay } from './overlay.js';
 
 export function updateGameFromChat(element: HTMLElement): void {
   // If we're waiting for "you" player selection, don't process new messages
@@ -40,7 +51,9 @@ export function updateGameFromChat(element: HTMLElement): void {
       // Player stole from "you"
       updateResources(playerName, { [stolenResource]: 1 } as any);
       updateResources(youPlayerName, { [stolenResource]: -1 } as any);
-      console.log(`🦹 ${playerName} stole ${stolenResource} from you (${youPlayerName})`);
+      console.log(
+        `🦹 ${playerName} stole ${stolenResource} from you (${youPlayerName})`
+      );
       updateGameStateDisplay();
       return; // Exit early since we've handled this message
     }
@@ -70,11 +83,15 @@ export function updateGameFromChat(element: HTMLElement): void {
       console.log(
         `🎲 Dice rolled: ${diceTotal}. Total rolls for ${diceTotal}: ${(game.diceRolls as any)[diceTotal]}`
       );
-      
-      // Show "you" player dialog on the first dice roll
-      if (!hasAskedForYouPlayer && game.players.length > 0) {
-        markYouPlayerAsked();
-        showYouPlayerDialog();
+
+      // Auto-detect current player on the first dice roll instead of showing popup
+      if (!youPlayerName && game.players.length > 0) {
+        const success = autoDetectCurrentPlayer();
+        if (!success) {
+          console.log(
+            '⚠️ Could not auto-detect current player. Manual selection may be needed.'
+          );
+        }
       }
     }
   }
@@ -211,10 +228,15 @@ export function updateGameFromChat(element: HTMLElement): void {
   // Scenario 6: Steal known (keyword: "stole" and "from")
   else if (messageText.includes('stole') && messageText.includes('from')) {
     // Get the victim (second span with font-weight:600, after "from")
-    const victimSpans = element.querySelectorAll('span[style*="font-weight:600"]');
+    const victimSpans = element.querySelectorAll(
+      'span[style*="font-weight:600"]'
+    );
     // if there are not two spans then the first user is "you"
-    const victim = victimSpans.length >= 2 ? victimSpans[1].textContent : victimSpans[0].textContent;
-    
+    const victim =
+      victimSpans.length >= 2
+        ? victimSpans[1].textContent
+        : victimSpans[0].textContent;
+
     if (victim && playerName) {
       const stolenResource = getResourceType(element);
       if (stolenResource) {
@@ -225,19 +247,26 @@ export function updateGameFromChat(element: HTMLElement): void {
       } else {
         // Check if victim has only one type of resource (with non-zero count)
         const victimPlayer = game.players.find(p => p.name === victim);
-        const nonZeroResources = victimPlayer ? 
-          Object.entries(victimPlayer.resources).filter(([_, count]) => count > 0) : [];
-        
+        const nonZeroResources = victimPlayer
+          ? Object.entries(victimPlayer.resources).filter(
+              ([_, count]) => count > 0
+            )
+          : [];
+
         if (nonZeroResources.length === 1) {
           // Victim has only one type of resource - we can deduce what was stolen
           const [deductedStolenResource] = nonZeroResources[0];
           updateResources(playerName, { [deductedStolenResource]: 1 } as any);
           updateResources(victim, { [deductedStolenResource]: -1 } as any);
-          console.log(`🦹 ${playerName} stole ${deductedStolenResource} from ${victim} (deduced - victim had only one resource type)`);
+          console.log(
+            `🦹 ${playerName} stole ${deductedStolenResource} from ${victim} (deduced - victim had only one resource type)`
+          );
         } else {
           // Unknown steal - we don't know what resource was stolen
           const transactionId = addUnknownSteal(playerName, victim);
-          console.log(`🔍 ${playerName} stole unknown resource from ${victim} (Transaction: ${transactionId})`);
+          console.log(
+            `🔍 ${playerName} stole unknown resource from ${victim} (Transaction: ${transactionId})`
+          );
         }
       }
     }
@@ -508,23 +537,29 @@ export function updateGameFromChat(element: HTMLElement): void {
   else if (messageText.includes('wants to give')) {
     if (playerName) {
       ensurePlayerExists(playerName);
-      
+
       // Parse what resources the player is offering to give (only before " for ")
-      const offeredResources = getResourcesFromImages(element, RESOURCE_STRING, ' for ');
-      
+      const offeredResources = getResourcesFromImages(
+        element,
+        RESOURCE_STRING,
+        ' for '
+      );
+
       // For each resource they're offering, they must have it
       // This can resolve unknown transactions
       Object.keys(offeredResources).forEach(resource => {
         const key = resource as keyof ResourceObjectType;
         const offeredCount = offeredResources[key];
-        
+
         if (offeredCount > 0) {
           // Try to resolve unknown transactions for this resource
           attemptToResolveUnknownTransactions(playerName, key, offeredCount);
         }
       });
-      
-      console.log(`💭 ${playerName} wants to trade (offering: ${JSON.stringify(offeredResources)}) - checking for unknown transaction resolution`);
+
+      console.log(
+        `💭 ${playerName} wants to trade (offering: ${JSON.stringify(offeredResources)}) - checking for unknown transaction resolution`
+      );
     }
   }
   // Scenario 24: Discards (keyword: "discarded")
@@ -560,6 +595,58 @@ export function updateGameFromChat(element: HTMLElement): void {
   // Scenario 26: Ignore learn how to play messages
   else if (messageText.includes('Learn how to play')) {
   }
+  // Scenario 27: Proposed counter offer
+  else if (messageText.includes('proposed counter offer to')) {
+    if (playerName) {
+      ensurePlayerExists(playerName);
+
+      // Parse the counter offer to extract what resources the player is offering
+      // Format: "Arop proposed counter offer to sadpanda10, offering [resources] for [resources]"
+
+      // Find the "offering" and "for" parts to extract what they're giving
+      const offeringMatch = messageText.match(/offering (.+?) for/);
+      if (offeringMatch) {
+        // Get all images between "offering" and "for" to see what resources they have
+        const messageHTML = element.innerHTML;
+        const offeringSection = messageHTML
+          .split('offering ')[1]
+          ?.split(' for ')[0];
+
+        if (offeringSection) {
+          // Create a temporary element to parse the offering section
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = offeringSection;
+
+          // Extract resources from the offering section
+          const offeredResources = getResourcesFromImages(
+            tempDiv,
+            RESOURCE_STRING
+          );
+
+          if (Object.keys(offeredResources).length > 0) {
+            console.log(
+              `💰 ${playerName} proposed counter offer, confirming they have: ${JSON.stringify(offeredResources)}`
+            );
+
+            // This confirms the player has these resources, which can help resolve unknown transactions
+            // Try to resolve unknown steals for each resource type they're offering
+            Object.keys(offeredResources).forEach(resource => {
+              const resourceKey = resource as keyof ResourceObjectType;
+              const amount = offeredResources[resourceKey];
+              if (amount > 0) {
+                // Try to resolve unknown transactions involving this resource
+                attemptToResolveUnknownTransactions(
+                  playerName,
+                  resourceKey,
+                  amount
+                );
+              }
+            });
+          }
+        }
+      }
+    }
+  }
   // Log any unknown messages
   else {
     console.log('💬💬💬  New unknown message:', element);
@@ -567,4 +654,4 @@ export function updateGameFromChat(element: HTMLElement): void {
 
   console.log('🎲 Game object:', game);
   updateGameStateDisplay();
-} 
+}

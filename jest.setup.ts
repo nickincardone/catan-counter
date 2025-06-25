@@ -16,4 +16,4 @@ beforeEach(() => {
 
 afterEach(() => {
   global.console = originalConsole;
-}); 
+});

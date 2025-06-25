@@ -4,8 +4,8 @@
 
 import { updateGameFromChat } from './chatParser.js';
 import { findChatContainer } from './domUtils.js';
-import { showGameStateOverlay, setYouPlayerSelectedCallback } from './overlay.js';
-import { resetGameState } from './gameState.js';
+import { showGameStateOverlay } from './overlay.js';
+import { resetGameState, autoDetectCurrentPlayer } from './gameState.js';
 
 const chatMutationCallback = (mutationsList: MutationRecord[]) => {
   for (const mutation of mutationsList) {
@@ -23,6 +23,8 @@ function tryFindChat(): void {
 
   if (chatContainer) {
     console.log('✅ Chat container found!');
+
+    autoDetectCurrentPlayer();
 
     // Show the game state overlay
     showGameStateOverlay();
@@ -54,19 +56,19 @@ function tryFindChat(): void {
 function reprocessAllMessages(): void {
   // Find all chat messages
   const chatElements = findAllChatMessages();
-  
+
   if (chatElements.length > 0) {
     console.log(`🔄 Reprocessing ${chatElements.length} chat messages...`);
-    
+
     // Reset game state but keep "you" player info
     resetGameState();
-    
+
     // Process all messages in order
     chatElements.forEach((element, index) => {
       console.log(`Processing message ${index + 1}/${chatElements.length}`);
       updateGameFromChat(element);
     });
-    
+
     console.log('✅ Finished reprocessing all messages');
   }
 }
@@ -74,7 +76,7 @@ function reprocessAllMessages(): void {
 function findAllChatMessages(): HTMLElement[] {
   // Try to find the chat container using the same logic as domUtils
   const divs = document.querySelectorAll<HTMLDivElement>('div');
-  
+
   for (const outerDiv of Array.from(divs)) {
     const firstChild = outerDiv.firstElementChild;
 
@@ -92,12 +94,9 @@ function findAllChatMessages(): HTMLElement[] {
       }
     }
   }
-  
+
   return [];
 }
-
-// Set up the callback for when "you" player is selected
-setYouPlayerSelectedCallback(reprocessAllMessages);
 
 // Start polling every 2 seconds
 const intervalId: number = window.setInterval(tryFindChat, 2000);
