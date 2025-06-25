@@ -117,6 +117,93 @@
         });
         return resources;
     }
+    /**
+     * Parse trade resources from HTML element by splitting on text markers
+     */
+    function parseTradeResources(element) {
+        const elementHTML = element.innerHTML;
+        const gaveEndIndex = elementHTML.indexOf(' and got ');
+        const fromIndex = elementHTML.indexOf(' from ');
+        if (gaveEndIndex === -1 || fromIndex === -1)
+            return null;
+        // Extract the "gave" section (before " and got ")
+        const gaveDiv = document.createElement('div');
+        gaveDiv.innerHTML = elementHTML.substring(0, gaveEndIndex);
+        // Extract the "got" section (between " and got " and " from ")
+        const gotDiv = document.createElement('div');
+        const gotStartIndex = gaveEndIndex + ' and got '.length;
+        gotDiv.innerHTML = elementHTML.substring(gotStartIndex, fromIndex);
+        // Count resources in each section
+        const gave = {};
+        const got = {};
+        // Count gave resources
+        gaveDiv.querySelectorAll('img').forEach(img => {
+            const resourceType = getResourceTypeFromAlt(img.getAttribute('alt'));
+            if (resourceType) {
+                gave[resourceType] = (gave[resourceType] || 0) + 1;
+            }
+        });
+        // Count got resources
+        gotDiv.querySelectorAll('img').forEach(img => {
+            const resourceType = getResourceTypeFromAlt(img.getAttribute('alt'));
+            if (resourceType) {
+                got[resourceType] = (got[resourceType] || 0) + 1;
+            }
+        });
+        return { gave, got };
+    }
+    /**
+     * Get the victim name from a steal message
+     */
+    function getStealVictim(element) {
+        // Get the victim (second span with font-weight:600, after "from")
+        const victimSpans = element.querySelectorAll('span[style*="font-weight:600"]');
+        // if there are not two spans then the first user is "you"
+        return victimSpans.length >= 2
+            ? victimSpans[1].textContent || null
+            : victimSpans[0].textContent || null;
+    }
+    /**
+     * Parse bank trade resources from HTML element
+     */
+    function parseBankTrade(element) {
+        const resourceImages = element.querySelectorAll(RESOURCE_STRING);
+        const gaveResources = getResourcesFromImages(element, RESOURCE_STRING);
+        // The last image is what they took, everything before is what they gave
+        if (resourceImages.length > 1) {
+            const tookImage = resourceImages[resourceImages.length - 1];
+            const tookType = getResourceTypeFromAlt(tookImage.getAttribute('alt'));
+            if (tookType) {
+                // Remove what they took from the gave count
+                gaveResources[tookType]--;
+                // Calculate net changes (negative for gave, positive for took)
+                const resourceChanges = Object.assign({}, gaveResources);
+                Object.keys(resourceChanges).forEach(key => {
+                    resourceChanges[key] *= -1;
+                });
+                resourceChanges[tookType] = 1;
+                return resourceChanges;
+            }
+        }
+        return null;
+    }
+    /**
+     * Parse offered resources from counter offer HTML element
+     */
+    function parseCounterOfferResources(element) {
+        var _a;
+        // Get all images between "offering" and "for" to see what resources they have
+        const messageHTML = element.innerHTML;
+        const offeringSection = (_a = messageHTML.split('offering ')[1]) === null || _a === void 0 ? void 0 : _a.split(' for ')[0];
+        if (offeringSection) {
+            // Create a temporary element to parse the offering section
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = offeringSection;
+            // Extract resources from the offering section
+            return getResourcesFromImages(tempDiv, RESOURCE_STRING);
+        }
+        return {};
+    }
 
     function getDefaultGame() {
         return {
@@ -433,6 +520,399 @@
         console.log(`✅ Resolved ${affectedTransactions.length} unknown transactions involving ${resourceType}`);
     }
 
+    /**
+     * Handle a player discarding resources
+     */
+    function playerDiscard(playerName, discardedResources) {
+        if (!playerName)
+            return;
+        // Remove resources from player (negative values, automatically adds to bank)
+        const playerChanges = {};
+        Object.keys(discardedResources).forEach(resource => {
+            const key = resource;
+            const count = discardedResources[key];
+            if (count && count > 0) {
+                playerChanges[key] = -count;
+            }
+        });
+        updateResources(playerName, playerChanges);
+        console.log(`🗑️ ${playerName} discarded resources: ${JSON.stringify(discardedResources)}`);
+    }
+    /**
+     * Handle a player placing a settlement
+     */
+    function placeSettlement(playerName) {
+        if (!playerName)
+            return;
+        ensurePlayerExists(playerName);
+        const player = game.players.find(p => p.name === playerName);
+        if (player && player.settlements > 0) {
+            player.settlements--;
+            console.log(`🏠 ${playerName} placed a settlement. Remaining settlements: ${player.settlements}`);
+        }
+    }
+    /**
+     * Handle a dice roll
+     */
+    function rollDice(diceTotal) {
+        if (diceTotal >= 2 && diceTotal <= 12) {
+            game.diceRolls[diceTotal]++;
+            console.log(`🎲 Dice rolled: ${diceTotal}. Total rolls for ${diceTotal}: ${game.diceRolls[diceTotal]}`);
+            // Auto-detect current player on the first dice roll instead of showing popup
+            if (!youPlayerName && game.players.length > 0) {
+                const success = autoDetectCurrentPlayer();
+                if (!success) {
+                    console.log('⚠️ Could not auto-detect current player. Manual selection may be needed.');
+                }
+            }
+        }
+    }
+    /**
+     * Handle a player placing a road
+     */
+    function placeRoad(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player && player.roads > 0) {
+            player.roads--;
+            console.log(`🛣️ ${playerName} placed a road. Remaining roads: ${player.roads}`);
+        }
+    }
+    /**
+     * Handle a trade between two players
+     */
+    function playerTrade(playerName, tradePartner, resourceChanges) {
+        if (!playerName || !tradePartner)
+            return;
+        // Validate that there are actual resource changes
+        const hasChanges = Object.values(resourceChanges).some(count => count && count !== 0);
+        if (!hasChanges)
+            return;
+        // Update the player who initiated the trade
+        updateResources(playerName, resourceChanges);
+        // Update the trade partner (opposite changes)
+        const partnerChanges = {};
+        Object.entries(resourceChanges).forEach(([resource, count]) => {
+            if (count && count !== 0) {
+                partnerChanges[resource] = -count;
+            }
+        });
+        updateResources(tradePartner, partnerChanges);
+        console.log(`🤝 ${playerName} traded with ${tradePartner}. Changes: ${JSON.stringify(resourceChanges)}`);
+    }
+    /**
+     * Handle a player getting resources
+     */
+    function playerGetResources(playerName, resources) {
+        if (!playerName)
+            return;
+        // Validate that there are actual resources to get
+        const hasResources = Object.values(resources).some(count => count && count > 0);
+        if (!hasResources)
+            return;
+        updateResources(playerName, resources);
+        console.log(`🌾 ${playerName} got resources: ${JSON.stringify(resources)}`);
+    }
+    /**
+     * Handle a known steal where we know what resource was stolen
+     */
+    function knownSteal(thief, victim, resource) {
+        if (!thief || !victim)
+            return;
+        updateResources(thief, { [resource]: 1 });
+        updateResources(victim, { [resource]: -1 });
+        console.log(`🦹 ${thief} stole ${resource} from ${victim}`);
+    }
+    /**
+     * Handle an unknown steal - tries to deduce the resource or records it as unknown
+     */
+    function unknownSteal(thief, victim) {
+        if (!thief || !victim)
+            return;
+        // Check if victim has only one type of resource (with non-zero count)
+        const victimPlayer = game.players.find(p => p.name === victim);
+        const nonZeroResources = victimPlayer
+            ? Object.entries(victimPlayer.resources).filter(([_, count]) => count > 0)
+            : [];
+        if (nonZeroResources.length === 1) {
+            // Victim has only one type of resource - we can deduce what was stolen
+            const [deductedResource] = nonZeroResources[0];
+            const resourceType = deductedResource;
+            knownSteal(thief, victim, resourceType);
+        }
+        else {
+            // Unknown steal - we don't know what resource was stolen
+            const transactionId = addUnknownSteal(thief, victim);
+            console.log(`🔍 ${thief} stole unknown resource from ${victim} (Transaction: ${transactionId})`);
+        }
+    }
+    /**
+     * Handle a player buying a development card
+     */
+    function buyDevCard(playerName) {
+        if (!playerName)
+            return;
+        game.devCards--;
+        updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
+        console.log(`🃏 ${playerName} bought a development card. Remaining dev cards: ${game.devCards}`);
+    }
+    /**
+     * Handle a player trading with the bank
+     */
+    function bankTrade(playerName, resourceChanges) {
+        if (!playerName)
+            return;
+        updateResources(playerName, resourceChanges);
+        console.log(`🏦 ${playerName} traded with bank. Changes: ${JSON.stringify(resourceChanges)}`);
+    }
+    /**
+     * Handle a player using a knight card
+     */
+    function useKnight(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            player.knights++;
+            player.discoveryCards.knights--;
+            console.log(`⚔️ ${playerName} used a knight. Total knights played: ${player.knights}`);
+        }
+    }
+    /**
+     * Handle a player building a settlement
+     */
+    function buildSettlement(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            // Cost: 1 wood, 1 wheat, 1 brick, 1 sheep
+            updateResources(playerName, {
+                tree: -1,
+                wheat: -1,
+                brick: -1,
+                sheep: -1,
+            });
+            player.settlements--;
+            player.victoryPoints++;
+            console.log(`🏠 ${playerName} built a settlement. VP: ${player.victoryPoints}, Remaining settlements: ${player.settlements}`);
+        }
+    }
+    /**
+     * Handle a player building a city
+     */
+    function buildCity(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            updateResources(playerName, { ore: -3, wheat: -2 });
+            player.cities--;
+            player.settlements++; // City replaces settlement
+            player.victoryPoints++;
+            console.log(`🏰 ${playerName} built a city. VP: ${player.victoryPoints}, Remaining cities: ${player.cities}`);
+        }
+    }
+    /**
+     * Handle a player building a road
+     */
+    function buildRoad(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            updateResources(playerName, { tree: -1, brick: -1 });
+            player.roads--;
+            console.log(`🛣️ ${playerName} built a road. Remaining roads: ${player.roads}`);
+        }
+    }
+    /**
+     * Handle a player moving the robber
+     */
+    function moveRobber(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            player.totalRobbers++;
+            console.log(`🔒 ${playerName} moved the robber. Total robber moves: ${player.totalRobbers}`);
+        }
+    }
+    /**
+     * Handle a player using Year of Plenty card
+     */
+    function useYearOfPlenty(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.yearOfPlenties--;
+            player.discoveryCards.yearOfPlenties--;
+            console.log(`🎯 ${playerName} used Year of Plenty. Remaining: ${game.yearOfPlenties}`);
+        }
+    }
+    /**
+     * Handle a player taking resources from bank via Year of Plenty
+     */
+    function yearOfPlentyTake(playerName, resources) {
+        if (!playerName)
+            return;
+        const hasResources = Object.values(resources).some(count => count && count > 0);
+        if (!hasResources)
+            return;
+        updateResources(playerName, resources);
+        console.log(`🎯 ${playerName} took from bank via Year of Plenty: ${JSON.stringify(resources)}`);
+    }
+    /**
+     * Handle a player using Road Building card
+     */
+    function useRoadBuilding(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.roadBuilders--;
+            player.discoveryCards.roadBuilders--;
+            console.log(`🛣️ ${playerName} used Road Building. Remaining: ${game.roadBuilders}`);
+        }
+    }
+    /**
+     * Handle a player using Monopoly card
+     */
+    function useMonopoly(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.monopolies--;
+            player.discoveryCards.monopolies--;
+            console.log(`💰 ${playerName} used Monopoly. Remaining: ${game.monopolies}`);
+        }
+    }
+    /**
+     * Handle monopoly resource steal - takes resources from all other players
+     */
+    function monopolySteal(playerName, resourceType, totalStolen) {
+        if (!playerName || totalStolen <= 0)
+            return;
+        const monopolyPlayer = game.players.find(p => p.name === playerName);
+        if (!monopolyPlayer)
+            return;
+        // Calculate total resources to steal and remove from other players
+        let actualStolen = 0;
+        game.players.forEach(otherPlayer => {
+            if (otherPlayer.name !== playerName) {
+                const playerHas = otherPlayer.resources[resourceType];
+                if (playerHas > 0) {
+                    actualStolen += playerHas;
+                    otherPlayer.resources[resourceType] = 0;
+                }
+            }
+        });
+        // Add the actual stolen amount to monopoly player (directly, not via updateResources)
+        monopolyPlayer.resources[resourceType] += actualStolen;
+        console.log(`💰 ${playerName} monopolized ${actualStolen} ${resourceType} from all players (expected: ${totalStolen})`);
+    }
+    /**
+     * Handle a player receiving starting resources
+     */
+    function receiveStartingResources(playerName, resources) {
+        if (!playerName)
+            return;
+        const hasResources = Object.values(resources).some(count => count && count > 0);
+        if (!hasResources)
+            return;
+        updateResources(playerName, resources);
+        console.log(`🏁 ${playerName} received starting resources: ${JSON.stringify(resources)}`);
+    }
+    /**
+     * Handle a player offering resources in trade (helps resolve unknown transactions)
+     */
+    function playerOffer(playerName, offeredResources) {
+        if (!playerName)
+            return;
+        const hasResources = Object.values(offeredResources).some(count => count && count > 0);
+        if (!hasResources)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (!player)
+            return;
+        // For each resource they're offering, they must have it
+        // This can resolve unknown transactions
+        Object.keys(offeredResources).forEach(resource => {
+            const key = resource;
+            const offeredCount = offeredResources[key];
+            if (offeredCount && offeredCount > 0) {
+                // Try to resolve unknown transactions for this resource
+                attemptToResolveUnknownTransactions(playerName, key, offeredCount);
+                // If player is offering exactly the amount they have of a resource,
+                // eliminate it from any unknown transactions where they were the victim
+                // (because they must still have it to be able to offer it)
+                if (player.resources[key] === offeredCount) {
+                    eliminateResourceFromVictimTransactions(playerName, key);
+                }
+            }
+        });
+        console.log(`💭 ${playerName} (offering: ${JSON.stringify(offeredResources)}) - checking for unknown transaction resolution`);
+    }
+    /**
+     * Eliminate a resource from unknown transactions where the player was the victim
+     * (because if they're offering it and only have 1, they must still have it)
+     */
+    function eliminateResourceFromVictimTransactions(playerName, resource) {
+        const affectedTransactions = game.unknownTransactions.filter(transaction => !transaction.isResolved &&
+            transaction.victim === playerName &&
+            transaction.possibleResources[resource] > 0);
+        affectedTransactions.forEach(transaction => {
+            console.log(`🔍 Eliminating ${resource} from transaction ${transaction.id} - ${playerName} proven to still have it`);
+            const thiefPlayer = game.players.find(p => p.name === transaction.thief);
+            const victimPlayer = game.players.find(p => p.name === transaction.victim);
+            if (!thiefPlayer || !victimPlayer)
+                return;
+            // Calculate original probabilities
+            const totalPossibleCards = Object.values(transaction.possibleResources).reduce((sum, count) => sum + count, 0);
+            if (totalPossibleCards === 0)
+                return;
+            // Calculate the probability that was assigned to this resource type
+            const eliminatedProbability = transaction.possibleResources[resource] / totalPossibleCards;
+            // Remove this probability from both players
+            thiefPlayer.resourceProbabilities[resource] -= eliminatedProbability;
+            victimPlayer.resourceProbabilities[resource] += eliminatedProbability;
+            // Update the transaction to reflect that this resource is no longer possible
+            transaction.possibleResources[resource] = 0;
+            // Recalculate probabilities for remaining possible resources
+            const remainingTotal = Object.values(transaction.possibleResources).reduce((sum, count) => sum + count, 0);
+            if (remainingTotal > 0) {
+                // Redistribute the eliminated probability among remaining possible resources
+                Object.keys(transaction.possibleResources).forEach(res => {
+                    const key = res;
+                    const resourceCount = transaction.possibleResources[key];
+                    if (resourceCount > 0) {
+                        const newProbability = resourceCount / remainingTotal;
+                        const oldProbability = resourceCount / totalPossibleCards;
+                        const probabilityIncrease = newProbability - oldProbability;
+                        // Update player probabilities
+                        thiefPlayer.resourceProbabilities[key] += probabilityIncrease;
+                        victimPlayer.resourceProbabilities[key] -= probabilityIncrease;
+                    }
+                });
+                console.log(`📊 Updated probabilities for transaction ${transaction.id} - eliminated ${resource}`);
+            }
+        });
+    }
+    /**
+     * Handle a player stealing a specific resource from the current player
+     */
+    function stealFromYou(thief, victim, stolenResource) {
+        if (!thief || !victim)
+            return;
+        // Transfer resource from victim to thief
+        updateResources(thief, { [stolenResource]: 1 });
+        updateResources(victim, { [stolenResource]: -1 });
+        console.log(`🦹 ${thief} stole ${stolenResource} from you (${victim})`);
+    }
+
     // Create draggable overlay for game state display
     let gameStateOverlay = null;
     let isDragging = false;
@@ -707,13 +1187,32 @@
         }
     }
 
+    /**
+     * Check if an element should be ignored (not processed)
+     */
+    function ignoreElement(element, messageText) {
+        return (
+        // Disconnection messages
+        messageText.includes('has disconnected') ||
+            messageText.includes('will take over') ||
+            // Reconnection messages
+            messageText.includes('has reconnected') ||
+            // Robber blocking messages
+            messageText.includes('is blocked by the Robber') ||
+            messageText.includes('No resources produced') ||
+            // HR elements
+            element.querySelector('hr') !== null ||
+            // Learn how to play messages
+            messageText.includes('Learn how to play'));
+    }
     function updateGameFromChat(element) {
-        var _a, _b;
+        var _a;
         // If we're waiting for "you" player selection, don't process new messages
-        if (isWaitingForYouPlayerSelection) {
+        if (isWaitingForYouPlayerSelection)
             return;
-        }
         const messageText = ((_a = element.textContent) === null || _a === void 0 ? void 0 : _a.replace(/\s+/g, ' ').trim()) || '';
+        if (ignoreElement(element, messageText))
+            return;
         let playerName = getPlayerName(element);
         // getting correct player name when it says "You stole"
         if (messageText.includes('You stole') && messageText.includes('from')) {
@@ -727,463 +1226,151 @@
                 }
             }
         }
-        // Handle "[Player] stole [resource] from you" scenario
+        // Scenario 0: Handle "[Player] stole [resource] from you" scenario
         if (messageText.includes('stole') && messageText.includes('from you')) {
             const stolenResource = getResourceType(element);
-            if (stolenResource && playerName && youPlayerName) {
-                // Player stole from "you"
-                updateResources(playerName, { [stolenResource]: 1 });
-                updateResources(youPlayerName, { [stolenResource]: -1 });
-                console.log(`🦹 ${playerName} stole ${stolenResource} from you (${youPlayerName})`);
-                updateGameStateDisplay();
-                return; // Exit early since we've handled this message
+            if (stolenResource) {
+                stealFromYou(playerName, youPlayerName, stolenResource);
             }
         }
         // Scenario 1: Place settlement (keyword: "placed a")
-        if (messageText.includes('placed a') &&
+        else if (messageText.includes('placed a') &&
             element.querySelector('img[alt="settlement"]')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const player = game.players.find(p => p.name === playerName);
-                if (player && player.settlements > 0) {
-                    player.settlements--;
-                    console.log(`🏠 ${playerName} placed a settlement. Remaining settlements: ${player.settlements}`);
-                }
-            }
+            placeSettlement(playerName);
         }
         // Scenario 2: Roll dice (keyword: "rolled")
         else if (messageText.includes('rolled')) {
             const diceTotal = getDiceRollTotal(element);
-            if (diceTotal && diceTotal >= 2 && diceTotal <= 12) {
-                game.diceRolls[diceTotal]++;
-                console.log(`🎲 Dice rolled: ${diceTotal}. Total rolls for ${diceTotal}: ${game.diceRolls[diceTotal]}`);
-                // Auto-detect current player on the first dice roll instead of showing popup
-                if (!youPlayerName && game.players.length > 0) {
-                    const success = autoDetectCurrentPlayer();
-                    if (!success) {
-                        console.log('⚠️ Could not auto-detect current player. Manual selection may be needed.');
-                    }
-                }
+            if (diceTotal) {
+                rollDice(diceTotal);
             }
         }
         // Scenario 3: Place road (keyword: "placed a" + road image)
         else if (messageText.includes('placed a') &&
             element.querySelector('img[alt="road"]')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const player = game.players.find(p => p.name === playerName);
-                if (player && player.roads > 0) {
-                    player.roads--;
-                    console.log(`🛣️ ${playerName} placed a road. Remaining roads: ${player.roads}`);
-                }
-            }
+            placeRoad(playerName);
         }
         // Scenario 4: Known trade (keyword: "gave" and "got" and "from")
         else if (messageText.includes('gave') &&
             messageText.includes('got') &&
             messageText.includes('from')) {
-            if (playerName) {
-                const tradePartner = getTradePartner(element);
-                if (tradePartner) {
-                    // Split the message to separate what was given from what was received
-                    const messageParts = messageText.split(' and got ');
-                    if (messageParts.length === 2) {
-                        messageParts[0];
-                        messageParts[1].split(' from ')[0];
-                        // Get all resource images in the element
-                        element.querySelectorAll(RESOURCE_STRING);
-                        // Count resources in the "gave" section by looking at text position
-                        const gaveResources = {};
-                        const gotResources = {};
-                        // Find the position where "and got" appears in the HTML
-                        const elementHTML = element.innerHTML;
-                        const gaveEndIndex = elementHTML.indexOf(' and got ');
-                        if (gaveEndIndex !== -1) {
-                            // Create temporary elements to count resources in each section
-                            const tempGaveDiv = document.createElement('div');
-                            tempGaveDiv.innerHTML = elementHTML.substring(0, gaveEndIndex);
-                            const gaveImages = tempGaveDiv.querySelectorAll(RESOURCE_STRING);
-                            const tempGotDiv = document.createElement('div');
-                            const gotStartIndex = gaveEndIndex + ' and got '.length;
-                            const gotEndIndex = elementHTML.indexOf(' from ');
-                            tempGotDiv.innerHTML = elementHTML.substring(gotStartIndex, gotEndIndex);
-                            const gotImages = tempGotDiv.querySelectorAll(RESOURCE_STRING);
-                            // Count gave resources
-                            gaveImages.forEach(img => {
-                                const resourceType = getResourceTypeFromAlt(img.getAttribute('alt'));
-                                if (resourceType) {
-                                    gaveResources[resourceType] =
-                                        (gaveResources[resourceType] || 0) + 1;
-                                }
-                            });
-                            // Count got resources
-                            gotImages.forEach(img => {
-                                const resourceType = getResourceTypeFromAlt(img.getAttribute('alt'));
-                                if (resourceType) {
-                                    gotResources[resourceType] =
-                                        (gotResources[resourceType] || 0) + 1;
-                                }
-                            });
-                            // Apply trade to both players
-                            if (Object.keys(gaveResources).length > 0 &&
-                                Object.keys(gotResources).length > 0) {
-                                // Update player who initiated trade (loses gave resources, gains got resources)
-                                const playerChanges = {};
-                                Object.keys(gaveResources).forEach(resource => {
-                                    const key = resource;
-                                    playerChanges[key] = -(gaveResources[key] || 0);
-                                });
-                                Object.keys(gotResources).forEach(resource => {
-                                    const key = resource;
-                                    playerChanges[key] =
-                                        (playerChanges[key] || 0) + (gotResources[key] || 0);
-                                });
-                                updateResources(playerName, playerChanges);
-                                // Update trade partner (gains gave resources, loses got resources)
-                                const partnerChanges = {};
-                                Object.keys(gaveResources).forEach(resource => {
-                                    const key = resource;
-                                    partnerChanges[key] = gaveResources[key] || 0;
-                                });
-                                Object.keys(gotResources).forEach(resource => {
-                                    const key = resource;
-                                    partnerChanges[key] =
-                                        (partnerChanges[key] || 0) - (gotResources[key] || 0);
-                                });
-                                updateResources(tradePartner, partnerChanges);
-                                console.log(`🤝 ${playerName} traded ${JSON.stringify(gaveResources)} for ${JSON.stringify(gotResources)} with ${tradePartner}`);
-                            }
-                        }
+            const tradePartner = getTradePartner(element);
+            const tradeData = parseTradeResources(element);
+            if (tradeData) {
+                // Calculate net resource changes for the 1stplayer (negative for gave, positive for got)
+                const resourceChanges = {};
+                // Add what they gave (negative values)
+                Object.entries(tradeData.gave).forEach(([resource, count]) => {
+                    if (count && count > 0) {
+                        resourceChanges[resource] = -count;
                     }
-                }
+                });
+                // Add what they got (positive values)
+                Object.entries(tradeData.got).forEach(([resource, count]) => {
+                    if (count && count > 0) {
+                        resourceChanges[resource] =
+                            (resourceChanges[resource] || 0) +
+                                count;
+                    }
+                });
+                playerTrade(playerName, tradePartner, resourceChanges);
             }
         }
         // Scenario 5: Get resources (keyword: "got")
         else if (messageText.includes('got')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const gotResources = getResourcesFromImages(element, RESOURCE_STRING);
-                updateResources(playerName, gotResources);
-                console.log(`🌾 ${playerName} got resources: ${JSON.stringify(gotResources)}`);
-            }
+            const gotResources = getResourcesFromImages(element, RESOURCE_STRING);
+            playerGetResources(playerName, gotResources);
         }
-        // Scenario 6: Steal known (keyword: "stole" and "from")
+        // Scenario 6: Steal (keyword: "stole" and "from")
         else if (messageText.includes('stole') && messageText.includes('from')) {
-            // Get the victim (second span with font-weight:600, after "from")
-            const victimSpans = element.querySelectorAll('span[style*="font-weight:600"]');
-            // if there are not two spans then the first user is "you"
-            const victim = victimSpans.length >= 2
-                ? victimSpans[1].textContent
-                : victimSpans[0].textContent;
-            if (victim && playerName) {
-                const stolenResource = getResourceType(element);
-                if (stolenResource) {
-                    // Known steal - we know what resource was stolen
-                    updateResources(playerName, { [stolenResource]: 1 });
-                    updateResources(victim, { [stolenResource]: -1 });
-                    console.log(`🦹 ${playerName} stole ${stolenResource} from ${victim}`);
-                }
-                else {
-                    // Check if victim has only one type of resource (with non-zero count)
-                    const victimPlayer = game.players.find(p => p.name === victim);
-                    const nonZeroResources = victimPlayer
-                        ? Object.entries(victimPlayer.resources).filter(([_, count]) => count > 0)
-                        : [];
-                    if (nonZeroResources.length === 1) {
-                        // Victim has only one type of resource - we can deduce what was stolen
-                        const [deductedStolenResource] = nonZeroResources[0];
-                        updateResources(playerName, { [deductedStolenResource]: 1 });
-                        updateResources(victim, { [deductedStolenResource]: -1 });
-                        console.log(`🦹 ${playerName} stole ${deductedStolenResource} from ${victim} (deduced - victim had only one resource type)`);
-                    }
-                    else {
-                        // Unknown steal - we don't know what resource was stolen
-                        const transactionId = addUnknownSteal(playerName, victim);
-                        console.log(`🔍 ${playerName} stole unknown resource from ${victim} (Transaction: ${transactionId})`);
-                    }
-                }
-            }
+            const victim = getStealVictim(element);
+            const stolenResource = getResourceType(element);
+            stolenResource
+                ? knownSteal(playerName, victim, stolenResource)
+                : unknownSteal(playerName, victim);
         }
         // Scenario 7: Buy dev card (keyword: "bought" + development card image)
         else if (messageText.includes('bought') &&
             element.querySelector('img[alt="development card"]')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                game.devCards--;
-                // Cost: 1 wheat, 1 sheep, 1 ore (updateResources will handle unknown transaction resolution)
-                updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
-                console.log(`🃏 ${playerName} bought a development card. Remaining dev cards: ${game.devCards}`);
-            }
+            buyDevCard(playerName);
         }
         // Scenario 8: Bank trade (keyword: "gave bank" and "took")
         else if (messageText.includes('gave bank') && messageText.includes('took')) {
-            if (playerName) {
-                const resourceImages = element.querySelectorAll(RESOURCE_STRING);
-                const gaveResources = getResourcesFromImages(element, RESOURCE_STRING);
-                // The last image is what they took, everything before is what they gave
-                if (resourceImages.length > 1) {
-                    const tookImage = resourceImages[resourceImages.length - 1];
-                    const tookType = getResourceTypeFromAlt(tookImage.getAttribute('alt'));
-                    if (tookType) {
-                        // Remove what they took from the gave count
-                        gaveResources[tookType]--;
-                        // Update player resources (negative for gave, positive for took)
-                        const playerChanges = Object.assign({}, gaveResources);
-                        Object.keys(playerChanges).forEach(key => {
-                            playerChanges[key] *= -1;
-                        });
-                        playerChanges[tookType] = 1;
-                        updateResources(playerName, playerChanges);
-                        console.log(`🏦 ${playerName} traded with bank: gave ${JSON.stringify(gaveResources)}, got ${tookType}`);
-                    }
-                }
+            const resourceChanges = parseBankTrade(element);
+            if (resourceChanges) {
+                bankTrade(playerName, resourceChanges);
             }
         }
         // Scenario 9: Used knight (keyword: "used" + "Knight")
         else if (messageText.includes('used') && messageText.includes('Knight')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const player = game.players.find(p => p.name === playerName);
-                if (player) {
-                    player.knights++;
-                    player.discoveryCards.knights--;
-                    console.log(`⚔️ ${playerName} used a knight. Total knights played: ${player.knights}`);
-                }
-            }
+            useKnight(playerName);
         }
-        // Scenario 10: Buy settlement (keyword: "built a" + settlement image)
+        // Scenario 10: Build settlement (keyword: "built a" + settlement image)
         else if (messageText.includes('built a') &&
             element.querySelector('img[alt="settlement"]')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const player = game.players.find(p => p.name === playerName);
-                if (player) {
-                    // Cost: 1 wood, 1 wheat, 1 brick, 1 sheep (updateResources will handle unknown transaction resolution)
-                    updateResources(playerName, {
-                        tree: -1,
-                        wheat: -1,
-                        brick: -1,
-                        sheep: -1,
-                    });
-                    player.settlements--;
-                    player.victoryPoints++;
-                    console.log(`🏠 ${playerName} built a settlement. VP: ${player.victoryPoints}, Remaining settlements: ${player.settlements}`);
-                }
-            }
+            buildSettlement(playerName);
         }
-        // Scenario 11: Buy city (keyword: "built a" + city image)
+        // Scenario 11: Build city (keyword: "built a" + city image)
         else if (messageText.includes('built a') &&
             element.querySelector('img[alt="city"]')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const player = game.players.find(p => p.name === playerName);
-                if (player) {
-                    // Cost: 3 ore, 2 wheat (updateResources will handle unknown transaction resolution)
-                    updateResources(playerName, { ore: -3, wheat: -2 });
-                    player.cities--;
-                    player.settlements++; // City replaces settlement
-                    player.victoryPoints++;
-                    console.log(`🏰 ${playerName} built a city. VP: ${player.victoryPoints}, Remaining cities: ${player.cities}`);
-                }
-            }
+            buildCity(playerName);
         }
-        // Scenario 12: Buy road (keyword: "built a" + road image)
+        // Scenario 12: Build road (keyword: "built a" + road image)
         else if (messageText.includes('built a') &&
             element.querySelector('img[alt="road"]')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const player = game.players.find(p => p.name === playerName);
-                if (player) {
-                    // Cost: 1 wood, 1 brick (updateResources will handle unknown transaction resolution)
-                    updateResources(playerName, { tree: -1, brick: -1 });
-                    player.roads--;
-                    console.log(`🛣️ ${playerName} built a road. Remaining roads: ${player.roads}`);
-                }
-            }
+            buildRoad(playerName);
         }
-        // Scenario 13: Moved robber (keyword: "moved Robber")
+        // Scenario 13: Move robber (keyword: "moved Robber")
         else if (messageText.includes('moved Robber')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const player = game.players.find(p => p.name === playerName);
-                if (player) {
-                    player.totalRobbers++;
-                    console.log(`🔒 ${playerName} moved the robber. Total robber moves: ${player.totalRobbers}`);
-                }
-            }
+            moveRobber(playerName);
         }
-        // Scenario 14: Used Year of Plenty (keyword: "used" + "Year of Plenty")
+        // Scenario 14: Use Year of Plenty (keyword: "used" + "Year of Plenty")
         else if (messageText.includes('used') &&
             messageText.includes('Year of Plenty')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const player = game.players.find(p => p.name === playerName);
-                if (player) {
-                    game.yearOfPlenties--;
-                    player.discoveryCards.yearOfPlenties--;
-                    console.log(`🎯 ${playerName} used Year of Plenty. Remaining: ${game.yearOfPlenties}`);
-                }
-            }
+            useYearOfPlenty(playerName);
         }
-        // Scenario 15: Year of Plenty cards taken (keyword: "took from bank")
+        // Scenario 15: Year of Plenty take (keyword: "took from bank")
         else if (messageText.includes('took from bank')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const takenResources = getResourcesFromImages(element, RESOURCE_STRING);
-                // Add resources to player (and remove from bank automatically)
-                updateResources(playerName, takenResources);
-                console.log(`🎯 ${playerName} took from bank via Year of Plenty: ${JSON.stringify(takenResources)}`);
-            }
+            const takenResources = getResourcesFromImages(element, RESOURCE_STRING);
+            yearOfPlentyTake(playerName, takenResources);
         }
-        // Scenario 16: Used Road Building (keyword: "used" + "Road Building")
+        // Scenario 16: Use Road Building (keyword: "used" + "Road Building")
         else if (messageText.includes('used') &&
             messageText.includes('Road Building')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const player = game.players.find(p => p.name === playerName);
-                if (player) {
-                    game.roadBuilders--;
-                    player.discoveryCards.roadBuilders--;
-                    console.log(`🛣️ ${playerName} used Road Building. Remaining: ${game.roadBuilders}`);
-                }
-            }
+            useRoadBuilding(playerName);
         }
-        // Scenario 17: Used Monopoly (keyword: "used" + "Monopoly")
+        // Scenario 17: Use Monopoly (keyword: "used" + "Monopoly")
         else if (messageText.includes('used') && messageText.includes('Monopoly')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const player = game.players.find(p => p.name === playerName);
-                if (player) {
-                    game.monopolies--;
-                    player.discoveryCards.monopolies--;
-                    console.log(`💰 ${playerName} used Monopoly. Remaining: ${game.monopolies}`);
-                }
-            }
+            useMonopoly(playerName);
         }
-        // Scenario 18: Monopoly cards stolen (keyword: "stole" + number)
+        // Scenario 18: Monopoly steal (keyword: "stole" + number)
         else if (messageText.includes('stole') && /stole \d+/.test(messageText)) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const player = game.players.find(p => p.name === playerName);
-                const resourceType = getResourceType(element);
-                if (player && resourceType) {
-                    // Extract the number of cards stolen
-                    const match = messageText.match(/stole (\d+)/);
-                    const stolenCount = match ? parseInt(match[1]) : 0;
-                    if (stolenCount > 0) {
-                        // Add stolen resources to monopoly player
-                        updateResources(playerName, { [resourceType]: stolenCount });
-                        // Remove resources from all other players for this resource type
-                        game.players.forEach(otherPlayer => {
-                            if (otherPlayer.name !== playerName) {
-                                otherPlayer.resources[resourceType] = 0;
-                            }
-                        });
-                        console.log(`💰 ${playerName} monopolized ${stolenCount} ${resourceType} from all players`);
-                    }
-                }
+            const resourceType = getResourceType(element);
+            const match = messageText.match(/stole (\d+)/);
+            const stolenCount = match ? parseInt(match[1]) : 0;
+            if (resourceType && stolenCount > 0) {
+                monopolySteal(playerName, resourceType, stolenCount);
             }
         }
         // Scenario 19: Starting resources (keyword: "received starting resources")
         else if (messageText.includes('received starting resources')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const startingResources = getResourcesFromImages(element, RESOURCE_STRING);
-                // Add starting resources to player (and remove from bank automatically)
-                updateResources(playerName, startingResources);
-                console.log(`🏁 ${playerName} received starting resources: ${JSON.stringify(startingResources)}`);
-            }
+            const startingResources = getResourcesFromImages(element, RESOURCE_STRING);
+            receiveStartingResources(playerName, startingResources);
         }
-        // Scenario 20: Disconnection messages (ignore)
-        else if (messageText.includes('has disconnected') ||
-            messageText.includes('will take over')) {
-            console.log(`🔌 Player disconnection message (ignored)`);
-        }
-        // Scenario 21: Reconnection messages (ignore)
-        else if (messageText.includes('has reconnected')) {
-            console.log(`🔌 Player reconnection message (ignored)`);
-        }
-        // Scenario 22: Robber blocking messages (ignore)
-        else if (messageText.includes('is blocked by the Robber') ||
-            messageText.includes('No resources produced')) {
-            console.log(`🚫 Robber blocking message (ignored)`);
-        }
-        // Scenario 23: Wants to give (can resolve unknown transactions)
+        // Scenario 20: Wants to give (can resolve unknown transactions)
         else if (messageText.includes('wants to give')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                // Parse what resources the player is offering to give (only before " for ")
-                const offeredResources = getResourcesFromImages(element, RESOURCE_STRING, ' for ');
-                // For each resource they're offering, they must have it
-                // This can resolve unknown transactions
-                Object.keys(offeredResources).forEach(resource => {
-                    const key = resource;
-                    const offeredCount = offeredResources[key];
-                    if (offeredCount > 0) {
-                        // Try to resolve unknown transactions for this resource
-                        attemptToResolveUnknownTransactions(playerName, key, offeredCount);
-                    }
-                });
-                console.log(`💭 ${playerName} wants to trade (offering: ${JSON.stringify(offeredResources)}) - checking for unknown transaction resolution`);
-            }
+            const offeredResources = getResourcesFromImages(element, RESOURCE_STRING, ' for ');
+            playerOffer(playerName, offeredResources);
         }
-        // Scenario 24: Discards (keyword: "discarded")
+        // Scenario 21: Discards (keyword: "discarded")
         else if (messageText.includes('discarded')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                const discardedResources = getResourcesFromImages(element, RESOURCE_STRING);
-                // Remove resources from player (negative values, automatically adds to bank)
-                const playerChanges = {};
-                Object.keys(discardedResources).forEach(resource => {
-                    const key = resource;
-                    const count = discardedResources[key];
-                    if (count > 0) {
-                        playerChanges[key] = -count;
-                    }
-                });
-                updateResources(playerName, playerChanges);
-                console.log(`🗑️ ${playerName} discarded resources: ${JSON.stringify(discardedResources)}`);
-            }
+            const discardedResources = getResourcesFromImages(element, RESOURCE_STRING);
+            playerDiscard(playerName, discardedResources);
         }
-        // Scenario 25: Ignore hr elements
-        else if (element.querySelector('hr')) ;
-        // Scenario 26: Ignore learn how to play messages
-        else if (messageText.includes('Learn how to play')) ;
-        // Scenario 27: Proposed counter offer
+        // Scenario 22: Proposed counter offer
         else if (messageText.includes('proposed counter offer to')) {
-            if (playerName) {
-                ensurePlayerExists(playerName);
-                // Parse the counter offer to extract what resources the player is offering
-                // Format: "Arop proposed counter offer to sadpanda10, offering [resources] for [resources]"
-                // Find the "offering" and "for" parts to extract what they're giving
-                const offeringMatch = messageText.match(/offering (.+?) for/);
-                if (offeringMatch) {
-                    // Get all images between "offering" and "for" to see what resources they have
-                    const messageHTML = element.innerHTML;
-                    const offeringSection = (_b = messageHTML
-                        .split('offering ')[1]) === null || _b === void 0 ? void 0 : _b.split(' for ')[0];
-                    if (offeringSection) {
-                        // Create a temporary element to parse the offering section
-                        const tempDiv = document.createElement('div');
-                        tempDiv.innerHTML = offeringSection;
-                        // Extract resources from the offering section
-                        const offeredResources = getResourcesFromImages(tempDiv, RESOURCE_STRING);
-                        if (Object.keys(offeredResources).length > 0) {
-                            console.log(`💰 ${playerName} proposed counter offer, confirming they have: ${JSON.stringify(offeredResources)}`);
-                            // This confirms the player has these resources, which can help resolve unknown transactions
-                            // Try to resolve unknown steals for each resource type they're offering
-                            Object.keys(offeredResources).forEach(resource => {
-                                const resourceKey = resource;
-                                const amount = offeredResources[resourceKey];
-                                if (amount > 0) {
-                                    // Try to resolve unknown transactions involving this resource
-                                    attemptToResolveUnknownTransactions(playerName, resourceKey, amount);
-                                }
-                            });
-                        }
-                    }
-                }
-            }
+            const offeredResources = parseCounterOfferResources(element);
+            playerOffer(playerName, offeredResources);
         }
         // Log any unknown messages
         else {

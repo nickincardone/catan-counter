@@ -146,3 +146,117 @@ export function getResourcesFromImages(
 
   return resources;
 }
+
+/**
+ * Parse trade resources from HTML element by splitting on text markers
+ */
+export function parseTradeResources(element: HTMLElement): {
+  gave: Partial<ResourceObjectType>;
+  got: Partial<ResourceObjectType>;
+} | null {
+  const elementHTML = element.innerHTML;
+
+  const gaveEndIndex = elementHTML.indexOf(' and got ');
+  const fromIndex = elementHTML.indexOf(' from ');
+
+  if (gaveEndIndex === -1 || fromIndex === -1) return null;
+
+  // Extract the "gave" section (before " and got ")
+  const gaveDiv = document.createElement('div');
+  gaveDiv.innerHTML = elementHTML.substring(0, gaveEndIndex);
+
+  // Extract the "got" section (between " and got " and " from ")
+  const gotDiv = document.createElement('div');
+  const gotStartIndex = gaveEndIndex + ' and got '.length;
+  gotDiv.innerHTML = elementHTML.substring(gotStartIndex, fromIndex);
+
+  // Count resources in each section
+  const gave: Partial<ResourceObjectType> = {};
+  const got: Partial<ResourceObjectType> = {};
+
+  // Count gave resources
+  gaveDiv.querySelectorAll('img').forEach(img => {
+    const resourceType = getResourceTypeFromAlt(img.getAttribute('alt'));
+    if (resourceType) {
+      gave[resourceType] = (gave[resourceType] || 0) + 1;
+    }
+  });
+
+  // Count got resources
+  gotDiv.querySelectorAll('img').forEach(img => {
+    const resourceType = getResourceTypeFromAlt(img.getAttribute('alt'));
+    if (resourceType) {
+      got[resourceType] = (got[resourceType] || 0) + 1;
+    }
+  });
+
+  return { gave, got };
+}
+
+/**
+ * Get the victim name from a steal message
+ */
+export function getStealVictim(element: HTMLElement): string | null {
+  // Get the victim (second span with font-weight:600, after "from")
+  const victimSpans = element.querySelectorAll(
+    'span[style*="font-weight:600"]'
+  );
+  // if there are not two spans then the first user is "you"
+  return victimSpans.length >= 2
+    ? victimSpans[1].textContent || null
+    : victimSpans[0].textContent || null;
+}
+
+/**
+ * Parse bank trade resources from HTML element
+ */
+export function parseBankTrade(
+  element: HTMLElement
+): Partial<ResourceObjectType> | null {
+  const resourceImages = element.querySelectorAll(RESOURCE_STRING);
+  const gaveResources = getResourcesFromImages(element, RESOURCE_STRING);
+
+  // The last image is what they took, everything before is what they gave
+  if (resourceImages.length > 1) {
+    const tookImage = resourceImages[resourceImages.length - 1];
+    const tookType = getResourceTypeFromAlt(tookImage.getAttribute('alt'));
+
+    if (tookType) {
+      // Remove what they took from the gave count
+      gaveResources[tookType]--;
+
+      // Calculate net changes (negative for gave, positive for took)
+      const resourceChanges = { ...gaveResources };
+      Object.keys(resourceChanges).forEach(key => {
+        resourceChanges[key as keyof ResourceObjectType] *= -1;
+      });
+      resourceChanges[tookType] = 1;
+
+      return resourceChanges;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Parse offered resources from counter offer HTML element
+ */
+export function parseCounterOfferResources(
+  element: HTMLElement
+): Partial<ResourceObjectType> {
+  // Get all images between "offering" and "for" to see what resources they have
+  const messageHTML = element.innerHTML;
+  const offeringSection = messageHTML.split('offering ')[1]?.split(' for ')[0];
+
+  if (offeringSection) {
+    // Create a temporary element to parse the offering section
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = offeringSection;
+
+    // Extract resources from the offering section
+    return getResourcesFromImages(tempDiv, RESOURCE_STRING);
+  }
+
+  return {};
+}
