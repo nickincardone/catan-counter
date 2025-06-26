@@ -213,30 +213,40 @@ export function getStealVictim(element: HTMLElement): string | null {
 export function parseBankTrade(
   element: HTMLElement
 ): Partial<ResourceObjectType> | null {
-  const resourceImages = element.querySelectorAll(RESOURCE_STRING);
-  const gaveResources = getResourcesFromImages(element, RESOURCE_STRING);
+  const elementHTML = element.innerHTML;
 
-  // The last image is what they took, everything before is what they gave
-  if (resourceImages.length > 1) {
-    const tookImage = resourceImages[resourceImages.length - 1];
-    const tookType = getResourceTypeFromAlt(tookImage.getAttribute('alt'));
+  const tookIndex = elementHTML.indexOf(' and took ');
+  if (tookIndex === -1) return null;
 
-    if (tookType) {
-      // Remove what they took from the gave count
-      gaveResources[tookType]--;
+  // Extract the "gave" section (before " and took ")
+  const gaveDiv = document.createElement('div');
+  gaveDiv.innerHTML = elementHTML.substring(0, tookIndex);
 
-      // Calculate net changes (negative for gave, positive for took)
-      const resourceChanges = { ...gaveResources };
-      Object.keys(resourceChanges).forEach(key => {
-        resourceChanges[key as keyof ResourceObjectType] *= -1;
-      });
-      resourceChanges[tookType] = 1;
+  // Extract the "took" section (after " and took ")
+  const tookDiv = document.createElement('div');
+  const tookStartIndex = tookIndex + ' and took '.length;
+  tookDiv.innerHTML = elementHTML.substring(tookStartIndex);
 
-      return resourceChanges;
+  // Count resources in each section using the same approach as parseTradeResources
+  const resourceChanges: Partial<ResourceObjectType> = {};
+
+  // Count gave resources (subtract them)
+  gaveDiv.querySelectorAll('img').forEach(img => {
+    const resourceType = getResourceTypeFromAlt(img.getAttribute('alt'));
+    if (resourceType) {
+      resourceChanges[resourceType] = (resourceChanges[resourceType] || 0) - 1;
     }
-  }
+  });
 
-  return null;
+  // Count took resources (add them)
+  tookDiv.querySelectorAll('img').forEach(img => {
+    const resourceType = getResourceTypeFromAlt(img.getAttribute('alt'));
+    if (resourceType) {
+      resourceChanges[resourceType] = (resourceChanges[resourceType] || 0) + 1;
+    }
+  });
+
+  return resourceChanges;
 }
 
 /**

@@ -47,6 +47,15 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - Resource discarding
 - Starting resource distribution
 
+### 🧠 **Advanced Probabilistic Tracking**
+
+- **Unknown Transaction System**: When a player steals an unknown resource, the system creates a probabilistic transaction tracking all possible stolen resources
+- **Smart Resolution**: Unknown transactions are automatically resolved when players spend resources they shouldn't have, or when other game events eliminate possibilities
+- **Dynamic Probability Updates**: Resource probabilities are recalculated in real-time as new information becomes available
+- **Process of Elimination**: When a player offers a resource in trade, the system eliminates it from unknown transactions where they were the victim
+- **Automatic Transaction Resolution**: When only one possible resource remains for an unknown transaction, it's automatically resolved and actual resources are transferred
+- **Bank Resource Tracking**: When all cards of a resource type return to the bank, related unknown transactions are resolved
+
 ## Installation
 
 ### Prerequisites
@@ -142,11 +151,7 @@ npm run test:ci
 
 #### Test Structure
 
-- **`src/__tests__/`** - Contains all test files
-- **`gameState.test.ts`** - Tests for game state management and unknown transaction system
-- **`chatParser.simple.test.ts`** - Tests for chat parsing logic and message identification
-- **`jest.config.js`** - Jest configuration with TypeScript support
-- **`jest.setup.ts`** - Test environment setup with DOM mocking
+Tests are organized with comprehensive coverage of game state management, chat parsing logic, and the probabilistic unknown transaction system. The test suite includes both unit tests and integration tests with real HTML scenarios from colonist.io.
 
 #### Writing Tests
 
@@ -221,7 +226,18 @@ The extension recognizes 25+ different game scenarios including:
 - Resource collection and trading
 - Development card usage
 - **Player theft scenarios** (including "from you" messages)
+- **Unknown resource steals** with probabilistic tracking
 - Special game events (robber movement, discarding, etc.)
+
+### Unknown Transaction System
+
+The extension features a sophisticated system for tracking unknown resource steals:
+
+- **Probabilistic Resource Tracking**: When a resource is stolen but the specific type is unknown, the system calculates probabilities based on what the victim had
+- **Smart Deduction**: Uses player actions (spending resources, making trades) to eliminate possibilities and resolve unknown transactions
+- **Multiple Transaction Support**: Handles scenarios where multiple unknown steals are pending simultaneously
+- **Automatic Resolution**: Resolves transactions when sufficient information becomes available through process of elimination
+- **Real-time Recalculation**: All probabilities are recalculated from scratch whenever transactions are resolved to maintain accuracy
 
 ### Smart Reprocessing System
 

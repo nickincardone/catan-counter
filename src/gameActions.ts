@@ -1,14 +1,14 @@
-import { ResourceObjectType } from './types.js';
 import {
-  ensurePlayerExists,
-  updateResources,
-  game,
-  youPlayerName,
-  autoDetectCurrentPlayer,
   addUnknownSteal,
   attemptToResolveUnknownTransactions,
+  autoDetectCurrentPlayer,
+  eliminateResourceFromVictimTransactions,
+  ensurePlayerExists,
+  game,
+  updateResources,
+  youPlayerName,
 } from './gameState.js';
-import { updateGameStateDisplay } from './overlay.js';
+import { ResourceObjectType } from './types.js';
 
 /**
  * Handle a player discarding resources
@@ -464,79 +464,6 @@ export function playerOffer(
   console.log(
     `💭 ${playerName} (offering: ${JSON.stringify(offeredResources)}) - checking for unknown transaction resolution`
   );
-}
-
-/**
- * Eliminate a resource from unknown transactions where the player was the victim
- * (because if they're offering it and only have 1, they must still have it)
- */
-function eliminateResourceFromVictimTransactions(
-  playerName: string,
-  resource: keyof ResourceObjectType
-): void {
-  const affectedTransactions = game.unknownTransactions.filter(
-    transaction =>
-      !transaction.isResolved &&
-      transaction.victim === playerName &&
-      transaction.possibleResources[resource] > 0
-  );
-
-  affectedTransactions.forEach(transaction => {
-    console.log(
-      `🔍 Eliminating ${resource} from transaction ${transaction.id} - ${playerName} proven to still have it`
-    );
-
-    const thiefPlayer = game.players.find(p => p.name === transaction.thief);
-    const victimPlayer = game.players.find(p => p.name === transaction.victim);
-
-    if (!thiefPlayer || !victimPlayer) return;
-
-    // Calculate original probabilities
-    const totalPossibleCards = Object.values(
-      transaction.possibleResources
-    ).reduce((sum, count) => sum + count, 0);
-
-    if (totalPossibleCards === 0) return;
-
-    // Calculate the probability that was assigned to this resource type
-    const eliminatedProbability =
-      transaction.possibleResources[resource] / totalPossibleCards;
-
-    // Remove this probability from both players
-    thiefPlayer.resourceProbabilities[resource] -= eliminatedProbability;
-    victimPlayer.resourceProbabilities[resource] += eliminatedProbability;
-
-    // Update the transaction to reflect that this resource is no longer possible
-    transaction.possibleResources[resource] = 0;
-
-    // Recalculate probabilities for remaining possible resources
-    const remainingTotal = Object.values(transaction.possibleResources).reduce(
-      (sum, count) => sum + count,
-      0
-    );
-
-    if (remainingTotal > 0) {
-      // Redistribute the eliminated probability among remaining possible resources
-      Object.keys(transaction.possibleResources).forEach(res => {
-        const key = res as keyof ResourceObjectType;
-        const resourceCount = transaction.possibleResources[key];
-
-        if (resourceCount > 0) {
-          const newProbability = resourceCount / remainingTotal;
-          const oldProbability = resourceCount / totalPossibleCards;
-          const probabilityIncrease = newProbability - oldProbability;
-
-          // Update player probabilities
-          thiefPlayer.resourceProbabilities[key] += probabilityIncrease;
-          victimPlayer.resourceProbabilities[key] -= probabilityIncrease;
-        }
-      });
-
-      console.log(
-        `📊 Updated probabilities for transaction ${transaction.id} - eliminated ${resource}`
-      );
-    }
-  });
 }
 
 /**

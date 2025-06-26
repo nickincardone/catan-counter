@@ -1,13 +1,14 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import {
+  monopolySteal,
   placeSettlement,
   playerGetResources,
   playerOffer,
   receiveStartingResources,
   unknownSteal,
 } from '../gameActions';
+import { game, resetGameState } from '../gameState';
 import { ResourceObjectType } from '../types';
-import { game, resetGameState, ensurePlayerExists } from '../gameState';
 
 // Mock only the overlay to avoid DOM dependencies
 jest.mock('../overlay', () => ({
@@ -198,7 +199,7 @@ describe('gameActions', () => {
   });
 
   describe('playerOffer', () => {
-    it('if player offers something it can only have 1 or 0 of it should remove itself from probabilities', () => {
+    it('should eliminate resource from unknown steals when player offers their maxiumum possible amount of that resource', () => {
       playerGetResources('Alice', { wheat: 1, brick: 1, tree: 1 });
       // Bob has no resources
       expect(game.players.find(p => p.name === 'Bob')!.resources).toEqual({
@@ -253,6 +254,178 @@ describe('gameActions', () => {
       expect(
         game.players.find(p => p.name === 'Alice')!.resourceProbabilities
       ).toEqual({ wheat: 0, brick: -0.5, tree: -0.5, ore: 0, sheep: 0 });
+    });
+  });
+  describe('monopolySteal', () => {
+    it('should steal all the wheat from the bank', () => {
+      playerGetResources('Alice', { wheat: 1 });
+      playerGetResources('Bob', { wheat: 2 });
+      playerGetResources('Charlie', { wheat: 3 });
+      playerGetResources('Diana', { wheat: 1 });
+
+      expect(game.gameResources.wheat).toBe(12);
+
+      monopolySteal('Alice', 'wheat', 6);
+
+      expect(game.players.find(p => p.name === 'Alice')!.resources.wheat).toBe(
+        7
+      );
+      expect(game.gameResources.wheat).toBe(12);
+      expect(game.players.find(p => p.name === 'Bob')!.resources.wheat).toBe(0);
+      expect(
+        game.players.find(p => p.name === 'Charlie')!.resources.wheat
+      ).toBe(0);
+      expect(game.players.find(p => p.name === 'Diana')!.resources.wheat).toBe(
+        0
+      );
+    });
+  });
+
+  describe('Unknown transactions handling', () => {
+    it('should eliminate unknown transactions if there only remains one possible resource', () => {
+      playerGetResources('Alice', { wheat: 4, brick: 1 });
+
+      unknownSteal('Bob', 'Alice');
+
+      expect(game.unknownTransactions.filter(t => !t.isResolved).length).toBe(
+        1
+      );
+      expect(game.unknownTransactions[0].thief).toBe('Bob');
+      expect(game.unknownTransactions[0].victim).toBe('Alice');
+      expect(game.unknownTransactions[0].possibleResources).toEqual({
+        wheat: 4,
+        brick: 1,
+        tree: 0,
+        ore: 0,
+        sheep: 0,
+      });
+      expect(game.players.find(p => p.name === 'Bob')!.resources).toEqual({
+        sheep: 0,
+        wheat: 0,
+        brick: 0,
+        tree: 0,
+        ore: 0,
+      });
+      expect(
+        game.players.find(p => p.name === 'Bob')!.resourceProbabilities
+      ).toEqual({
+        wheat: 4 / 5,
+        brick: 1 / 5,
+        tree: 0,
+        ore: 0,
+        sheep: 0,
+      });
+      expect(
+        game.players.find(p => p.name === 'Alice')!.resourceProbabilities
+      ).toEqual({
+        wheat: -4 / 5,
+        brick: -1 / 5,
+        tree: 0,
+        ore: 0,
+        sheep: 0,
+      });
+
+      // Alice offers brick so, Bob must have stolen one of the 4 wheats
+      playerOffer('Alice', { brick: 1 });
+
+      // unknown transactions should be eliminated
+      expect(game.unknownTransactions.filter(t => !t.isResolved).length).toBe(
+        0
+      );
+      // Bob should have 1 wheat
+      expect(game.players.find(p => p.name === 'Bob')!.resources).toEqual({
+        wheat: 1,
+        brick: 0,
+        tree: 0,
+        ore: 0,
+        sheep: 0,
+      });
+      // Alice should have 3 wheat and 1 brick
+      expect(game.players.find(p => p.name === 'Alice')!.resources).toEqual({
+        sheep: 0,
+        wheat: 3,
+        brick: 1,
+        tree: 0,
+        ore: 0,
+      });
+
+      // both players resource probabilities should be 0
+      expect(
+        game.players.find(p => p.name === 'Bob')!.resourceProbabilities
+      ).toEqual({
+        wheat: 0,
+        brick: 0,
+        tree: 0,
+        ore: 0,
+        sheep: 0,
+      });
+      expect(
+        game.players.find(p => p.name === 'Alice')!.resourceProbabilities
+      ).toEqual({
+        wheat: 0,
+        brick: 0,
+        tree: 0,
+        ore: 0,
+        sheep: 0,
+      });
+    });
+
+    it('should eliminate unknown transactions if there only remains one possible resource 2', () => {
+      // making this mimic a real case I found that somehow isn't covered above
+      playerGetResources('Alice', { wheat: 1, brick: 1 });
+      playerGetResources('Bob', { sheep: 2, brick: 1, tree: 1 });
+      unknownSteal('Bob', 'Alice');
+      playerGetResources('Alice', { ore: 1 });
+
+      expect(game.unknownTransactions.filter(t => !t.isResolved).length).toBe(
+        1
+      );
+      expect(game.unknownTransactions[0].thief).toBe('Bob');
+      expect(game.unknownTransactions[0].victim).toBe('Alice');
+
+      // Alice offers wheat so, Bob must have stolen the brick
+      playerOffer('Alice', { wheat: 1 });
+
+      // unknown transactions should be eliminated
+      expect(game.unknownTransactions.filter(t => !t.isResolved).length).toBe(
+        0
+      );
+      // Bob should have 1 wheat
+      expect(game.players.find(p => p.name === 'Bob')!.resources).toEqual({
+        wheat: 0,
+        brick: 2,
+        tree: 1,
+        ore: 0,
+        sheep: 2,
+      });
+      // Alice should have 3 wheat and 1 brick
+      expect(game.players.find(p => p.name === 'Alice')!.resources).toEqual({
+        sheep: 0,
+        wheat: 1,
+        brick: 0,
+        tree: 0,
+        ore: 1,
+      });
+
+      // both players resource probabilities should be 0
+      expect(
+        game.players.find(p => p.name === 'Bob')!.resourceProbabilities
+      ).toEqual({
+        wheat: 0,
+        brick: 0,
+        tree: 0,
+        ore: 0,
+        sheep: 0,
+      });
+      expect(
+        game.players.find(p => p.name === 'Alice')!.resourceProbabilities
+      ).toEqual({
+        wheat: 0,
+        brick: 0,
+        tree: 0,
+        ore: 0,
+        sheep: 0,
+      });
     });
   });
 });
