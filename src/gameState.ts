@@ -282,76 +282,117 @@ export function attemptToResolveUnknownTransactions(
   const player = game.players.find(p => p.name === playerName);
   if (!player) return false;
 
-  // Check if player has enough of the required resource
+  // Check if player already has enough of the required resource
   if (player.resources[requiredResource] >= requiredAmount) {
-    return true; // No need to resolve, player has the resource
+    return true;
   }
 
   const shortfall = requiredAmount - player.resources[requiredResource];
+  const candidateTransactions = findCandidateTransactions(
+    playerName,
+    requiredResource
+  );
 
-  // Check if player has enough including probabilities
-  // Count how many unresolved transactions could potentially provide this resource
-  const unresolvedStealsForResource = game.unknownTransactions.filter(
+  // Check if resolution is possible
+  if (!canResolveTransactions(candidateTransactions, shortfall)) {
+    return false;
+  }
+
+  // Determine resolution strategy
+  const resolutionStrategy = determineResolutionStrategy(
+    candidateTransactions,
+    shortfall
+  );
+
+  if (resolutionStrategy.shouldResolve) {
+    executeResolution(
+      resolutionStrategy.transactionsToResolve,
+      requiredResource,
+      shortfall
+    );
+    console.log(
+      `✅ Resolved ${resolutionStrategy.transactionsToResolve.length} steals for ${playerName} to get ${requiredResource}`
+    );
+    return true;
+  } else {
+    console.log(
+      `❌ Ambiguous resolution for ${playerName} needing ${requiredResource} - not resolving`
+    );
+    return false;
+  }
+}
+
+function findCandidateTransactions(
+  playerName: string,
+  requiredResource: keyof ResourceObjectType
+): UnknownTransaction[] {
+  return game.unknownTransactions.filter(
     transaction =>
       !transaction.isResolved &&
       transaction.type === 'steal' &&
       transaction.thief === playerName &&
       transaction.possibleResources[requiredResource] > 0
   );
+}
 
-  const maxPossibleFromUnresolvedSteals = unresolvedStealsForResource.length;
-  const totalMaxAvailable =
-    player.resources[requiredResource] + maxPossibleFromUnresolvedSteals;
-  if (totalMaxAvailable < requiredAmount) {
+function canResolveTransactions(
+  candidateTransactions: UnknownTransaction[],
+  shortfall: number
+): boolean {
+  if (candidateTransactions.length === 0) {
+    console.log(`❌ No candidate transactions found`);
+    return false;
+  }
+
+  if (candidateTransactions.length < shortfall) {
     console.log(
-      `❌ ${playerName} doesn't have enough ${requiredResource} even with probabilities`
+      `❌ Not enough possible steals (${candidateTransactions.length}) to cover shortfall (${shortfall})`
     );
     return false;
   }
 
-  // Find unresolved transactions where this player was the thief and could have stolen this resource
-  const unresolvedSteals = game.unknownTransactions.filter(
-    transaction =>
-      !transaction.isResolved &&
-      transaction.type === 'steal' &&
-      transaction.thief === playerName &&
-      transaction.possibleResources[requiredResource] > 0
-  );
-
-  if (unresolvedSteals.length === 0) {
-    console.log(
-      `❌ No unresolved steals found for ${playerName} involving ${requiredResource}`
-    );
-    return false;
-  }
-
-  // For now, resolve the most recent steal that could provide this resource
-  // In a more sophisticated system, you might want to resolve based on highest probability
-  const stealToResolve = unresolvedSteals[unresolvedSteals.length - 1];
-
-  console.log(`🔍 Resolving unknown steal: ${stealToResolve.id}`);
-  console.log(
-    `   ${playerName} stole ${requiredResource} from ${stealToResolve.victim}`
-  );
-
-  // Resolve the transaction using helper function
-  resolveUnknownTransaction(stealToResolve, requiredResource);
-
-  // If we needed more than 1 resource, add the additional amount
-  if (shortfall > 1) {
-    player.resources[requiredResource] += shortfall - 1;
-    const victimPlayer = game.players.find(
-      p => p.name === stealToResolve.victim
-    );
-    if (victimPlayer) {
-      victimPlayer.resources[requiredResource] -= shortfall - 1;
-    }
-  }
-
-  console.log(
-    `✅ Resolved steal: ${playerName} stole ${requiredResource} from ${stealToResolve.victim}`
-  );
   return true;
+}
+
+function determineResolutionStrategy(
+  candidateTransactions: UnknownTransaction[],
+  shortfall: number
+): { shouldResolve: boolean; transactionsToResolve: UnknownTransaction[] } {
+  // If shortfall equals number of candidate transactions, resolve all
+  if (shortfall === candidateTransactions.length) {
+    return {
+      shouldResolve: true,
+      transactionsToResolve: candidateTransactions,
+    };
+  }
+
+  // If shortfall is less than candidates, it's ambiguous - don't resolve
+  if (shortfall < candidateTransactions.length) {
+    return {
+      shouldResolve: false,
+      transactionsToResolve: [],
+    };
+  }
+
+  // This shouldn't happen if canResolveTransactions worked correctly
+  return {
+    shouldResolve: false,
+    transactionsToResolve: [],
+  };
+}
+
+function executeResolution(
+  transactionsToResolve: UnknownTransaction[],
+  requiredResource: keyof ResourceObjectType,
+  shortfall: number
+): void {
+  transactionsToResolve.forEach(transaction => {
+    console.log(`🔍 Resolving unknown steal: ${transaction.id}`);
+    console.log(
+      `   ${transaction.thief} stole ${requiredResource} from ${transaction.victim}`
+    );
+    resolveUnknownTransaction(transaction, requiredResource);
+  });
 }
 
 /**

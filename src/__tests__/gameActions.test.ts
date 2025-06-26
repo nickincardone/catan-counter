@@ -6,6 +6,10 @@ import {
   playerOffer,
   receiveStartingResources,
   unknownSteal,
+  useKnight,
+  useRoadBuilding,
+  useMonopoly,
+  useYearOfPlenty,
 } from '../gameActions';
 import { game, resetGameState } from '../gameState';
 import { ResourceObjectType } from '../types';
@@ -281,6 +285,39 @@ describe('gameActions', () => {
     });
   });
 
+  describe('developmentCardUsage', () => {
+    it('should track development card usage', () => {
+      expect(game.roadBuilders).toBe(2);
+      expect(game.knights).toBe(14);
+      expect(game.monopolies).toBe(2);
+      expect(game.yearOfPlenties).toBe(2);
+
+      useRoadBuilding('Alice');
+      useKnight('Bob');
+      useMonopoly('Charlie');
+      useYearOfPlenty('Diana');
+
+      expect(game.roadBuilders).toBe(1);
+      expect(game.knights).toBe(13);
+      expect(game.monopolies).toBe(1);
+      expect(game.yearOfPlenties).toBe(1);
+
+      expect(
+        game.players.find(p => p.name === 'Alice')!.discoveryCards.roadBuilders
+      ).toBe(1);
+      expect(
+        game.players.find(p => p.name === 'Bob')!.discoveryCards.knights
+      ).toBe(1);
+      expect(
+        game.players.find(p => p.name === 'Charlie')!.discoveryCards.monopolies
+      ).toBe(1);
+      expect(
+        game.players.find(p => p.name === 'Diana')!.discoveryCards
+          .yearOfPlenties
+      ).toBe(1);
+    });
+  });
+
   describe('Unknown transactions handling', () => {
     it('should eliminate unknown transactions if there only remains one possible resource', () => {
       playerGetResources('Alice', { wheat: 4, brick: 1 });
@@ -422,6 +459,62 @@ describe('gameActions', () => {
       ).toEqual({
         wheat: 0,
         brick: 0,
+        tree: 0,
+        ore: 0,
+        sheep: 0,
+      });
+    });
+
+    it('should not eliminate unknown transactions if a resource can come from two unknown transactions', () => {
+      playerGetResources('Alice', { wheat: 4, brick: 1 });
+      playerGetResources('Charlie', { wheat: 2, brick: 1 });
+
+      unknownSteal('Bob', 'Alice');
+      unknownSteal('Bob', 'Charlie');
+
+      expect(game.unknownTransactions.filter(t => !t.isResolved).length).toBe(
+        2
+      );
+
+      // Bob offers brick but he could have stolen from either player
+      playerOffer('Bob', { brick: 1 });
+
+      // unknown transactions should not be eliminated
+      expect(game.unknownTransactions.filter(t => !t.isResolved).length).toBe(
+        2
+      );
+      // Bob should have 1 brick (because he offered it)
+      expect(game.players.find(p => p.name === 'Bob')!.resources).toEqual({
+        wheat: 0,
+        brick: 1,
+        tree: 0,
+        ore: 0,
+        sheep: 0,
+      });
+    });
+
+    it('should eliminate mulitple unknown transactions if a resource can come from two unknown transactions', () => {
+      playerGetResources('Alice', { wheat: 4, brick: 1 });
+      playerGetResources('Charlie', { wheat: 2, brick: 1 });
+
+      unknownSteal('Bob', 'Alice');
+      unknownSteal('Bob', 'Charlie');
+
+      expect(game.unknownTransactions.filter(t => !t.isResolved).length).toBe(
+        2
+      );
+
+      // Bob offers 2 brick so he must have stolen brick from both players
+      playerOffer('Bob', { brick: 2 });
+
+      // unknown transactions should not be eliminated
+      expect(game.unknownTransactions.filter(t => !t.isResolved).length).toBe(
+        0
+      );
+      // Bob should have 2 brick (because he offered it)
+      expect(game.players.find(p => p.name === 'Bob')!.resources).toEqual({
+        wheat: 0,
+        brick: 2,
         tree: 0,
         ore: 0,
         sheep: 0,

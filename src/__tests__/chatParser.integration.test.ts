@@ -3,12 +3,11 @@ import { updateGameFromChat } from '../chatParser';
 import { resetGameState, game, setYouPlayerForTesting } from '../gameState';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { findChatContainer } from '../domUtils';
 
 describe('Chat Parser Integration - Steal Tracker Scenario', () => {
   beforeEach(() => {
     resetGameState();
-    // Set "you" player for testing to bypass the selection dialog
-    setYouPlayerForTesting('NickTheSwift');
   });
 
   it('should parse the steal tracker HTML scenario and produce correct final game state', () => {
@@ -19,15 +18,14 @@ describe('Chat Parser Integration - Steal Tracker Scenario', () => {
     // Create a DOM from the HTML
     document.body.innerHTML = htmlContent;
 
-    // Get body -> first div -> all children in DOM order
-    const firstDiv = document.body.firstElementChild as HTMLElement;
-    if (firstDiv) {
-      // Process each child element in DOM order
-      Array.from(firstDiv.children).forEach(element => {
-        if (element.querySelector('span')) {
-          updateGameFromChat(element as HTMLElement);
+    const chatContainer = findChatContainer();
+    if (chatContainer) {
+      for (let i = 0; i < chatContainer.children.length; i++) {
+        const element = chatContainer.children[i] as HTMLElement;
+        if (element.nodeType === Node.ELEMENT_NODE) {
+          updateGameFromChat(element);
         }
-      });
+      }
     }
 
     // Debug: Log the game state

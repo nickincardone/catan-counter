@@ -1,5 +1,12 @@
 import { game, setYouPlayer, markYouPlayerAsked } from './gameState.js';
 
+// Chrome extension API type declaration
+declare const chrome: {
+  runtime: {
+    getURL: (path: string) => string;
+  };
+};
+
 // Create draggable overlay for game state display
 let gameStateOverlay: HTMLDivElement | null = null;
 let isDragging = false;
@@ -214,6 +221,52 @@ function generateUnknownTransactionsDisplay(): string {
   return display;
 }
 
+function generateDevCardsDisplay(): string {
+  const devCardTypes = [
+    { key: 'knights', name: 'Knight', icon: 'knight.svg' },
+    { key: 'monopolies', name: 'Monopoly', icon: 'mono.svg' },
+    { key: 'roadBuilders', name: 'Road Building', icon: 'rb.svg' },
+    { key: 'yearOfPlenties', name: 'Year of Plenty', icon: 'yop.svg' },
+    { key: 'victoryPoints', name: 'Victory Point', icon: 'vp.svg' },
+  ];
+
+  let display = '<div style="margin: 15px 0;">';
+  display +=
+    '<h4 style="margin: 0 0 10px 0; text-align: center;">Development Cards Remaining</h4>';
+  display +=
+    '<div style="display: flex; justify-content: space-around; align-items: center; padding: 10px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">';
+
+  devCardTypes.forEach(cardType => {
+    const remaining = game[cardType.key as keyof typeof game] as number;
+    const total =
+      cardType.key === 'knights'
+        ? 14
+        : cardType.key === 'victoryPoints'
+          ? 5
+          : 2;
+
+    display += `
+      <div style="display: flex; flex-direction: column; align-items: center; min-width: 60px;">
+        <div style="width: 32px; height: 40px; margin-bottom: 5px; display: flex; align-items: center; justify-content: center; background: white; border-radius: 4px; border: 1px solid #ddd;">
+                     <img src="${chrome.runtime.getURL(`assets/${cardType.icon}`)}" 
+               style="width: 24px; height: 32px;" 
+               alt="${cardType.name}" 
+               title="${cardType.name}" />
+        </div>
+        <div style="font-size: 12px; font-weight: bold; color: #2c3e50;">
+          ${remaining}/${total}
+        </div>
+        <div style="font-size: 9px; color: #666; text-align: center; line-height: 1.1;">
+          ${cardType.name}
+        </div>
+      </div>
+    `;
+  });
+
+  display += '</div></div>';
+  return display;
+}
+
 function generateDiceChart(): string {
   const maxRolls = Math.max(...Object.values(game.diceRolls), 1);
   const chartHeight = 120;
@@ -284,6 +337,7 @@ function updateOverlayContent(overlay: HTMLDivElement): void {
          <div id="overlay-content" style="display: ${contentDisplay}; padding: 15px; max-height: 500px; overflow-y: auto; position: relative;">
        ${generateResourceTable()}
        ${generateUnknownTransactionsDisplay()}
+       ${generateDevCardsDisplay()}
        ${generateDiceChart()}
        <div class="resize-handle" style="
          position: absolute;

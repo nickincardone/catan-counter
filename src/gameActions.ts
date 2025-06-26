@@ -223,7 +223,8 @@ export function useKnight(playerName: string | null): void {
   const player = game.players.find(p => p.name === playerName);
   if (player) {
     player.knights++;
-    player.discoveryCards.knights--;
+    player.discoveryCards.knights++;
+    game.knights--;
     console.log(
       `⚔️ ${playerName} used a knight. Total knights played: ${player.knights}`
     );
@@ -311,7 +312,7 @@ export function useYearOfPlenty(playerName: string | null): void {
   const player = game.players.find(p => p.name === playerName);
   if (player) {
     game.yearOfPlenties--;
-    player.discoveryCards.yearOfPlenties--;
+    player.discoveryCards.yearOfPlenties++;
     console.log(
       `🎯 ${playerName} used Year of Plenty. Remaining: ${game.yearOfPlenties}`
     );
@@ -348,7 +349,7 @@ export function useRoadBuilding(playerName: string | null): void {
   const player = game.players.find(p => p.name === playerName);
   if (player) {
     game.roadBuilders--;
-    player.discoveryCards.roadBuilders--;
+    player.discoveryCards.roadBuilders++;
     console.log(
       `🛣️ ${playerName} used Road Building. Remaining: ${game.roadBuilders}`
     );
@@ -364,7 +365,7 @@ export function useMonopoly(playerName: string | null): void {
   const player = game.players.find(p => p.name === playerName);
   if (player) {
     game.monopolies--;
-    player.discoveryCards.monopolies--;
+    player.discoveryCards.monopolies++;
     console.log(
       `💰 ${playerName} used Monopoly. Remaining: ${game.monopolies}`
     );
@@ -450,7 +451,23 @@ export function playerOffer(
 
     if (offeredCount && offeredCount > 0) {
       // Try to resolve unknown transactions for this resource
-      attemptToResolveUnknownTransactions(playerName, key, offeredCount);
+      const resolved = attemptToResolveUnknownTransactions(
+        playerName,
+        key,
+        offeredCount
+      );
+
+      // If we couldn't resolve enough resources through transactions,
+      // the player must still have the resources to offer them
+      // (This handles the ambiguous case where multiple resolutions are possible)
+      const currentAmount = player.resources[key];
+      if (currentAmount < offeredCount) {
+        const shortfall = offeredCount - currentAmount;
+        player.resources[key] += shortfall;
+        console.log(
+          `➕ ${playerName} gained ${shortfall} ${key} to match offer (ambiguous resolution)`
+        );
+      }
 
       // If player is offering exactly the amount they have of a resource,
       // eliminate it from any unknown transactions where they were the victim

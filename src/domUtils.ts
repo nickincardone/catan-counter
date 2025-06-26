@@ -97,7 +97,9 @@ export function getResourceTypeFromAlt(
 }
 
 export function getTradePartner(element: HTMLElement): string | null {
-  const spans = element.querySelectorAll('span[style*="font-weight:600"]');
+  const spans = element.querySelectorAll(
+    'span[style*="font-weight:600"], span[style*="font-weight: 600"]'
+  );
   return spans.length > 1 ? spans[1].textContent || null : null;
 }
 
@@ -198,8 +200,9 @@ export function parseTradeResources(element: HTMLElement): {
  */
 export function getStealVictim(element: HTMLElement): string | null {
   // Get the victim (second span with font-weight:600, after "from")
+  // Handle both "font-weight:600" and "font-weight: 600" formats
   const victimSpans = element.querySelectorAll(
-    'span[style*="font-weight:600"]'
+    'span[style*="font-weight:600"], span[style*="font-weight: 600"]'
   );
   // if there are not two spans then the first user is "you"
   return victimSpans.length >= 2

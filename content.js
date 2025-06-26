@@ -78,7 +78,7 @@
         }
     }
     function getTradePartner(element) {
-        const spans = element.querySelectorAll('span[style*="font-weight:600"]');
+        const spans = element.querySelectorAll('span[style*="font-weight:600"], span[style*="font-weight: 600"]');
         return spans.length > 1 ? spans[1].textContent || null : null;
     }
     function getResourcesFromImages(element, selector, stopAt) {
@@ -157,7 +157,8 @@
      */
     function getStealVictim(element) {
         // Get the victim (second span with font-weight:600, after "from")
-        const victimSpans = element.querySelectorAll('span[style*="font-weight:600"]');
+        // Handle both "font-weight:600" and "font-weight: 600" formats
+        const victimSpans = element.querySelectorAll('span[style*="font-weight:600"], span[style*="font-weight: 600"]');
         // if there are not two spans then the first user is "you"
         return victimSpans.length >= 2
             ? victimSpans[1].textContent || null
@@ -412,49 +413,72 @@
         const player = game.players.find(p => p.name === playerName);
         if (!player)
             return false;
-        // Check if player has enough of the required resource
+        // Check if player already has enough of the required resource
         if (player.resources[requiredResource] >= requiredAmount) {
-            return true; // No need to resolve, player has the resource
+            return true;
         }
         const shortfall = requiredAmount - player.resources[requiredResource];
-        // Check if player has enough including probabilities
-        // Count how many unresolved transactions could potentially provide this resource
-        const unresolvedStealsForResource = game.unknownTransactions.filter(transaction => !transaction.isResolved &&
+        const candidateTransactions = findCandidateTransactions(playerName, requiredResource);
+        // Check if resolution is possible
+        if (!canResolveTransactions(candidateTransactions, shortfall)) {
+            return false;
+        }
+        // Determine resolution strategy
+        const resolutionStrategy = determineResolutionStrategy(candidateTransactions, shortfall);
+        if (resolutionStrategy.shouldResolve) {
+            executeResolution(resolutionStrategy.transactionsToResolve, requiredResource);
+            console.log(`✅ Resolved ${resolutionStrategy.transactionsToResolve.length} steals for ${playerName} to get ${requiredResource}`);
+            return true;
+        }
+        else {
+            console.log(`❌ Ambiguous resolution for ${playerName} needing ${requiredResource} - not resolving`);
+            return false;
+        }
+    }
+    function findCandidateTransactions(playerName, requiredResource) {
+        return game.unknownTransactions.filter(transaction => !transaction.isResolved &&
             transaction.type === 'steal' &&
             transaction.thief === playerName &&
             transaction.possibleResources[requiredResource] > 0);
-        const maxPossibleFromUnresolvedSteals = unresolvedStealsForResource.length;
-        const totalMaxAvailable = player.resources[requiredResource] + maxPossibleFromUnresolvedSteals;
-        if (totalMaxAvailable < requiredAmount) {
-            console.log(`❌ ${playerName} doesn't have enough ${requiredResource} even with probabilities`);
+    }
+    function canResolveTransactions(candidateTransactions, shortfall) {
+        if (candidateTransactions.length === 0) {
+            console.log(`❌ No candidate transactions found`);
             return false;
         }
-        // Find unresolved transactions where this player was the thief and could have stolen this resource
-        const unresolvedSteals = game.unknownTransactions.filter(transaction => !transaction.isResolved &&
-            transaction.type === 'steal' &&
-            transaction.thief === playerName &&
-            transaction.possibleResources[requiredResource] > 0);
-        if (unresolvedSteals.length === 0) {
-            console.log(`❌ No unresolved steals found for ${playerName} involving ${requiredResource}`);
+        if (candidateTransactions.length < shortfall) {
+            console.log(`❌ Not enough possible steals (${candidateTransactions.length}) to cover shortfall (${shortfall})`);
             return false;
         }
-        // For now, resolve the most recent steal that could provide this resource
-        // In a more sophisticated system, you might want to resolve based on highest probability
-        const stealToResolve = unresolvedSteals[unresolvedSteals.length - 1];
-        console.log(`🔍 Resolving unknown steal: ${stealToResolve.id}`);
-        console.log(`   ${playerName} stole ${requiredResource} from ${stealToResolve.victim}`);
-        // Resolve the transaction using helper function
-        resolveUnknownTransaction(stealToResolve, requiredResource);
-        // If we needed more than 1 resource, add the additional amount
-        if (shortfall > 1) {
-            player.resources[requiredResource] += shortfall - 1;
-            const victimPlayer = game.players.find(p => p.name === stealToResolve.victim);
-            if (victimPlayer) {
-                victimPlayer.resources[requiredResource] -= shortfall - 1;
-            }
-        }
-        console.log(`✅ Resolved steal: ${playerName} stole ${requiredResource} from ${stealToResolve.victim}`);
         return true;
+    }
+    function determineResolutionStrategy(candidateTransactions, shortfall) {
+        // If shortfall equals number of candidate transactions, resolve all
+        if (shortfall === candidateTransactions.length) {
+            return {
+                shouldResolve: true,
+                transactionsToResolve: candidateTransactions,
+            };
+        }
+        // If shortfall is less than candidates, it's ambiguous - don't resolve
+        if (shortfall < candidateTransactions.length) {
+            return {
+                shouldResolve: false,
+                transactionsToResolve: [],
+            };
+        }
+        // This shouldn't happen if canResolveTransactions worked correctly
+        return {
+            shouldResolve: false,
+            transactionsToResolve: [],
+        };
+    }
+    function executeResolution(transactionsToResolve, requiredResource, shortfall) {
+        transactionsToResolve.forEach(transaction => {
+            console.log(`🔍 Resolving unknown steal: ${transaction.id}`);
+            console.log(`   ${transaction.thief} stole ${requiredResource} from ${transaction.victim}`);
+            resolveUnknownTransaction(transaction, requiredResource);
+        });
     }
     /**
      * Resolve a specific unknown transaction with a known resource type
@@ -776,7 +800,8 @@
         const player = game.players.find(p => p.name === playerName);
         if (player) {
             player.knights++;
-            player.discoveryCards.knights--;
+            player.discoveryCards.knights++;
+            game.knights--;
             console.log(`⚔️ ${playerName} used a knight. Total knights played: ${player.knights}`);
         }
     }
@@ -849,7 +874,7 @@
         const player = game.players.find(p => p.name === playerName);
         if (player) {
             game.yearOfPlenties--;
-            player.discoveryCards.yearOfPlenties--;
+            player.discoveryCards.yearOfPlenties++;
             console.log(`🎯 ${playerName} used Year of Plenty. Remaining: ${game.yearOfPlenties}`);
         }
     }
@@ -874,7 +899,7 @@
         const player = game.players.find(p => p.name === playerName);
         if (player) {
             game.roadBuilders--;
-            player.discoveryCards.roadBuilders--;
+            player.discoveryCards.roadBuilders++;
             console.log(`🛣️ ${playerName} used Road Building. Remaining: ${game.roadBuilders}`);
         }
     }
@@ -887,7 +912,7 @@
         const player = game.players.find(p => p.name === playerName);
         if (player) {
             game.monopolies--;
-            player.discoveryCards.monopolies--;
+            player.discoveryCards.monopolies++;
             console.log(`💰 ${playerName} used Monopoly. Remaining: ${game.monopolies}`);
         }
     }
@@ -947,6 +972,15 @@
             if (offeredCount && offeredCount > 0) {
                 // Try to resolve unknown transactions for this resource
                 attemptToResolveUnknownTransactions(playerName, key, offeredCount);
+                // If we couldn't resolve enough resources through transactions,
+                // the player must still have the resources to offer them
+                // (This handles the ambiguous case where multiple resolutions are possible)
+                const currentAmount = player.resources[key];
+                if (currentAmount < offeredCount) {
+                    const shortfall = offeredCount - currentAmount;
+                    player.resources[key] += shortfall;
+                    console.log(`➕ ${playerName} gained ${shortfall} ${key} to match offer (ambiguous resolution)`);
+                }
                 // If player is offering exactly the amount they have of a resource,
                 // eliminate it from any unknown transactions where they were the victim
                 // (because they must still have it to be able to offer it)
@@ -1136,6 +1170,46 @@
         display += '</div>';
         return display;
     }
+    function generateDevCardsDisplay() {
+        const devCardTypes = [
+            { key: 'knights', name: 'Knight', icon: 'knight.svg' },
+            { key: 'monopolies', name: 'Monopoly', icon: 'mono.svg' },
+            { key: 'roadBuilders', name: 'Road Building', icon: 'rb.svg' },
+            { key: 'yearOfPlenties', name: 'Year of Plenty', icon: 'yop.svg' },
+            { key: 'victoryPoints', name: 'Victory Point', icon: 'vp.svg' },
+        ];
+        let display = '<div style="margin: 15px 0;">';
+        display +=
+            '<h4 style="margin: 0 0 10px 0; text-align: center;">Development Cards Remaining</h4>';
+        display +=
+            '<div style="display: flex; justify-content: space-around; align-items: center; padding: 10px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">';
+        devCardTypes.forEach(cardType => {
+            const remaining = game[cardType.key];
+            const total = cardType.key === 'knights'
+                ? 14
+                : cardType.key === 'victoryPoints'
+                    ? 5
+                    : 2;
+            display += `
+      <div style="display: flex; flex-direction: column; align-items: center; min-width: 60px;">
+        <div style="width: 32px; height: 40px; margin-bottom: 5px; display: flex; align-items: center; justify-content: center; background: white; border-radius: 4px; border: 1px solid #ddd;">
+                     <img src="${chrome.runtime.getURL(`assets/${cardType.icon}`)}" 
+               style="width: 24px; height: 32px;" 
+               alt="${cardType.name}" 
+               title="${cardType.name}" />
+        </div>
+        <div style="font-size: 12px; font-weight: bold; color: #2c3e50;">
+          ${remaining}/${total}
+        </div>
+        <div style="font-size: 9px; color: #666; text-align: center; line-height: 1.1;">
+          ${cardType.name}
+        </div>
+      </div>
+    `;
+        });
+        display += '</div></div>';
+        return display;
+    }
     function generateDiceChart() {
         const maxRolls = Math.max(...Object.values(game.diceRolls), 1);
         const chartHeight = 120;
@@ -1197,6 +1271,7 @@
          <div id="overlay-content" style="display: ${contentDisplay}; padding: 15px; max-height: 500px; overflow-y: auto; position: relative;">
        ${generateResourceTable()}
        ${generateUnknownTransactionsDisplay()}
+       ${generateDevCardsDisplay()}
        ${generateDiceChart()}
        <div class="resize-handle" style="
          position: absolute;
