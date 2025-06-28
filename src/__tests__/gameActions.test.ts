@@ -10,6 +10,10 @@ import {
   useRoadBuilding,
   useMonopoly,
   useYearOfPlenty,
+  yearOfPlentyTake,
+  bankTrade,
+  buildCity,
+  buildSettlement,
 } from '../gameActions';
 import { game, resetGameState } from '../gameState';
 import { ResourceObjectType } from '../types';
@@ -518,6 +522,120 @@ describe('gameActions', () => {
         tree: 0,
         ore: 0,
         sheep: 0,
+      });
+    });
+
+    it('should eliminate unknown transactions if player double steals from a player with only 2 cars', () => {
+      // this is a scenario where I saw an incorrect resolution
+      playerGetResources('Alice', { wheat: 6, brick: 5, ore: 1 });
+      playerGetResources('Bob', { wheat: 1, ore: 1 });
+
+      unknownSteal('Alice', 'Bob');
+      unknownSteal('Alice', 'Bob');
+
+      expect(game.unknownTransactions.filter(t => !t.isResolved).length).toBe(
+        0
+      );
+
+      // so at this point we know that Alice stole both cards from Bob
+      // so it will be 1 wheat and 1 ore
+    });
+
+    it('should eliminate unknown transactions if player double steals from a player with only 2 cards', () => {
+      // this is a scenario where I saw an incorrect resolution
+      playerGetResources('Alice', { wheat: 5, brick: 5 });
+      playerGetResources('Bob', { wheat: 1, ore: 1 });
+
+      unknownSteal('Alice', 'Bob');
+      unknownSteal('Alice', 'Bob');
+
+      expect(game.unknownTransactions.filter(t => !t.isResolved).length).toBe(
+        2
+      );
+
+      bankTrade('Alice', { ore: 2, wheat: -4, brick: -4 });
+      buildCity('Alice');
+
+      // both steals should steal be unresolved
+      const unresolvedUnknownTransactions = game.unknownTransactions.filter(
+        t => !t.isResolved
+      );
+      expect(unresolvedUnknownTransactions.length).toBe(2);
+
+      // Alice now has 1 brick and either a wheat or an ore, could have been from either steal
+      expect(game.players.find(p => p.name === 'Alice')!.resources).toEqual({
+        wheat: 0,
+        ore: 0,
+        brick: 1,
+        tree: 0,
+        sheep: 0,
+      });
+      expect(unresolvedUnknownTransactions[0].possibleResources).toEqual({
+        wheat: 1,
+        ore: 1,
+        brick: 0,
+        tree: 0,
+        sheep: 0,
+      });
+      expect(unresolvedUnknownTransactions[1].possibleResources).toEqual({
+        wheat: 1,
+        ore: 1,
+        brick: 0,
+        tree: 0,
+        sheep: 0,
+      });
+
+      // Alice probabilities should be .5 for each ore and wheat
+      expect(
+        game.players.find(p => p.name === 'Alice')!.resourceProbabilities
+      ).toEqual({
+        wheat: 0.5,
+        ore: 0.5,
+        brick: 0,
+        tree: 0,
+        sheep: 0,
+      });
+
+      // now let's say Alice steal from someone and it could be an ore or tree
+      // then they buy a dev and now they have one card, we know that one
+      // card is a brick and there should be no probability for Alice
+      // so we know the last steal was a brick and and can resolve that one
+      // the other two steals we know were either or, but we cannot resolve them
+      // because we don't know which order they were stolen in
+    });
+
+    it('should resolve multiple transactions if a player buys something that only can result from one outcome', () => {
+      playerGetResources('Alice', { brick: 3, sheep: 3 });
+      playerGetResources('Bob', { sheep: 1, tree: 1, brick: 1 });
+
+      unknownSteal('Alice', 'Bob');
+      unknownSteal('Alice', 'Bob');
+
+      expect(game.unknownTransactions.filter(t => !t.isResolved).length).toBe(
+        2
+      );
+
+      bankTrade('Alice', { brick: -3, wheat: 1 });
+      buildSettlement('Alice');
+
+      // If alice built a settlement then she had to steal a brick and a tree from Bob
+      // so we don't know which was which but we should be able to resolve them both as a group
+      expect(game.unknownTransactions.filter(t => !t.isResolved).length).toBe(
+        0
+      );
+      expect(game.players.find(p => p.name === 'Alice')!.resources).toEqual({
+        sheep: 2,
+        wheat: 0,
+        brick: 0,
+        tree: 0,
+        ore: 0,
+      });
+      expect(game.players.find(p => p.name === 'Bob')!.resources).toEqual({
+        sheep: 1,
+        wheat: 0,
+        brick: 0,
+        tree: 0,
+        ore: 0,
       });
     });
   });

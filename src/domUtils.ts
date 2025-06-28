@@ -31,6 +31,13 @@ export function getPlayerName(element: HTMLElement): string | null {
   return playerSpan ? playerSpan.textContent || null : null;
 }
 
+export function getPlayerColor(element: HTMLElement): string {
+  const playerSpan = element.querySelector(
+    'span[style*="font-weight:600"]'
+  ) as HTMLElement;
+  return playerSpan ? playerSpan.style.color || '#000' : '#000';
+}
+
 /**
  * Automatically detects the current player from the header profile username
  * This eliminates the need for user input popups

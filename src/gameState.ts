@@ -102,11 +102,12 @@ export function resetGameState(): void {
   console.log('🔄 Game state reset, reprocessing messages...');
 }
 
-export function ensurePlayerExists(playerName: string): void {
+export function ensurePlayerExists(playerName: string, color?: string): void {
   const existingPlayer = game.players.find(p => p.name === playerName);
   if (!existingPlayer) {
     const newPlayer: PlayerType = {
       name: playerName,
+      color: color || '#000',
       resources: { sheep: 0, wheat: 0, brick: 0, tree: 0, ore: 0 },
       resourceProbabilities: { sheep: 0, wheat: 0, brick: 0, tree: 0, ore: 0 },
       settlements: 5,
@@ -138,7 +139,6 @@ export function updateResources(
   playerName: string,
   resourceChanges: Partial<ResourceObjectType>
 ): void {
-  ensurePlayerExists(playerName);
   const player = game.players.find(p => p.name === playerName);
   if (!player) return;
 

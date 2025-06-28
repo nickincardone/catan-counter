@@ -23,6 +23,10 @@
         const playerSpan = element.querySelector('span[style*="font-weight:600"]');
         return playerSpan ? playerSpan.textContent || null : null;
     }
+    function getPlayerColor(element) {
+        const playerSpan = element.querySelector('span[style*="font-weight:600"]');
+        return playerSpan ? playerSpan.style.color || '#000' : '#000';
+    }
     /**
      * Automatically detects the current player from the header profile username
      * This eliminates the need for user input popups
@@ -276,11 +280,12 @@
         console.log('❌ Failed to auto-detect current player');
         return false;
     }
-    function ensurePlayerExists(playerName) {
+    function ensurePlayerExists(playerName, color) {
         const existingPlayer = game.players.find(p => p.name === playerName);
         if (!existingPlayer) {
             const newPlayer = {
                 name: playerName,
+                color: color || '#000',
                 resources: { sheep: 0, wheat: 0, brick: 0, tree: 0, ore: 0 },
                 resourceProbabilities: { sheep: 0, wheat: 0, brick: 0, tree: 0, ore: 0 },
                 settlements: 5,
@@ -308,7 +313,6 @@
         }
     }
     function updateResources(playerName, resourceChanges) {
-        ensurePlayerExists(playerName);
         const player = game.players.find(p => p.name === playerName);
         if (!player)
             return;
@@ -666,10 +670,10 @@
     /**
      * Handle a player placing a settlement
      */
-    function placeSettlement(playerName) {
+    function placeSettlement(playerName, color) {
         if (!playerName)
             return;
-        ensurePlayerExists(playerName);
+        ensurePlayerExists(playerName, color);
         const player = game.players.find(p => p.name === playerName);
         if (player && player.settlements > 0) {
             player.settlements--;
@@ -1100,13 +1104,13 @@
         if (game.players.length === 0) {
             return '<div style="padding: 20px; text-align: center; color: #666;">No players found</div>';
         }
-        const resourceNames = ['sheep', 'wheat', 'brick', 'tree', 'ore'];
-        const resourceEmojis = ['🐑', '🌾', '🧱', '🌲', '⛰️'];
+        const resourceNames = ['tree', 'brick', 'sheep', 'wheat', 'ore'];
+        const resourceEmojis = ['🌲', '🧱', '🐑', '🌾', '⛰️'];
         const resourceColors = [
+            '#a8e6cf',
+            '#ffeaa7',
             '#f0f8ff',
             '#fff8dc',
-            '#ffeaa7',
-            '#a8e6cf',
             '#ddd6fe',
         ];
         let table = '<table style="width: 100%; border-collapse: collapse; margin: 10px 0;">';
@@ -1126,7 +1130,7 @@
         // Player rows
         game.players.forEach(player => {
             table += '<tr>';
-            table += `<td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${player.name}</td>`;
+            table += `<td style="padding: 8px; border: 1px solid #ddd; font-weight: bold; color: ${player.color};">${player.name}</td>`;
             resourceNames.forEach((resource, index) => {
                 const count = player.resources[resource];
                 const probability = player.resourceProbabilities[resource];
@@ -1367,7 +1371,7 @@
         // Scenario 1: Place settlement (keyword: "placed a")
         else if (messageText.includes('placed a') &&
             element.querySelector('img[alt="settlement"]')) {
-            placeSettlement(playerName);
+            placeSettlement(playerName, getPlayerColor(element));
         }
         // Scenario 2: Roll dice (keyword: "rolled")
         else if (messageText.includes('rolled')) {

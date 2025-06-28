@@ -40,10 +40,13 @@ export function playerDiscard(
 /**
  * Handle a player placing a settlement
  */
-export function placeSettlement(playerName: string | null): void {
+export function placeSettlement(
+  playerName: string | null,
+  color?: string
+): void {
   if (!playerName) return;
 
-  ensurePlayerExists(playerName);
+  ensurePlayerExists(playerName, color);
   const player = game.players.find(p => p.name === playerName);
   if (player && player.settlements > 0) {
     player.settlements--;

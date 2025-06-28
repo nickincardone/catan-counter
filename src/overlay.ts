@@ -125,13 +125,13 @@ function generateResourceTable(): string {
     return '<div style="padding: 20px; text-align: center; color: #666;">No players found</div>';
   }
 
-  const resourceNames = ['sheep', 'wheat', 'brick', 'tree', 'ore'];
-  const resourceEmojis = ['🐑', '🌾', '🧱', '🌲', '⛰️'];
+  const resourceNames = ['tree', 'brick', 'sheep', 'wheat', 'ore'];
+  const resourceEmojis = ['🌲', '🧱', '🐑', '🌾', '⛰️'];
   const resourceColors = [
+    '#a8e6cf',
+    '#ffeaa7',
     '#f0f8ff',
     '#fff8dc',
-    '#ffeaa7',
-    '#a8e6cf',
     '#ddd6fe',
   ];
 
@@ -158,7 +158,7 @@ function generateResourceTable(): string {
   // Player rows
   game.players.forEach(player => {
     table += '<tr>';
-    table += `<td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${player.name}</td>`;
+    table += `<td style="padding: 8px; border: 1px solid #ddd; font-weight: bold; color: ${player.color};">${player.name}</td>`;
 
     resourceNames.forEach((resource, index) => {
       const count = player.resources[resource as keyof typeof player.resources];

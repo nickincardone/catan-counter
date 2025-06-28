@@ -38,6 +38,7 @@ export interface PlayerType {
   discoveryCards: DiscoveryCardType;
   discoveryCardProbabilities: DiscoveryCardType;
   totalRobbers: number;
+  color: string;
 }
 
 export interface GameType {

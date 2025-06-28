@@ -1,5 +1,6 @@
 import {
   getDiceRollTotal,
+  getPlayerColor,
   getPlayerName,
   getResourcesFromImages,
   getResourceType,
@@ -98,7 +99,7 @@ export function updateGameFromChat(element: HTMLElement): void {
     messageText.includes('placed a') &&
     element.querySelector('img[alt="settlement"]')
   ) {
-    placeSettlement(playerName);
+    placeSettlement(playerName, getPlayerColor(element));
   }
   // Scenario 2: Roll dice (keyword: "rolled")
   else if (messageText.includes('rolled')) {
