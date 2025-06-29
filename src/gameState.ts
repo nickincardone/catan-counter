@@ -5,6 +5,7 @@ import {
   UnknownTransaction,
 } from './types.js';
 import { getCurrentPlayerFromHeader } from './domUtils.js';
+import { PropbableGameState } from './gameStateWithVariants.js';
 
 export function getDefaultGame(): GameType {
   return {
@@ -22,6 +23,7 @@ export function getDefaultGame(): GameType {
     yearOfPlenties: 2,
     roadBuilders: 2,
     monopolies: 2,
+    hasRolledFirstDice: false,
     diceRolls: {
       2: 0,
       3: 0,
@@ -43,6 +45,7 @@ export function getDefaultGame(): GameType {
       monopolies: 0,
     },
     unknownTransactions: [],
+    probableGameState: new PropbableGameState([]),
   };
 }
 
@@ -130,6 +133,7 @@ export function ensurePlayerExists(playerName: string, color?: string): void {
         monopolies: 0,
       },
       totalRobbers: 0,
+      totalCards: 0,
     };
     game.players.push(newPlayer);
   }
@@ -209,7 +213,6 @@ export function addUnknownSteal(thief: string, victim: string): string {
 
   const unknownTransaction: UnknownTransaction = {
     id: transactionId,
-    type: 'steal',
     timestamp: Date.now(),
     thief,
     victim,
@@ -329,7 +332,6 @@ function findCandidateTransactions(
   return game.unknownTransactions.filter(
     transaction =>
       !transaction.isResolved &&
-      transaction.type === 'steal' &&
       transaction.thief === playerName &&
       transaction.possibleResources[requiredResource] > 0
   );

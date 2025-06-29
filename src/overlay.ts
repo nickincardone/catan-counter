@@ -25,7 +25,7 @@ function createGameStateOverlay(): HTMLDivElement {
     top: 20px;
     right: 20px;
     width: 450px;
-    max-height: 600px;
+    max-height: 1000px;
     background: white;
     border: 2px solid #333;
     border-radius: 8px;
@@ -120,9 +120,9 @@ function stopDragAndResize(): void {
   isResizing = false;
 }
 
-function generateResourceTable(): string {
-  if (game.players.length === 0) {
-    return '<div style="padding: 20px; text-align: center; color: #666;">No players found</div>';
+function generateResourceProbabilityTable(): string {
+  if (!game.probableGameState || game.players.length === 0) {
+    return '';
   }
 
   const resourceNames = ['tree', 'brick', 'sheep', 'wheat', 'ore'];
@@ -136,20 +136,19 @@ function generateResourceTable(): string {
   ];
 
   let table =
+    '<div style="margin: 15px 0;"><h4 style="margin: 0 0 10px 0; text-align: center;">🎯 Resource Probabilities</h4>';
+  table +=
     '<table style="width: 100%; border-collapse: collapse; margin: 10px 0;">';
 
-  // Header row with resource totals
+  // Header row
   table += '<thead><tr style="background: #f5f5f5;">';
   table +=
     '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Player</th>';
 
   resourceNames.forEach((resource, index) => {
-    const remaining =
-      game.gameResources[resource as keyof typeof game.gameResources];
-    const total = 19; // Standard Catan has 19 of each resource
     table += `<th style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]};">
       ${resourceEmojis[index]}<br>
-      <small>${remaining}/${total}</small>
+      <small>Min / +Prob</small>
     </th>`;
   });
 
@@ -157,22 +156,23 @@ function generateResourceTable(): string {
 
   // Player rows
   game.players.forEach(player => {
+    const probabilities =
+      game.probableGameState!.getPlayerResourceProbabilities(player.name);
+
     table += '<tr>';
     table += `<td style="padding: 8px; border: 1px solid #ddd; font-weight: bold; color: ${player.color};">${player.name}</td>`;
 
     resourceNames.forEach((resource, index) => {
-      const count = player.resources[resource as keyof typeof player.resources];
-      const probability =
-        player.resourceProbabilities[
-          resource as keyof typeof player.resourceProbabilities
-        ];
+      const resourceKey =
+        resource as keyof typeof probabilities.minimumResources;
+      const minCount = probabilities.minimumResources[resourceKey];
+      const additionalProb =
+        probabilities.additionalResourceProbabilities[resourceKey];
 
-      // Show both actual count and probability if there's a probability
-      let displayText = count.toString();
-      if (probability !== 0) {
-        const sign = probability > 0 ? '+' : '';
-        const color = probability > 0 ? '#e74c3c' : '#3498db';
-        displayText = `${count} <span style="color: ${color}; font-size: 10px;">${sign}${probability.toFixed(2)}</span>`;
+      // Format: "minimum + probability%"
+      let displayText = minCount.toString();
+      if (additionalProb > 0) {
+        displayText += ` <span style="color:rgb(84, 205, 44); font-size: 10px;">+${additionalProb.toFixed(2)}</span>`;
       }
 
       table += `<td style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]}; font-weight: bold;">
@@ -183,42 +183,8 @@ function generateResourceTable(): string {
     table += '</tr>';
   });
 
-  table += '</tbody></table>';
+  table += '</tbody></table></div>';
   return table;
-}
-
-function generateUnknownTransactionsDisplay(): string {
-  const unresolvedTransactions = game.unknownTransactions.filter(
-    t => !t.isResolved
-  );
-
-  if (unresolvedTransactions.length === 0) {
-    return '';
-  }
-
-  let display =
-    '<div style="margin: 15px 0; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px;">';
-  display +=
-    '<h4 style="margin: 0 0 10px 0; color: #856404;">🔍 Unknown Transactions</h4>';
-
-  unresolvedTransactions.forEach(transaction => {
-    const timestamp = new Date(transaction.timestamp).toLocaleTimeString();
-    display += `<div style="margin-bottom: 8px; padding: 8px; background: white; border-radius: 4px; font-size: 11px;">`;
-    display += `<strong>${transaction.thief}</strong> stole from <strong>${transaction.victim}</strong> `;
-    display += `<span style="color: #666;">(${timestamp})</span><br>`;
-
-    // Show what could have been stolen
-    const possibleResources = Object.entries(transaction.possibleResources)
-      .filter(([_, count]) => count > 0)
-      .map(([resource, count]) => `${resource}: ${count}`)
-      .join(', ');
-
-    display += `<small style="color: #666;">Could be: ${possibleResources}</small>`;
-    display += '</div>';
-  });
-
-  display += '</div>';
-  return display;
 }
 
 function generateDevCardsDisplay(): string {
@@ -334,9 +300,8 @@ function updateOverlayContent(overlay: HTMLDivElement): void {
       " title="${isMinimized ? 'Expand' : 'Minimize'}">${isMinimized ? '□' : '−'}</button>
     </div>
     
-         <div id="overlay-content" style="display: ${contentDisplay}; padding: 15px; max-height: 500px; overflow-y: auto; position: relative;">
-       ${generateResourceTable()}
-       ${generateUnknownTransactionsDisplay()}
+         <div id="overlay-content" style="display: ${contentDisplay}; padding: 15px; max-height: 800px; overflow-y: auto; position: relative;">
+       ${generateResourceProbabilityTable()}
        ${generateDevCardsDisplay()}
        ${generateDiceChart()}
        <div class="resize-handle" style="
@@ -399,6 +364,8 @@ export function setYouPlayerSelectedCallback(callback: () => void): void {
   youPlayerSelectedCallback = callback;
 }
 
+// old function, not used anymore
+// you player is automatically detected.
 export function showYouPlayerDialog(): void {
   if (game.players.length === 0) return;
 

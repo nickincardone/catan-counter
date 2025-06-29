@@ -219,6 +219,676 @@
         return {};
     }
 
+    // Variant system for tracking uncertain game states
+    const RESOURCE_TYPES = [
+        'tree',
+        'brick',
+        'sheep',
+        'wheat',
+        'ore',
+    ];
+    /**
+     * Represents a single possible game state with its probability
+     */
+    class Variant {
+        constructor(probability, gameState) {
+            this.probability = probability;
+            this.gameState = gameState;
+        }
+    }
+    /**
+     * A node in the variant tree with parent/child relationships
+     */
+    class VariantNode {
+        constructor(parent, probability, gameState) {
+            this.parent = parent;
+            this.probability = probability;
+            this.gameState = gameState;
+            this.children = [];
+        }
+        /**
+         * Add multiple variant nodes as children
+         */
+        addVariantNodes(variants) {
+            if (variants.length === 0)
+                return;
+            this.validateProbabilities(variants);
+            for (const variant of variants) {
+                this.children.push(variant);
+            }
+        }
+        /**
+         * Validate that probabilities sum to 1 (within tolerance)
+         */
+        validateProbabilities(variants) {
+            const sum = variants.reduce((total, variant) => total + variant.probability, 0);
+            const tolerance = 1e-8;
+            if (Math.abs(sum - 1) > tolerance) {
+                throw new Error(`Sum of variant probabilities must be 1, got ${sum}`);
+            }
+        }
+        /**
+         * Remove a child variant node and rebalance probabilities
+         */
+        removeVariantNode(nodeToRemove) {
+            const index = this.children.indexOf(nodeToRemove);
+            if (index === -1)
+                return;
+            this.children.splice(index, 1);
+            this.rebalanceProbabilities(nodeToRemove.probability);
+            // If this node has no children and has a parent, remove it from parent
+            if (this.children.length === 0 && this.parent) {
+                this.parent.removeVariantNode(this);
+            }
+        }
+        /**
+         * Rebalance probabilities after removing a node
+         */
+        rebalanceProbabilities(removedProbability) {
+            const currentSum = this.children.reduce((sum, child) => sum + child.probability, 0);
+            const scaleFactor = removedProbability / currentSum;
+            for (const child of this.children) {
+                child.probability += child.probability * scaleFactor;
+            }
+        }
+    }
+    /**
+     * Manages the complete tree of possible game states
+     */
+    class VariantTree {
+        constructor(initialGameState) {
+            this.root = new VariantNode(null, 1.0, initialGameState);
+        }
+        /**
+         * Remove a variant node from the tree
+         */
+        removeVariantNode(node) {
+            if (node === this.root) {
+                throw new Error('Cannot remove root node');
+            }
+            if (node.parent) {
+                node.parent.removeVariantNode(node);
+            }
+            // If tree becomes unary (single path), simplify it
+            if (this.isUnary()) {
+                const leafNodes = this.getCurrentVariantNodes();
+                this.root = leafNodes[0];
+                this.root.parent = null;
+            }
+        }
+        /**
+         * Get all current possible game states with their probabilities
+         */
+        getCurrentVariants() {
+            const leafNodes = this.getCurrentVariantNodes();
+            const variants = [];
+            for (const node of leafNodes) {
+                // Calculate cumulative probability from root to leaf
+                let probability = node.probability;
+                let parent = node.parent;
+                while (parent) {
+                    probability *= parent.probability;
+                    parent = parent.parent;
+                }
+                variants.push(new Variant(probability, node.gameState));
+            }
+            // Merge variants with identical game states
+            const mergedVariants = [];
+            for (const variant of variants) {
+                const existing = mergedVariants.find(v => JSON.stringify(v.gameState) === JSON.stringify(variant.gameState));
+                if (existing) {
+                    existing.probability += variant.probability;
+                }
+                else {
+                    mergedVariants.push(variant);
+                }
+            }
+            // Sort by probability (highest first)
+            return mergedVariants.sort((a, b) => b.probability - a.probability);
+        }
+        /**
+         * Get all leaf nodes (nodes with no children)
+         */
+        getCurrentVariantNodes(node = this.root, result = []) {
+            if (node.children.length === 0) {
+                result.push(node);
+            }
+            else {
+                for (const child of node.children) {
+                    this.getCurrentVariantNodes(child, result);
+                }
+            }
+            return result;
+        }
+        /**
+         * Check if the tree is unary (single path from root to leaf)
+         */
+        isUnary() {
+            let current = this.root;
+            while (current.children.length === 1) {
+                current = current.children[0];
+            }
+            return current.children.length === 0;
+        }
+        /**
+         * Remove any nodes that have impossible game states (negative resources, etc.)
+         */
+        pruneInvalidNodes() {
+            const leafNodes = this.getCurrentVariantNodes();
+            for (const node of leafNodes) {
+                if (this.isInvalidGameState(node.gameState)) {
+                    this.removeVariantNode(node);
+                }
+            }
+        }
+        /**
+         * Check if a game state is invalid
+         */
+        isInvalidGameState(gameState) {
+            for (const playerName in gameState) {
+                const player = gameState[playerName];
+                for (const resourceType of RESOURCE_TYPES) {
+                    if (player.resources[resourceType] < 0) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Transaction handlers using the variant system
+     */
+    class VariantTransactionProcessor {
+        constructor(variantTree) {
+            this.variantTree = variantTree;
+        }
+        /**
+         * Handle a steal from unknown resources
+         * Creates branches for each possible resource that could have been stolen
+         */
+        processUnknownSteal(stealerName, victimName) {
+            const currentNodes = this.variantTree.getCurrentVariantNodes();
+            for (const node of currentNodes) {
+                const newVariants = [];
+                const gameState = node.gameState;
+                const victimState = gameState[victimName];
+                if (!victimState) {
+                    console.warn(`Victim ${victimName} not found in game state`);
+                    continue;
+                }
+                // Calculate total resources the victim has
+                const totalResources = RESOURCE_TYPES.reduce((sum, resourceType) => sum + victimState.resources[resourceType], 0);
+                if (totalResources === 0) {
+                    // Victim has no resources, this branch is invalid
+                    this.variantTree.removeVariantNode(node);
+                    continue;
+                }
+                // Create a variant for each possible resource that could be stolen
+                for (const resourceType of RESOURCE_TYPES) {
+                    const resourceCount = victimState.resources[resourceType];
+                    if (resourceCount > 0) {
+                        // Probability = (victim's amount of this resource / victim's total resources)
+                        const probability = resourceCount / totalResources;
+                        // Create new game state where this resource was stolen
+                        const newGameState = this.deepCloneGameState(gameState);
+                        newGameState[victimName].resources[resourceType] -= 1;
+                        if (!newGameState[stealerName]) {
+                            console.warn(`Stealer ${stealerName} not found in game state`);
+                            continue;
+                        }
+                        newGameState[stealerName].resources[resourceType] += 1;
+                        newVariants.push(new VariantNode(node, probability, newGameState));
+                    }
+                }
+                // Add all possible steal variants as children
+                node.addVariantNodes(newVariants);
+            }
+            // Clean up invalid states
+            this.variantTree.pruneInvalidNodes();
+        }
+        /**
+         * Handle a monopoly card play where we know the total amount stolen
+         * This eliminates branches that don't match the known total
+         */
+        processMonopoly(playerName, resourceType, totalStolen) {
+            const currentNodes = this.variantTree.getCurrentVariantNodes();
+            for (const node of currentNodes) {
+                const gameState = node.gameState;
+                // Calculate how many of this resource all OTHER players have
+                let actualTotal = 0;
+                for (const [name, playerState] of Object.entries(gameState)) {
+                    if (name !== playerName) {
+                        actualTotal += playerState.resources[resourceType];
+                    }
+                }
+                // If this branch doesn't match the known total, eliminate it
+                if (actualTotal !== totalStolen) {
+                    this.variantTree.removeVariantNode(node);
+                }
+            }
+            // Update remaining valid branches with the monopoly results
+            const remainingNodes = this.variantTree.getCurrentVariantNodes();
+            for (const node of remainingNodes) {
+                const gameState = node.gameState;
+                // Player receives all the resources
+                if (gameState[playerName]) {
+                    gameState[playerName].resources[resourceType] += totalStolen;
+                }
+                // All other players lose all of this resource
+                for (const [name, playerState] of Object.entries(gameState)) {
+                    if (name !== playerName) {
+                        playerState.resources[resourceType] = 0;
+                    }
+                }
+            }
+        }
+        /**
+         * Handle a trade where we know the exact resources exchanged
+         */
+        processTrade(player1, player2, resourceChanges) {
+            const currentNodes = this.variantTree.getCurrentVariantNodes();
+            for (const node of currentNodes) {
+                const gameState = node.gameState;
+                const player1Gives = Object.fromEntries(Object.entries(resourceChanges)
+                    .filter(([_, value]) => value < 0)
+                    .map(([key, value]) => [key, -value]));
+                const player2Gives = Object.fromEntries(Object.entries(resourceChanges).filter(([_, value]) => value > 0));
+                // Check if trade is valid in this variant
+                if (!this.canAffordTrade(gameState[player1], player1Gives) ||
+                    !this.canAffordTrade(gameState[player2], player2Gives)) {
+                    this.variantTree.removeVariantNode(node);
+                    continue;
+                }
+                // Execute the trade
+                this.executeResourceTransfer(gameState[player1], player1Gives, -1);
+                this.executeResourceTransfer(gameState[player1], player2Gives, 1);
+                this.executeResourceTransfer(gameState[player2], player2Gives, -1);
+                this.executeResourceTransfer(gameState[player2], player1Gives, 1);
+            }
+            this.variantTree.pruneInvalidNodes();
+        }
+        /**
+         * Handle a trade offer that eliminates branches where the player can't afford it
+         */
+        processTradeOffer(playerName, offeredResources) {
+            const currentNodes = this.variantTree.getCurrentVariantNodes();
+            for (const node of currentNodes) {
+                const gameState = node.gameState;
+                const playerState = gameState[playerName];
+                if (!playerState || !this.canAffordTrade(playerState, offeredResources)) {
+                    this.variantTree.removeVariantNode(node);
+                }
+            }
+        }
+        /**
+         * Get the most likely current game state
+         */
+        getMostLikelyGameState() {
+            const variants = this.variantTree.getCurrentVariants();
+            if (variants.length === 0)
+                return null;
+            return {
+                gameState: variants[0].gameState,
+                probability: variants[0].probability,
+            };
+        }
+        /**
+         * Get all possible game states with their probabilities
+         */
+        getAllPossibleGameStates() {
+            return this.variantTree.getCurrentVariants().map(variant => ({
+                gameState: variant.gameState,
+                probability: variant.probability,
+            }));
+        }
+        /**
+         * Get uncertainty level for a specific player's resources
+         */
+        getPlayerResourceUncertainty(playerName) {
+            const variants = this.variantTree.getCurrentVariants();
+            const result = {};
+            for (const resourceType of RESOURCE_TYPES) {
+                const values = variants
+                    .map(v => {
+                    var _a;
+                    return ({
+                        value: ((_a = v.gameState[playerName]) === null || _a === void 0 ? void 0 : _a.resources[resourceType]) || 0,
+                        probability: v.probability,
+                    });
+                })
+                    .filter(v => v.value !== undefined);
+                if (values.length === 0) {
+                    result[resourceType] = { min: 0, max: 0, mostLikely: 0, confidence: 0 };
+                    continue;
+                }
+                const min = Math.min(...values.map(v => v.value));
+                const max = Math.max(...values.map(v => v.value));
+                // Most likely value (highest probability)
+                const mostLikely = values.reduce((best, current) => current.probability > best.probability ? current : best).value;
+                // Confidence = probability of the most likely value
+                const confidence = values
+                    .filter(v => v.value === mostLikely)
+                    .reduce((sum, v) => sum + v.probability, 0);
+                result[resourceType] = { min, max, mostLikely, confidence };
+            }
+            return result;
+        }
+        /**
+         * Helper: Deep clone game state
+         */
+        deepCloneGameState(gameState) {
+            return JSON.parse(JSON.stringify(gameState));
+        }
+        /**
+         * Helper: Check if player can afford a trade
+         */
+        canAffordTrade(playerState, resources) {
+            for (const [resourceType, amount] of Object.entries(resources)) {
+                if (amount && playerState.resources[resourceType] < amount) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        /**
+         * Helper: Execute resource transfer (multiplier: 1 for gain, -1 for loss)
+         */
+        executeResourceTransfer(playerState, resources, multiplier) {
+            for (const [resourceType, amount] of Object.entries(resources)) {
+                if (amount) {
+                    playerState.resources[resourceType] += amount * multiplier;
+                }
+            }
+        }
+    }
+
+    // Game State Types
+    var TransactionTypeEnum;
+    (function (TransactionTypeEnum) {
+        TransactionTypeEnum["ROBBER_STEAL"] = "ROBBER_STEAL";
+        TransactionTypeEnum["MONOPOLY"] = "MONOPOLY";
+        TransactionTypeEnum["TRADE"] = "TRADE";
+        TransactionTypeEnum["TRADE_OFFER"] = "TRADE_OFFER";
+        TransactionTypeEnum["DICE_ROLL"] = "DICE_ROLL";
+        TransactionTypeEnum["RESOURCE_GAIN"] = "RESOURCE_GAIN";
+        TransactionTypeEnum["RESOURCE_LOSS"] = "RESOURCE_LOSS";
+    })(TransactionTypeEnum || (TransactionTypeEnum = {}));
+
+    function updateResourceAmount(resources, resourceType, amount) {
+        resources[resourceType] += amount;
+    }
+    function getResourceAmount(resources, resourceType) {
+        return resources[resourceType];
+    }
+    function isValidResourceType(resourceType) {
+        return RESOURCE_TYPES.includes(resourceType);
+    }
+    /**
+     * Enhanced game state manager using the variant system
+     */
+    class PropbableGameState {
+        constructor(initialPlayers) {
+            // Initialize game state with players and their known starting resources
+            const initialGameState = {};
+            for (const player of initialPlayers) {
+                initialGameState[player.name] = {
+                    resources: Object.assign({}, player.resources), // Copy the initial resources
+                };
+            }
+            this.variantTree = new VariantTree(initialGameState);
+            this.transactionProcessor = new VariantTransactionProcessor(this.variantTree);
+        }
+        processTransaction(transaction) {
+            switch (transaction.type) {
+                case TransactionTypeEnum.ROBBER_STEAL: {
+                    if (transaction.stolenResource) {
+                        // Known steal - we know exactly what was stolen
+                        this.processKnownSteal(transaction.stealerName, transaction.victimName, transaction.stolenResource);
+                    }
+                    else {
+                        // Unknown steal - create probability branches
+                        this.transactionProcessor.processUnknownSteal(transaction.stealerName, transaction.victimName);
+                    }
+                    break;
+                }
+                case TransactionTypeEnum.MONOPOLY: {
+                    this.transactionProcessor.processMonopoly(transaction.playerName, transaction.resourceType, transaction.totalStolen);
+                    break;
+                }
+                case TransactionTypeEnum.TRADE: {
+                    this.transactionProcessor.processTrade(transaction.player1, transaction.player2, transaction.resourceChanges);
+                    break;
+                }
+                case TransactionTypeEnum.TRADE_OFFER: {
+                    this.transactionProcessor.processTradeOffer(transaction.playerName, transaction.offeredResources);
+                    break;
+                }
+                case TransactionTypeEnum.RESOURCE_GAIN: {
+                    this.processResourceGain(transaction.playerName, transaction.resources);
+                    break;
+                }
+                case TransactionTypeEnum.RESOURCE_LOSS: {
+                    this.processResourceLoss(transaction.playerName, transaction.resources);
+                    break;
+                }
+                default:
+                    // This should never happen with proper typing, but keeping for safety
+                    const exhaustiveCheck = transaction;
+                    console.warn(`Unknown transaction type: ${exhaustiveCheck.type}`);
+            }
+        }
+        /**
+         * Process a known steal (we know exactly what resource was stolen)
+         */
+        processKnownSteal(stealerName, victimName, resourceType) {
+            const currentNodes = this.variantTree.getCurrentVariantNodes();
+            for (const node of currentNodes) {
+                const gameState = node.gameState;
+                // Check if victim has this resource in this variant
+                const victimState = gameState[victimName];
+                const stealerState = gameState[stealerName];
+                if (victimState &&
+                    stealerState &&
+                    getResourceAmount(victimState.resources, resourceType) > 0) {
+                    // Execute the steal
+                    updateResourceAmount(victimState.resources, resourceType, -1);
+                    updateResourceAmount(stealerState.resources, resourceType, 1);
+                }
+                else {
+                    // This variant is invalid - victim doesn't have the resource
+                    this.variantTree.removeVariantNode(node);
+                }
+            }
+            this.variantTree.pruneInvalidNodes();
+        }
+        /**
+         * Process definite resource gain
+         */
+        processResourceGain(playerName, resources) {
+            const currentNodes = this.variantTree.getCurrentVariantNodes();
+            for (const node of currentNodes) {
+                const gameState = node.gameState;
+                const playerState = gameState[playerName];
+                if (playerState) {
+                    for (const [resourceType, amount] of Object.entries(resources)) {
+                        if (typeof amount === 'number' && isValidResourceType(resourceType)) {
+                            updateResourceAmount(playerState.resources, resourceType, amount);
+                        }
+                    }
+                }
+            }
+        }
+        /**
+         * Process definite resource loss
+         */
+        processResourceLoss(playerName, resources) {
+            const currentNodes = this.variantTree.getCurrentVariantNodes();
+            for (const node of currentNodes) {
+                const gameState = node.gameState;
+                const playerState = gameState[playerName];
+                if (playerState) {
+                    let canAfford = true;
+                    // Check if player can afford this loss in this variant
+                    for (const [resourceType, amount] of Object.entries(resources)) {
+                        if (typeof amount === 'number' &&
+                            isValidResourceType(resourceType) &&
+                            getResourceAmount(playerState.resources, resourceType) < amount) {
+                            canAfford = false;
+                            break;
+                        }
+                    }
+                    if (canAfford) {
+                        // Execute the loss
+                        for (const [resourceType, amount] of Object.entries(resources)) {
+                            if (typeof amount === 'number' &&
+                                isValidResourceType(resourceType)) {
+                                updateResourceAmount(playerState.resources, resourceType, -amount);
+                            }
+                        }
+                    }
+                    else {
+                        // This variant is invalid - player can't afford the loss
+                        this.variantTree.removeVariantNode(node);
+                    }
+                }
+            }
+            this.variantTree.pruneInvalidNodes();
+        }
+        /**
+         * Get the current best estimate of a player's resources
+         */
+        getPlayerResources(playerName) {
+            return this.transactionProcessor.getPlayerResourceUncertainty(playerName);
+        }
+        /**
+         * Get resource probabilities for a player
+         * Returns minimum guaranteed resources and probability of additional resources
+         */
+        getPlayerResourceProbabilities(playerName) {
+            const variants = this.variantTree.getCurrentVariants();
+            if (variants.length === 0) {
+                // No variants - return all zeros
+                const emptyResources = {
+                    tree: 0,
+                    brick: 0,
+                    sheep: 0,
+                    wheat: 0,
+                    ore: 0,
+                };
+                return {
+                    minimumResources: Object.assign({}, emptyResources),
+                    additionalResourceProbabilities: Object.assign({}, emptyResources),
+                };
+            }
+            // Calculate minimum resources across all variants
+            const minimumResources = {
+                tree: Number.MAX_SAFE_INTEGER,
+                brick: Number.MAX_SAFE_INTEGER,
+                sheep: Number.MAX_SAFE_INTEGER,
+                wheat: Number.MAX_SAFE_INTEGER,
+                ore: Number.MAX_SAFE_INTEGER,
+            };
+            // Collect all resource counts with their probabilities
+            const resourceCounts = [];
+            for (const variant of variants) {
+                const playerState = variant.gameState[playerName];
+                if (playerState) {
+                    resourceCounts.push({
+                        resources: playerState.resources,
+                        probability: variant.probability,
+                    });
+                    // Update minimums
+                    for (const resourceType of RESOURCE_TYPES) {
+                        minimumResources[resourceType] = Math.min(minimumResources[resourceType], playerState.resources[resourceType]);
+                    }
+                }
+            }
+            // If no player state found, set minimums to 0
+            if (resourceCounts.length === 0) {
+                for (const resourceType of RESOURCE_TYPES) {
+                    minimumResources[resourceType] = 0;
+                }
+            }
+            // Calculate probability of having more than minimum for each resource
+            const additionalResourceProbabilities = {
+                tree: 0,
+                brick: 0,
+                sheep: 0,
+                wheat: 0,
+                ore: 0,
+            };
+            for (const resourceType of RESOURCE_TYPES) {
+                const minCount = minimumResources[resourceType];
+                let probabilityOfMore = 0;
+                for (const { resources, probability } of resourceCounts) {
+                    if (resources[resourceType] > minCount) {
+                        probabilityOfMore += probability;
+                    }
+                }
+                additionalResourceProbabilities[resourceType] = probabilityOfMore;
+            }
+            return {
+                minimumResources,
+                additionalResourceProbabilities,
+            };
+        }
+        /**
+         * Get the most likely complete game state
+         */
+        getMostLikelyGameState() {
+            return this.transactionProcessor.getMostLikelyGameState();
+        }
+        /**
+         * Get all possible game states with their probabilities
+         */
+        getAllPossibleGameStates() {
+            return this.transactionProcessor.getAllPossibleGameStates();
+        }
+        /**
+         * Get the number of possible game states being tracked
+         */
+        getVariantCount() {
+            return this.variantTree.getCurrentVariantNodes().length;
+        }
+        /**
+         * Get uncertainty score for the entire game state (0 = certain, 1 = completely uncertain)
+         */
+        getUncertaintyScore() {
+            const variants = this.variantTree.getCurrentVariants();
+            if (variants.length <= 1)
+                return 0;
+            // Calculate entropy as a measure of uncertainty
+            const entropy = variants.reduce((sum, variant) => {
+                if (variant.probability > 0) {
+                    return sum - variant.probability * Math.log2(variant.probability);
+                }
+                return sum;
+            }, 0);
+            // Normalize entropy to 0-1 scale
+            const maxEntropy = Math.log2(variants.length);
+            return maxEntropy > 0 ? entropy / maxEntropy : 0;
+        }
+        /**
+         * Debug: Print current variants and their probabilities
+         */
+        debugPrintVariants() {
+            const variants = this.variantTree.getCurrentVariants();
+            console.log(`\n=== Current Game State Variants (${variants.length} total) ===`);
+            variants.forEach((variant, index) => {
+                console.log(`\nVariant ${index + 1} (${(variant.probability * 100).toFixed(1)}% probability):`);
+                for (const [playerName, playerState] of Object.entries(variant.gameState)) {
+                    const resources = Object.entries(playerState.resources)
+                        .map(([type, count]) => `${type}: ${count}`)
+                        .join(', ');
+                    console.log(`  ${playerName}: ${resources}`);
+                }
+            });
+            console.log(`\nUncertainty Score: ${(this.getUncertaintyScore() * 100).toFixed(1)}%`);
+        }
+    }
+
     function getDefaultGame() {
         return {
             players: [],
@@ -235,6 +905,7 @@
             yearOfPlenties: 2,
             roadBuilders: 2,
             monopolies: 2,
+            hasRolledFirstDice: false,
             diceRolls: {
                 2: 0,
                 3: 0,
@@ -256,6 +927,7 @@
                 monopolies: 0,
             },
             unknownTransactions: [],
+            probableGameState: new PropbableGameState([]),
         };
     }
     let game = getDefaultGame();
@@ -308,6 +980,7 @@
                     monopolies: 0,
                 },
                 totalRobbers: 0,
+                totalCards: 0,
             };
             game.players.push(newPlayer);
         }
@@ -368,7 +1041,6 @@
         const transactionId = `steal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const unknownTransaction = {
             id: transactionId,
-            type: 'steal',
             timestamp: Date.now(),
             thief,
             victim,
@@ -441,7 +1113,6 @@
     }
     function findCandidateTransactions(playerName, requiredResource) {
         return game.unknownTransactions.filter(transaction => !transaction.isResolved &&
-            transaction.type === 'steal' &&
             transaction.thief === playerName &&
             transaction.possibleResources[requiredResource] > 0);
     }
@@ -657,6 +1328,11 @@
             return;
         // Remove resources from player (negative values, automatically adds to bank)
         const playerChanges = {};
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_LOSS,
+            playerName: playerName,
+            resources: discardedResources,
+        });
         Object.keys(discardedResources).forEach(resource => {
             const key = resource;
             const count = discardedResources[key];
@@ -685,27 +1361,30 @@
      */
     function rollDice(diceTotal) {
         if (diceTotal >= 2 && diceTotal <= 12) {
-            game.diceRolls[diceTotal]++;
-            console.log(`🎲 Dice rolled: ${diceTotal}. Total rolls for ${diceTotal}: ${game.diceRolls[diceTotal]}`);
-            // Auto-detect current player on the first dice roll instead of showing popup
-            if (!youPlayerName && game.players.length > 0) {
-                const success = autoDetectCurrentPlayer();
-                if (!success) {
-                    console.log('⚠️ Could not auto-detect current player. Manual selection may be needed.');
+            if (!game.hasRolledFirstDice) {
+                game.hasRolledFirstDice = true;
+                // setting up probable game state with all players
+                game.probableGameState = new PropbableGameState(game.players);
+                // Auto-detect current player on the first dice roll instead of showing popup
+                if (!youPlayerName && game.players.length > 0) {
+                    const success = autoDetectCurrentPlayer();
+                    if (!success) {
+                        console.log('⚠️ Could not auto-detect current player. Manual selection may be needed.');
+                    }
                 }
             }
+            game.diceRolls[diceTotal]++;
         }
     }
     /**
-     * Handle a player placing a road
+     * Handle a player placing inital road, no brick/tree spent
      */
-    function placeRoad(playerName) {
+    function placeInitialRoad(playerName) {
         if (!playerName)
             return;
         const player = game.players.find(p => p.name === playerName);
         if (player && player.roads > 0) {
             player.roads--;
-            console.log(`🛣️ ${playerName} placed a road. Remaining roads: ${player.roads}`);
         }
     }
     /**
@@ -718,6 +1397,13 @@
         const hasChanges = Object.values(resourceChanges).some(count => count && count !== 0);
         if (!hasChanges)
             return;
+        // add call to game probable processor to handle trade
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.TRADE,
+            player1: playerName,
+            player2: tradePartner,
+            resourceChanges: resourceChanges,
+        });
         // Update the player who initiated the trade
         updateResources(playerName, resourceChanges);
         // Update the trade partner (opposite changes)
@@ -728,7 +1414,6 @@
             }
         });
         updateResources(tradePartner, partnerChanges);
-        console.log(`🤝 ${playerName} traded with ${tradePartner}. Changes: ${JSON.stringify(resourceChanges)}`);
     }
     /**
      * Handle a player getting resources
@@ -740,8 +1425,13 @@
         const hasResources = Object.values(resources).some(count => count && count > 0);
         if (!hasResources)
             return;
+        // add call to game probable processor to handle resource gain
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_GAIN,
+            playerName: playerName,
+            resources: resources,
+        });
         updateResources(playerName, resources);
-        console.log(`🌾 ${playerName} got resources: ${JSON.stringify(resources)}`);
     }
     /**
      * Handle a known steal where we know what resource was stolen
@@ -749,9 +1439,14 @@
     function knownSteal(thief, victim, resource) {
         if (!thief || !victim)
             return;
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.ROBBER_STEAL,
+            stealerName: thief,
+            victimName: victim,
+            stolenResource: resource,
+        });
         updateResources(thief, { [resource]: 1 });
         updateResources(victim, { [resource]: -1 });
-        console.log(`🦹 ${thief} stole ${resource} from ${victim}`);
     }
     /**
      * Handle an unknown steal - tries to deduce the resource or records it as unknown
@@ -759,19 +1454,29 @@
     function unknownSteal(thief, victim) {
         if (!thief || !victim)
             return;
-        // Check if victim has only one type of resource (with non-zero count)
-        const victimPlayer = game.players.find(p => p.name === victim);
-        const nonZeroResources = victimPlayer
-            ? Object.entries(victimPlayer.resources).filter(([_, count]) => count > 0)
-            : [];
-        if (nonZeroResources.length === 1) {
+        // Check if victim has only one type of resource across ALL possible variants
+        const victimProbabilities = game.probableGameState.getPlayerResourceProbabilities(victim);
+        // Count how many resource types the victim could possibly have
+        const possibleResourceTypes = Object.entries(victimProbabilities.minimumResources)
+            .filter(([_, count]) => count > 0)
+            .concat(Object.entries(victimProbabilities.additionalResourceProbabilities).filter(([_, probability]) => probability > 0));
+        // Remove duplicates by converting to Set and back
+        const uniqueResourceTypes = [
+            ...new Set(possibleResourceTypes.map(([resourceType]) => resourceType)),
+        ];
+        if (uniqueResourceTypes.length === 1) {
             // Victim has only one type of resource - we can deduce what was stolen
-            const [deductedResource] = nonZeroResources[0];
-            const resourceType = deductedResource;
+            const resourceType = uniqueResourceTypes[0];
             knownSteal(thief, victim, resourceType);
         }
         else {
             // Unknown steal - we don't know what resource was stolen
+            game.probableGameState.processTransaction({
+                type: TransactionTypeEnum.ROBBER_STEAL,
+                stealerName: thief,
+                victimName: victim,
+                stolenResource: null,
+            });
             const transactionId = addUnknownSteal(thief, victim);
             console.log(`🔍 ${thief} stole unknown resource from ${victim} (Transaction: ${transactionId})`);
         }
@@ -782,6 +1487,11 @@
     function buyDevCard(playerName) {
         if (!playerName)
             return;
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_LOSS,
+            playerName: playerName,
+            resources: { wheat: 1, sheep: 1, ore: 1 },
+        });
         game.devCards--;
         updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
         console.log(`🃏 ${playerName} bought a development card. Remaining dev cards: ${game.devCards}`);
@@ -792,6 +1502,19 @@
     function bankTrade(playerName, resourceChanges) {
         if (!playerName)
             return;
+        // TODO make a transaction type that is a bank trade
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_LOSS,
+            playerName: playerName,
+            resources: Object.fromEntries(Object.entries(resourceChanges)
+                .filter(([_, value]) => value < 0)
+                .map(([key, value]) => [key, -value])),
+        });
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_GAIN,
+            playerName: playerName,
+            resources: Object.fromEntries(Object.entries(resourceChanges).filter(([_, value]) => value > 0)),
+        });
         updateResources(playerName, resourceChanges);
         console.log(`🏦 ${playerName} traded with bank. Changes: ${JSON.stringify(resourceChanges)}`);
     }
@@ -806,7 +1529,6 @@
             player.knights++;
             player.discoveryCards.knights++;
             game.knights--;
-            console.log(`⚔️ ${playerName} used a knight. Total knights played: ${player.knights}`);
         }
     }
     /**
@@ -817,7 +1539,11 @@
             return;
         const player = game.players.find(p => p.name === playerName);
         if (player) {
-            // Cost: 1 wood, 1 wheat, 1 brick, 1 sheep
+            game.probableGameState.processTransaction({
+                type: TransactionTypeEnum.RESOURCE_LOSS,
+                playerName: playerName,
+                resources: { tree: 1, wheat: 1, brick: 1, sheep: 1 },
+            });
             updateResources(playerName, {
                 tree: -1,
                 wheat: -1,
@@ -826,7 +1552,6 @@
             });
             player.settlements--;
             player.victoryPoints++;
-            console.log(`🏠 ${playerName} built a settlement. VP: ${player.victoryPoints}, Remaining settlements: ${player.settlements}`);
         }
     }
     /**
@@ -837,11 +1562,15 @@
             return;
         const player = game.players.find(p => p.name === playerName);
         if (player) {
+            game.probableGameState.processTransaction({
+                type: TransactionTypeEnum.RESOURCE_LOSS,
+                playerName: playerName,
+                resources: { ore: 3, wheat: 2 },
+            });
             updateResources(playerName, { ore: -3, wheat: -2 });
             player.cities--;
             player.settlements++; // City replaces settlement
             player.victoryPoints++;
-            console.log(`🏰 ${playerName} built a city. VP: ${player.victoryPoints}, Remaining cities: ${player.cities}`);
         }
     }
     /**
@@ -852,6 +1581,11 @@
             return;
         const player = game.players.find(p => p.name === playerName);
         if (player) {
+            game.probableGameState.processTransaction({
+                type: TransactionTypeEnum.RESOURCE_LOSS,
+                playerName: playerName,
+                resources: { tree: 1, brick: 1 },
+            });
             updateResources(playerName, { tree: -1, brick: -1 });
             player.roads--;
             console.log(`🛣️ ${playerName} built a road. Remaining roads: ${player.roads}`);
@@ -891,6 +1625,11 @@
         const hasResources = Object.values(resources).some(count => count && count > 0);
         if (!hasResources)
             return;
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_GAIN,
+            playerName: playerName,
+            resources: resources,
+        });
         updateResources(playerName, resources);
         console.log(`🎯 ${playerName} took from bank via Year of Plenty: ${JSON.stringify(resources)}`);
     }
@@ -940,6 +1679,12 @@
                 }
             }
         });
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.MONOPOLY,
+            playerName: playerName,
+            resourceType: resourceType,
+            totalStolen: totalStolen,
+        });
         // Add the actual stolen amount to monopoly player (directly, not via updateResources)
         monopolyPlayer.resources[resourceType] += actualStolen;
         console.log(`💰 ${playerName} monopolized ${actualStolen} ${resourceType} from all players (expected: ${totalStolen})`);
@@ -968,6 +1713,11 @@
         const player = game.players.find(p => p.name === playerName);
         if (!player)
             return;
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.TRADE_OFFER,
+            playerName: playerName,
+            offeredResources: offeredResources,
+        });
         // For each resource they're offering, they must have it
         // This can resolve unknown transactions
         Object.keys(offeredResources).forEach(resource => {
@@ -1001,6 +1751,12 @@
     function stealFromYou(thief, victim, stolenResource) {
         if (!thief || !victim)
             return;
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.ROBBER_STEAL,
+            stealerName: thief,
+            victimName: victim,
+            stolenResource: stolenResource,
+        });
         // Transfer resource from victim to thief
         updateResources(thief, { [stolenResource]: 1 });
         updateResources(victim, { [stolenResource]: -1 });
@@ -1023,7 +1779,7 @@
     top: 20px;
     right: 20px;
     width: 450px;
-    max-height: 600px;
+    max-height: 1000px;
     background: white;
     border: 2px solid #333;
     border-radius: 8px;
@@ -1100,9 +1856,9 @@
         isDragging = false;
         isResizing = false;
     }
-    function generateResourceTable() {
-        if (game.players.length === 0) {
-            return '<div style="padding: 20px; text-align: center; color: #666;">No players found</div>';
+    function generateResourceProbabilityTable() {
+        if (!game.probableGameState || game.players.length === 0) {
+            return '';
         }
         const resourceNames = ['tree', 'brick', 'sheep', 'wheat', 'ore'];
         const resourceEmojis = ['🌲', '🧱', '🐑', '🌾', '⛰️'];
@@ -1113,33 +1869,33 @@
             '#fff8dc',
             '#ddd6fe',
         ];
-        let table = '<table style="width: 100%; border-collapse: collapse; margin: 10px 0;">';
-        // Header row with resource totals
+        let table = '<div style="margin: 15px 0;"><h4 style="margin: 0 0 10px 0; text-align: center;">🎯 Resource Probabilities</h4>';
+        table +=
+            '<table style="width: 100%; border-collapse: collapse; margin: 10px 0;">';
+        // Header row
         table += '<thead><tr style="background: #f5f5f5;">';
         table +=
             '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Player</th>';
         resourceNames.forEach((resource, index) => {
-            const remaining = game.gameResources[resource];
-            const total = 19; // Standard Catan has 19 of each resource
             table += `<th style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]};">
       ${resourceEmojis[index]}<br>
-      <small>${remaining}/${total}</small>
+      <small>Min / +Prob</small>
     </th>`;
         });
         table += '</tr></thead><tbody>';
         // Player rows
         game.players.forEach(player => {
+            const probabilities = game.probableGameState.getPlayerResourceProbabilities(player.name);
             table += '<tr>';
             table += `<td style="padding: 8px; border: 1px solid #ddd; font-weight: bold; color: ${player.color};">${player.name}</td>`;
             resourceNames.forEach((resource, index) => {
-                const count = player.resources[resource];
-                const probability = player.resourceProbabilities[resource];
-                // Show both actual count and probability if there's a probability
-                let displayText = count.toString();
-                if (probability !== 0) {
-                    const sign = probability > 0 ? '+' : '';
-                    const color = probability > 0 ? '#e74c3c' : '#3498db';
-                    displayText = `${count} <span style="color: ${color}; font-size: 10px;">${sign}${probability.toFixed(2)}</span>`;
+                const resourceKey = resource;
+                const minCount = probabilities.minimumResources[resourceKey];
+                const additionalProb = probabilities.additionalResourceProbabilities[resourceKey];
+                // Format: "minimum + probability%"
+                let displayText = minCount.toString();
+                if (additionalProb > 0) {
+                    displayText += ` <span style="color:rgb(84, 205, 44); font-size: 10px;">+${additionalProb.toFixed(2)}</span>`;
                 }
                 table += `<td style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]}; font-weight: bold;">
         ${displayText}
@@ -1147,32 +1903,8 @@
             });
             table += '</tr>';
         });
-        table += '</tbody></table>';
+        table += '</tbody></table></div>';
         return table;
-    }
-    function generateUnknownTransactionsDisplay() {
-        const unresolvedTransactions = game.unknownTransactions.filter(t => !t.isResolved);
-        if (unresolvedTransactions.length === 0) {
-            return '';
-        }
-        let display = '<div style="margin: 15px 0; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px;">';
-        display +=
-            '<h4 style="margin: 0 0 10px 0; color: #856404;">🔍 Unknown Transactions</h4>';
-        unresolvedTransactions.forEach(transaction => {
-            const timestamp = new Date(transaction.timestamp).toLocaleTimeString();
-            display += `<div style="margin-bottom: 8px; padding: 8px; background: white; border-radius: 4px; font-size: 11px;">`;
-            display += `<strong>${transaction.thief}</strong> stole from <strong>${transaction.victim}</strong> `;
-            display += `<span style="color: #666;">(${timestamp})</span><br>`;
-            // Show what could have been stolen
-            const possibleResources = Object.entries(transaction.possibleResources)
-                .filter(([_, count]) => count > 0)
-                .map(([resource, count]) => `${resource}: ${count}`)
-                .join(', ');
-            display += `<small style="color: #666;">Could be: ${possibleResources}</small>`;
-            display += '</div>';
-        });
-        display += '</div>';
-        return display;
     }
     function generateDevCardsDisplay() {
         const devCardTypes = [
@@ -1272,9 +2004,8 @@
       " title="${isMinimized ? 'Expand' : 'Minimize'}">${isMinimized ? '□' : '−'}</button>
     </div>
     
-         <div id="overlay-content" style="display: ${contentDisplay}; padding: 15px; max-height: 500px; overflow-y: auto; position: relative;">
-       ${generateResourceTable()}
-       ${generateUnknownTransactionsDisplay()}
+         <div id="overlay-content" style="display: ${contentDisplay}; padding: 15px; max-height: 800px; overflow-y: auto; position: relative;">
+       ${generateResourceProbabilityTable()}
        ${generateDevCardsDisplay()}
        ${generateDiceChart()}
        <div class="resize-handle" style="
@@ -1383,7 +2114,7 @@
         // Scenario 3: Place road (keyword: "placed a" + road image)
         else if (messageText.includes('placed a') &&
             element.querySelector('img[alt="road"]')) {
-            placeRoad(playerName);
+            placeInitialRoad(playerName);
         }
         // Scenario 4: Known trade (keyword: "gave" and "got" and "from")
         else if (messageText.includes('gave') &&
@@ -1511,7 +2242,7 @@
         else {
             console.log('💬💬💬  New unknown message:', element);
         }
-        console.log('🎲 Game object:', game);
+        console.log(game.probableGameState.debugPrintVariants());
         updateGameStateDisplay();
     }
 

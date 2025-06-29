@@ -20,7 +20,7 @@ import {
   knownSteal,
   monopolySteal,
   moveRobber,
-  placeRoad,
+  placeInitialRoad,
   placeSettlement,
   playerDiscard,
   playerGetResources,
@@ -113,7 +113,7 @@ export function updateGameFromChat(element: HTMLElement): void {
     messageText.includes('placed a') &&
     element.querySelector('img[alt="road"]')
   ) {
-    placeRoad(playerName);
+    placeInitialRoad(playerName);
   }
   // Scenario 4: Known trade (keyword: "gave" and "got" and "from")
   else if (
@@ -267,6 +267,7 @@ export function updateGameFromChat(element: HTMLElement): void {
     console.log('💬💬💬  New unknown message:', element);
   }
 
-  console.log('🎲 Game object:', game);
+  console.log(game.probableGameState.debugPrintVariants());
+
   updateGameStateDisplay();
 }

@@ -8,7 +8,12 @@ import {
   updateResources,
   youPlayerName,
 } from './gameState.js';
-import { ResourceObjectType } from './types.js';
+import { PropbableGameState } from './gameStateWithVariants.js';
+import {
+  DiceRollsType,
+  ResourceObjectType,
+  TransactionTypeEnum,
+} from './types.js';
 
 /**
  * Handle a player discarding resources
@@ -21,6 +26,12 @@ export function playerDiscard(
 
   // Remove resources from player (negative values, automatically adds to bank)
   const playerChanges: Partial<ResourceObjectType> = {};
+
+  game.probableGameState.processTransaction({
+    type: TransactionTypeEnum.RESOURCE_LOSS,
+    playerName: playerName,
+    resources: discardedResources,
+  });
 
   Object.keys(discardedResources).forEach(resource => {
     const key = resource as keyof ResourceObjectType;
@@ -61,34 +72,35 @@ export function placeSettlement(
  */
 export function rollDice(diceTotal: number): void {
   if (diceTotal >= 2 && diceTotal <= 12) {
-    (game.diceRolls as any)[diceTotal]++;
-    console.log(
-      `🎲 Dice rolled: ${diceTotal}. Total rolls for ${diceTotal}: ${(game.diceRolls as any)[diceTotal]}`
-    );
+    if (!game.hasRolledFirstDice) {
+      game.hasRolledFirstDice = true;
 
-    // Auto-detect current player on the first dice roll instead of showing popup
-    if (!youPlayerName && game.players.length > 0) {
-      const success = autoDetectCurrentPlayer();
-      if (!success) {
-        console.log(
-          '⚠️ Could not auto-detect current player. Manual selection may be needed.'
-        );
+      // setting up probable game state with all players
+      game.probableGameState = new PropbableGameState(game.players);
+
+      // Auto-detect current player on the first dice roll instead of showing popup
+      if (!youPlayerName && game.players.length > 0) {
+        const success = autoDetectCurrentPlayer();
+        if (!success) {
+          console.log(
+            '⚠️ Could not auto-detect current player. Manual selection may be needed.'
+          );
+        }
       }
     }
+
+    game.diceRolls[diceTotal as keyof DiceRollsType]++;
   }
 }
 
 /**
- * Handle a player placing a road
+ * Handle a player placing inital road, no brick/tree spent
  */
-export function placeRoad(playerName: string | null): void {
+export function placeInitialRoad(playerName: string | null): void {
   if (!playerName) return;
   const player = game.players.find(p => p.name === playerName);
   if (player && player.roads > 0) {
     player.roads--;
-    console.log(
-      `🛣️ ${playerName} placed a road. Remaining roads: ${player.roads}`
-    );
   }
 }
 
@@ -108,6 +120,14 @@ export function playerTrade(
   );
   if (!hasChanges) return;
 
+  // add call to game probable processor to handle trade
+  game.probableGameState.processTransaction({
+    type: TransactionTypeEnum.TRADE,
+    player1: playerName,
+    player2: tradePartner,
+    resourceChanges: resourceChanges,
+  });
+
   // Update the player who initiated the trade
   updateResources(playerName, resourceChanges);
 
@@ -119,10 +139,6 @@ export function playerTrade(
     }
   });
   updateResources(tradePartner, partnerChanges);
-
-  console.log(
-    `🤝 ${playerName} traded with ${tradePartner}. Changes: ${JSON.stringify(resourceChanges)}`
-  );
 }
 
 /**
@@ -139,9 +155,15 @@ export function playerGetResources(
     count => count && count > 0
   );
   if (!hasResources) return;
-  updateResources(playerName, resources);
 
-  console.log(`🌾 ${playerName} got resources: ${JSON.stringify(resources)}`);
+  // add call to game probable processor to handle resource gain
+  game.probableGameState.processTransaction({
+    type: TransactionTypeEnum.RESOURCE_GAIN,
+    playerName: playerName,
+    resources: resources,
+  });
+
+  updateResources(playerName, resources);
 }
 
 /**
@@ -154,10 +176,15 @@ export function knownSteal(
 ): void {
   if (!thief || !victim) return;
 
+  game.probableGameState.processTransaction({
+    type: TransactionTypeEnum.ROBBER_STEAL,
+    stealerName: thief,
+    victimName: victim,
+    stolenResource: resource,
+  });
+
   updateResources(thief, { [resource]: 1 } as any);
   updateResources(victim, { [resource]: -1 } as any);
-
-  console.log(`🦹 ${thief} stole ${resource} from ${victim}`);
 }
 
 /**
@@ -169,20 +196,40 @@ export function unknownSteal(
 ): void {
   if (!thief || !victim) return;
 
-  // Check if victim has only one type of resource (with non-zero count)
-  const victimPlayer = game.players.find(p => p.name === victim);
-  const nonZeroResources = victimPlayer
-    ? Object.entries(victimPlayer.resources).filter(([_, count]) => count > 0)
-    : [];
+  // Check if victim has only one type of resource across ALL possible variants
+  const victimProbabilities =
+    game.probableGameState.getPlayerResourceProbabilities(victim);
 
-  if (nonZeroResources.length === 1) {
+  // Count how many resource types the victim could possibly have
+  const possibleResourceTypes = Object.entries(
+    victimProbabilities.minimumResources
+  )
+    .filter(([_, count]) => count > 0)
+    .concat(
+      Object.entries(
+        victimProbabilities.additionalResourceProbabilities
+      ).filter(([_, probability]) => probability > 0)
+    );
+
+  // Remove duplicates by converting to Set and back
+  const uniqueResourceTypes = [
+    ...new Set(possibleResourceTypes.map(([resourceType]) => resourceType)),
+  ];
+
+  if (uniqueResourceTypes.length === 1) {
     // Victim has only one type of resource - we can deduce what was stolen
-    const [deductedResource] = nonZeroResources[0];
-    const resourceType = deductedResource as keyof ResourceObjectType;
+    const resourceType = uniqueResourceTypes[0] as keyof ResourceObjectType;
 
     knownSteal(thief, victim, resourceType);
   } else {
     // Unknown steal - we don't know what resource was stolen
+    game.probableGameState.processTransaction({
+      type: TransactionTypeEnum.ROBBER_STEAL,
+      stealerName: thief,
+      victimName: victim,
+      stolenResource: null,
+    });
+
     const transactionId = addUnknownSteal(thief, victim);
     console.log(
       `🔍 ${thief} stole unknown resource from ${victim} (Transaction: ${transactionId})`
@@ -195,6 +242,13 @@ export function unknownSteal(
  */
 export function buyDevCard(playerName: string | null): void {
   if (!playerName) return;
+
+  game.probableGameState.processTransaction({
+    type: TransactionTypeEnum.RESOURCE_LOSS,
+    playerName: playerName,
+    resources: { wheat: 1, sheep: 1, ore: 1 },
+  });
+
   game.devCards--;
   updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
 
@@ -211,6 +265,25 @@ export function bankTrade(
   resourceChanges: Partial<ResourceObjectType>
 ): void {
   if (!playerName) return;
+
+  // TODO make a transaction type that is a bank trade
+  game.probableGameState.processTransaction({
+    type: TransactionTypeEnum.RESOURCE_LOSS,
+    playerName: playerName,
+    resources: Object.fromEntries(
+      Object.entries(resourceChanges)
+        .filter(([_, value]) => value < 0)
+        .map(([key, value]) => [key, -value])
+    ),
+  });
+  game.probableGameState.processTransaction({
+    type: TransactionTypeEnum.RESOURCE_GAIN,
+    playerName: playerName,
+    resources: Object.fromEntries(
+      Object.entries(resourceChanges).filter(([_, value]) => value > 0)
+    ),
+  });
+
   updateResources(playerName, resourceChanges);
 
   console.log(
@@ -228,9 +301,6 @@ export function useKnight(playerName: string | null): void {
     player.knights++;
     player.discoveryCards.knights++;
     game.knights--;
-    console.log(
-      `⚔️ ${playerName} used a knight. Total knights played: ${player.knights}`
-    );
   }
 }
 
@@ -242,7 +312,12 @@ export function buildSettlement(playerName: string | null): void {
 
   const player = game.players.find(p => p.name === playerName);
   if (player) {
-    // Cost: 1 wood, 1 wheat, 1 brick, 1 sheep
+    game.probableGameState.processTransaction({
+      type: TransactionTypeEnum.RESOURCE_LOSS,
+      playerName: playerName,
+      resources: { tree: 1, wheat: 1, brick: 1, sheep: 1 },
+    });
+
     updateResources(playerName, {
       tree: -1,
       wheat: -1,
@@ -251,9 +326,6 @@ export function buildSettlement(playerName: string | null): void {
     });
     player.settlements--;
     player.victoryPoints++;
-    console.log(
-      `🏠 ${playerName} built a settlement. VP: ${player.victoryPoints}, Remaining settlements: ${player.settlements}`
-    );
   }
 }
 
@@ -265,13 +337,16 @@ export function buildCity(playerName: string | null): void {
 
   const player = game.players.find(p => p.name === playerName);
   if (player) {
+    game.probableGameState.processTransaction({
+      type: TransactionTypeEnum.RESOURCE_LOSS,
+      playerName: playerName,
+      resources: { ore: 3, wheat: 2 },
+    });
+
     updateResources(playerName, { ore: -3, wheat: -2 });
     player.cities--;
     player.settlements++; // City replaces settlement
     player.victoryPoints++;
-    console.log(
-      `🏰 ${playerName} built a city. VP: ${player.victoryPoints}, Remaining cities: ${player.cities}`
-    );
   }
 }
 
@@ -283,6 +358,11 @@ export function buildRoad(playerName: string | null): void {
 
   const player = game.players.find(p => p.name === playerName);
   if (player) {
+    game.probableGameState.processTransaction({
+      type: TransactionTypeEnum.RESOURCE_LOSS,
+      playerName: playerName,
+      resources: { tree: 1, brick: 1 },
+    });
     updateResources(playerName, { tree: -1, brick: -1 });
     player.roads--;
     console.log(
@@ -335,6 +415,12 @@ export function yearOfPlentyTake(
     count => count && count > 0
   );
   if (!hasResources) return;
+
+  game.probableGameState.processTransaction({
+    type: TransactionTypeEnum.RESOURCE_GAIN,
+    playerName: playerName,
+    resources: resources,
+  });
 
   updateResources(playerName, resources);
 
@@ -400,6 +486,13 @@ export function monopolySteal(
     }
   });
 
+  game.probableGameState.processTransaction({
+    type: TransactionTypeEnum.MONOPOLY,
+    playerName: playerName,
+    resourceType: resourceType,
+    totalStolen: totalStolen,
+  });
+
   // Add the actual stolen amount to monopoly player (directly, not via updateResources)
   monopolyPlayer.resources[resourceType] += actualStolen;
 
@@ -445,6 +538,12 @@ export function playerOffer(
 
   const player = game.players.find(p => p.name === playerName);
   if (!player) return;
+
+  game.probableGameState.processTransaction({
+    type: TransactionTypeEnum.TRADE_OFFER,
+    playerName: playerName,
+    offeredResources: offeredResources,
+  });
 
   // For each resource they're offering, they must have it
   // This can resolve unknown transactions
@@ -495,6 +594,13 @@ export function stealFromYou(
   stolenResource: keyof ResourceObjectType
 ): void {
   if (!thief || !victim) return;
+
+  game.probableGameState.processTransaction({
+    type: TransactionTypeEnum.ROBBER_STEAL,
+    stealerName: thief,
+    victimName: victim,
+    stolenResource: stolenResource,
+  });
 
   // Transfer resource from victim to thief
   updateResources(thief, { [stolenResource]: 1 } as any);
