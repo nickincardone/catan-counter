@@ -172,7 +172,7 @@ function generateResourceProbabilityTable(): string {
       // Format: "minimum + probability%"
       let displayText = minCount.toString();
       if (additionalProb > 0) {
-        displayText += ` <span style="color:rgb(84, 205, 44); font-size: 10px;">+${additionalProb.toFixed(2)}</span>`;
+        displayText += ` <span style="color:rgb(47, 120, 23); font-size: 10px;">+${additionalProb.toFixed(2)}</span>`;
       }
 
       table += `<td style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]}; font-weight: bold;">

@@ -1,6 +1,6 @@
 # Catan Counter Chrome Extension
 
-A Chrome extension that automatically tracks game state for Settlers of Catan games played on [colonist.io](https://colonist.io). The extension monitors chat messages and maintains a real-time count of resources, development cards, dice rolls, and player statistics.
+A Chrome extension that automatically tracks game state for Settlers of Catan games played on [colonist.io](https://colonist.io). The extension monitors chat messages and maintains a real-time count of resources, development cards, dice rolls, and player statistics using advanced probabilistic variant tracking.
 
 ## Features
 
@@ -15,6 +15,7 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 ### 📊 **Enhanced User Interface**
 
 - **Modern Overlay**: Clean, organized display with resource tables and dice roll charts
+- **Probabilistic Resource Display**: Shows guaranteed resources plus probability of additional resources
 - **Draggable & Resizable**: Move and scale the overlay to your preference
 - **Minimize/Maximize**: Collapse to header-only for minimal screen usage
 - **Responsive Tables**: Color-coded resource tracking with remaining bank resources
@@ -47,14 +48,14 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - Resource discarding
 - Starting resource distribution
 
-### 🧠 **Advanced Probabilistic Tracking**
+### 🧠 **Advanced Variant-Based Probabilistic Tracking**
 
-- **Unknown Transaction System**: When a player steals an unknown resource, the system creates a probabilistic transaction tracking all possible stolen resources
-- **Smart Resolution**: Unknown transactions are automatically resolved when players spend resources they shouldn't have, or when other game events eliminate possibilities
-- **Dynamic Probability Updates**: Resource probabilities are recalculated in real-time as new information becomes available
-- **Process of Elimination**: When a player offers a resource in trade, the system eliminates it from unknown transactions where they were the victim
-- **Automatic Transaction Resolution**: When only one possible resource remains for an unknown transaction, it's automatically resolved and actual resources are transferred
-- **Bank Resource Tracking**: When all cards of a resource type return to the bank, related unknown transactions are resolved
+- **Variant Tree System**: When uncertainty exists (like unknown resource steals), creates a tree of possible game states with calculated probabilities
+- **Smart Variant Resolution**: Automatically eliminates impossible variants when players take actions that reveal information
+- **Dynamic Probability Calculations**: Real-time recalculation of resource probabilities as new information becomes available
+- **Probabilistic Resource Display**: Shows minimum guaranteed resources and probability of having additional resources (e.g., "2 +67%" means at least 2 guaranteed, 67% chance of more)
+- **Branch Elimination**: When players make offers or spend resources, impossible variants are automatically pruned
+- **Automatic Deduction**: Single-resource-type steals are instantly resolved without creating variants
 
 ## Installation
 
@@ -131,7 +132,7 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 
 ### Testing
 
-The project uses Jest 30.0.2 with TypeScript support for comprehensive testing.
+The project uses Jest 30.0.2 with TypeScript support for comprehensive testing of the variant-based probabilistic system.
 
 #### Running Tests
 
@@ -151,23 +152,25 @@ npm run test:ci
 
 #### Test Structure
 
-Tests are organized with comprehensive coverage of game state management, chat parsing logic, and the probabilistic unknown transaction system. The test suite includes both unit tests and integration tests with real HTML scenarios from colonist.io.
+Tests are organized with comprehensive coverage of game state management, chat parsing logic, and the variant-based probabilistic tracking system. The test suite includes both unit tests and integration tests with real HTML scenarios from colonist.io.
 
 #### Writing Tests
 
 - Tests use TypeScript with Jest globals (`@jest/globals`)
 - DOM environment is mocked for browser extension testing
-- Game state functions are thoroughly tested including the probabilistic unknown transaction system
+- Game state functions are thoroughly tested including the variant tree system
 - Coverage targets: 80% for branches, functions, lines, and statements
+- Helper functions like `expectMatchingVariantCombinations` for order-independent variant testing
 
-#### Unknown Transaction Testing
+#### Variant System Testing
 
-The test suite includes comprehensive testing of the probabilistic resource tracking system:
+The test suite includes comprehensive testing of the probabilistic variant tracking:
 
-- **Unknown steal creation** and probability calculation
-- **Transaction resolution** when players use resources they shouldn't have
-- **Multiple steal scenarios** and resolution priority
-- **Real-world scenarios** matching the user's example cases
+- **Variant creation** when unknown steals occur
+- **Probability calculations** for different resource combinations
+- **Variant resolution** when players take actions that eliminate possibilities
+- **Complex multi-steal scenarios** with automatic branch pruning
+- **Real-world game scenarios** with expected probability outcomes
 
 ## Usage
 
@@ -189,11 +192,13 @@ The test suite includes comprehensive testing of the probabilistic resource trac
 
 The overlay features an organized, visual layout with:
 
-#### 📋 **Resource Table**
+#### 📋 **Resource Tables**
 
-- **Player rows** showing current resource counts for each player
+- **Main Resource Table**: Shows current known resource counts for each player
+- **Probability Table**: Displays minimum guaranteed resources and probability of additional resources
 - **Header columns** with resource emojis (🐑🌾🧱🌲⛰️) and remaining bank resources
 - **Color-coded cells** for easy resource identification
+- **Probabilistic Display**: Format like "2 +67%" (2 guaranteed, 67% chance of more)
 
 #### 📊 **Dice Roll Chart**
 
@@ -216,7 +221,7 @@ The overlay features an organized, visual layout with:
 - **Content Script**: Injected into colonist.io pages
 - **Chat Monitoring**: Uses MutationObserver to detect new messages
 - **Pattern Matching**: Analyzes chat messages and HTML structure
-- **State Management**: Maintains game state in memory with automatic persistence
+- **Variant Tree Management**: Maintains probabilistic game states with automatic branch pruning
 
 ### Message Processing
 
@@ -226,18 +231,35 @@ The extension recognizes 25+ different game scenarios including:
 - Resource collection and trading
 - Development card usage
 - **Player theft scenarios** (including "from you" messages)
-- **Unknown resource steals** with probabilistic tracking
+- **Unknown resource steals** with variant tree creation
 - Special game events (robber movement, discarding, etc.)
 
-### Unknown Transaction System
+### Variant-Based Probabilistic System
 
-The extension features a sophisticated system for tracking unknown resource steals:
+The extension features a sophisticated variant tree system for tracking uncertain game states:
 
-- **Probabilistic Resource Tracking**: When a resource is stolen but the specific type is unknown, the system calculates probabilities based on what the victim had
-- **Smart Deduction**: Uses player actions (spending resources, making trades) to eliminate possibilities and resolve unknown transactions
-- **Multiple Transaction Support**: Handles scenarios where multiple unknown steals are pending simultaneously
-- **Automatic Resolution**: Resolves transactions when sufficient information becomes available through process of elimination
-- **Real-time Recalculation**: All probabilities are recalculated from scratch whenever transactions are resolved to maintain accuracy
+#### Core Components
+
+- **`Variant`**: Represents a single possible game state with probability
+- **`VariantNode`**: Tree node containing variants with parent/child relationships
+- **`VariantTree`**: Manages the complete tree of possible game states
+- **`VariantTransactionProcessor`**: Handles transaction processing across variants
+- **`PropbableGameState`**: Integrates variant system with game state management
+
+#### Key Features
+
+- **Probabilistic Resource Tracking**: Calculates exact probabilities based on known information
+- **Smart Deduction**: Automatically resolves steals when victims have only one resource type
+- **Branch Elimination**: Removes impossible variants when players reveal information through actions
+- **Transaction Type Safety**: Uses discriminated unions for type-safe transaction processing
+- **Real-time Recalculation**: Maintains accurate probabilities as game state evolves
+
+#### Example Scenarios
+
+- **Unknown Steal**: Player steals from someone with multiple resource types → Creates variants for each possibility
+- **Resource Offer**: Player offers resources they might not have → Eliminates impossible variants
+- **Building Action**: Player builds something requiring specific resources → Resolves which variant was correct
+- **Multiple Steals**: Handles complex scenarios with multiple unknown steals and their interactions
 
 ### Smart Reprocessing System
 
@@ -252,8 +274,11 @@ The codebase is organized into focused modules for better maintainability:
 
 - **`types.ts`** - All TypeScript interface definitions and type declarations
 - **`gameState.ts`** - Game state initialization, player management, and resource tracking
+- **`gameStateWithVariants.ts`** - Enhanced game state with probabilistic variant tracking
+- **`variants.ts`** - Core variant tree system classes
+- **`variantTransactions.ts`** - Transaction processing for the variant system
 - **`domUtils.ts`** - DOM element querying, resource parsing, and utility functions
-- **`overlay.ts`** - Draggable game state overlay UI with drag-and-drop functionality
+- **`overlay.ts`** - Draggable game state overlay UI with probabilistic resource display
 - **`chatParser.ts`** - Core chat message parsing logic handling 24+ game scenarios
 - **`content.ts`** - Main entry point, initialization, and mutation observer setup
 
@@ -269,26 +294,32 @@ All modules are bundled into a single `content.js` file using Rollup for optimal
 ```
 catan-counter/
 ├── src/
-│   ├── content.ts          # Main entry point and initialization
-│   ├── types.ts            # TypeScript interface definitions
-│   ├── gameState.ts        # Game state management and utilities
-│   ├── domUtils.ts         # DOM querying and utility functions
-│   ├── overlay.ts          # Draggable overlay UI functionality
-│   ├── chatParser.ts       # Chat message parsing logic
-│   └── __tests__/          # Test files directory
-│       ├── gameState.test.ts        # Game state management tests
-│       └── chatParser.simple.test.ts # Chat parser logic tests
-├── manifest.json           # Chrome extension manifest
-├── overlay.css            # Styling for game overlay
-├── content.js             # Bundled JavaScript output (generated)
-├── rollup.config.js       # Rollup bundler configuration
-├── jest.config.js         # Jest testing configuration
-├── jest.setup.ts          # Test environment setup
-├── package.json           # Dependencies and scripts
-├── tsconfig.json          # TypeScript configuration
-├── .prettierrc            # Code formatting rules
-├── .prettierignore        # Files to ignore in formatting
-└── README.md              # This file
+│   ├── content.ts              # Main entry point and initialization
+│   ├── types.ts                # TypeScript interface definitions
+│   ├── gameState.ts            # Game state management and utilities
+│   ├── gameStateWithVariants.ts # Enhanced game state with variant tracking
+│   ├── variants.ts             # Core variant tree system classes
+│   ├── variantTransactions.ts  # Transaction processing for variants
+│   ├── domUtils.ts             # DOM querying and utility functions
+│   ├── overlay.ts              # Draggable overlay UI with probabilistic display
+│   ├── chatParser.ts           # Chat message parsing logic
+│   └── __tests__/              # Test files directory
+│       ├── gameProbabilities.test.ts    # Variant system integration tests
+│       ├── testUtils.ts                 # Test helper functions
+│       ├── gameActions.test.ts          # Game action tests
+│       ├── chatParser.integration.test.ts # Chat parser integration tests
+│       └── scenarios/                   # Test HTML scenarios
+├── manifest.json               # Chrome extension manifest
+├── overlay.css                # Styling for game overlay
+├── content.js                 # Bundled JavaScript output (generated)
+├── rollup.config.js           # Rollup bundler configuration
+├── jest.config.js             # Jest testing configuration
+├── jest.setup.ts              # Test environment setup
+├── package.json               # Dependencies and scripts
+├── tsconfig.json              # TypeScript configuration
+├── .prettierrc                # Code formatting rules
+├── .prettierignore            # Files to ignore in formatting
+└── README.md                  # This file
 ```
 
 ## Contributing
@@ -297,9 +328,10 @@ catan-counter/
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
 4. Run formatting (`npm run format`)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+5. Run tests (`npm test`)
+6. Commit your changes (`git commit -m 'Add amazing feature'`)
+7. Push to the branch (`git push origin feature/amazing-feature`)
+8. Open a Pull Request
 
 ## License
 
