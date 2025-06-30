@@ -352,8 +352,6 @@ function generateUnknownTransactionsDisplay(): string {
     .getUnknownTransactions()
     .filter(t => !t.isResolved);
 
-  console.log(game.probableGameState.getUnknownTransactions());
-
   if (unresolvedTransactions.length === 0) {
     return '';
   }

@@ -206,8 +206,19 @@
      */
     function parseCounterOfferResources(element) {
         const resources = {};
-        // Find all resource images in the element
-        const resourceImages = element.querySelectorAll(RESOURCE_STRING);
+        const innerHTML = element.innerHTML;
+        const forIndex = innerHTML.indexOf(' for ');
+        let htmlBeforeFor;
+        if (forIndex === -1) {
+            htmlBeforeFor = innerHTML;
+        }
+        else {
+            htmlBeforeFor = innerHTML.substring(0, forIndex);
+        }
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = htmlBeforeFor;
+        // Find all resource images in the offering part only
+        const resourceImages = tempDiv.querySelectorAll(RESOURCE_STRING);
         resourceImages.forEach(img => {
             const resourceType = getResourceTypeFromAlt(img.getAttribute('alt'));
             if (resourceType) {
@@ -274,6 +285,7 @@
         TransactionTypeEnum["DICE_ROLL"] = "DICE_ROLL";
         TransactionTypeEnum["RESOURCE_GAIN"] = "RESOURCE_GAIN";
         TransactionTypeEnum["RESOURCE_LOSS"] = "RESOURCE_LOSS";
+        TransactionTypeEnum["BANK_TRADE"] = "BANK_TRADE";
     })(TransactionTypeEnum || (TransactionTypeEnum = {}));
 
     // Variant system for tracking uncertain game states
@@ -775,10 +787,17 @@
         constructor(initialPlayers) {
             // Initialize game state with players and their known starting resources
             const initialGameState = {};
+            this.transactionHistory = [];
             for (const player of initialPlayers) {
                 initialGameState[player.name] = {
                     resources: Object.assign({}, player.resources), // Copy the initial resources
                 };
+                // set initial transactions
+                this.transactionHistory.push({
+                    type: TransactionTypeEnum.RESOURCE_GAIN,
+                    playerName: player.name,
+                    resources: Object.assign({}, player.resources),
+                });
             }
             this.variantTree = new VariantTree(initialGameState);
             this.transactionProcessor = new VariantTransactionProcessor(this.variantTree);
@@ -841,6 +860,8 @@
          * Process a transaction
          */
         processTransaction(transaction) {
+            // Add transaction to history for debugging
+            this.transactionHistory.push(transaction);
             switch (transaction.type) {
                 case TransactionTypeEnum.ROBBER_STEAL: {
                     if (transaction.stolenResource) {
@@ -871,6 +892,10 @@
                 }
                 case TransactionTypeEnum.RESOURCE_LOSS: {
                     this.processResourceLoss(transaction.playerName, transaction.resources);
+                    break;
+                }
+                case TransactionTypeEnum.BANK_TRADE: {
+                    this.processBankTrade(transaction.playerName, transaction.resourceChanges);
                     break;
                 }
                 default:
@@ -953,6 +978,43 @@
                     }
                     else {
                         // This variant is invalid - player can't afford the loss
+                        this.variantTree.removeVariantNode(node);
+                    }
+                }
+            }
+            this.variantTree.pruneInvalidNodes();
+        }
+        /**
+         * Process bank trade (player trades resources with the bank)
+         */
+        processBankTrade(playerName, resourceChanges) {
+            const currentNodes = this.variantTree.getCurrentVariantNodes();
+            for (const node of currentNodes) {
+                const gameState = node.gameState;
+                const playerState = gameState[playerName];
+                if (playerState) {
+                    let canAfford = true;
+                    // Check if player can afford the resources they're giving up
+                    for (const [resourceType, amount] of Object.entries(resourceChanges)) {
+                        if (amount < 0 && // Negative amounts are resources being given up
+                            isValidResourceType(resourceType) &&
+                            getResourceAmount(playerState.resources, resourceType) <
+                                Math.abs(amount)) {
+                            canAfford = false;
+                            break;
+                        }
+                    }
+                    if (canAfford) {
+                        // Execute the bank trade (both losses and gains)
+                        for (const [resourceType, amount] of Object.entries(resourceChanges)) {
+                            if (typeof amount === 'number' &&
+                                isValidResourceType(resourceType)) {
+                                updateResourceAmount(playerState.resources, resourceType, amount);
+                            }
+                        }
+                    }
+                    else {
+                        // This variant is invalid - player can't afford the trade
                         this.variantTree.removeVariantNode(node);
                     }
                 }
@@ -1095,6 +1157,57 @@
          */
         getTransactionResourceProbabilities(transactionId) {
             return this.transactionProcessor.getTransactionResourceProbabilities(transactionId);
+        }
+        /**
+         * Get the complete transaction history for debugging
+         */
+        getTransactionHistory() {
+            return [...this.transactionHistory]; // Return a copy to prevent external modification
+        }
+        /**
+         * Get the number of transactions processed
+         */
+        getTransactionCount() {
+            return this.transactionHistory.length;
+        }
+        /**
+         * Debug: Print transaction history in a readable format
+         */
+        debugPrintTransactionHistory() {
+            console.log(`\n=== Transaction History (${this.transactionHistory.length} total) ===`);
+            this.transactionHistory.forEach((transaction, index) => {
+                console.log(`\n${index + 1}. ${transaction.type}:`);
+                switch (transaction.type) {
+                    case TransactionTypeEnum.ROBBER_STEAL:
+                        console.log(`  ${transaction.stealerName} stole from ${transaction.victimName}${transaction.stolenResource ? ` (${transaction.stolenResource})` : ' (unknown resource)'}`);
+                        break;
+                    case TransactionTypeEnum.MONOPOLY:
+                        console.log(`  ${transaction.playerName} played monopoly on ${transaction.resourceType}, stole ${transaction.totalStolen} total`);
+                        break;
+                    case TransactionTypeEnum.TRADE:
+                        console.log(`  Trade between ${transaction.player1} and ${transaction.player2}`);
+                        console.log(`  Resource changes: ${JSON.stringify(transaction.resourceChanges)}`);
+                        break;
+                    case TransactionTypeEnum.TRADE_OFFER:
+                        console.log(`  ${transaction.playerName} offered: ${JSON.stringify(transaction.offeredResources)}`);
+                        break;
+                    case TransactionTypeEnum.RESOURCE_GAIN:
+                        console.log(`  ${transaction.playerName} gained: ${JSON.stringify(transaction.resources)}`);
+                        break;
+                    case TransactionTypeEnum.RESOURCE_LOSS:
+                        console.log(`  ${transaction.playerName} lost: ${JSON.stringify(transaction.resources)}`);
+                        break;
+                    case TransactionTypeEnum.BANK_TRADE:
+                        console.log(`  ${transaction.playerName} bank trade: ${JSON.stringify(transaction.resourceChanges)}`);
+                        break;
+                }
+            });
+        }
+        /**
+         * Clear transaction history (useful for testing or restarting)
+         */
+        clearTransactionHistory() {
+            this.transactionHistory = [];
         }
     }
 
@@ -1406,21 +1519,18 @@
     function bankTrade(playerName, resourceChanges) {
         if (!playerName)
             return;
-        // TODO make a transaction type that is a bank trade
+        // Validate that there are actual resource changes
+        const hasChanges = Object.values(resourceChanges).some(count => count && count !== 0);
+        if (!hasChanges)
+            return;
+        // Process the bank trade as a single transaction
         game.probableGameState.processTransaction({
-            type: TransactionTypeEnum.RESOURCE_LOSS,
+            type: TransactionTypeEnum.BANK_TRADE,
             playerName: playerName,
-            resources: Object.fromEntries(Object.entries(resourceChanges)
-                .filter(([_, value]) => value < 0)
-                .map(([key, value]) => [key, -value])),
-        });
-        game.probableGameState.processTransaction({
-            type: TransactionTypeEnum.RESOURCE_GAIN,
-            playerName: playerName,
-            resources: Object.fromEntries(Object.entries(resourceChanges).filter(([_, value]) => value > 0)),
+            resourceChanges: resourceChanges,
         });
         updateResources(playerName, resourceChanges);
-        console.log(`🏦 ${playerName} traded with bank. Changes: ${JSON.stringify(resourceChanges)}`);
+        console.log(`🏦 ${playerName} made a bank trade: ${JSON.stringify(resourceChanges)}`);
     }
     /**
      * Handle a player using a knight card
@@ -1911,7 +2021,6 @@
         const unresolvedTransactions = game.probableGameState
             .getUnknownTransactions()
             .filter(t => !t.isResolved);
-        console.log(game.probableGameState.getUnknownTransactions());
         if (unresolvedTransactions.length === 0) {
             return '';
         }

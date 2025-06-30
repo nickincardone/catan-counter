@@ -69,6 +69,23 @@ export type PossibleGameState = {
 };
 
 /**
+ * Helper function to convert HTML string to HTMLElement for testing
+ * @param htmlString The HTML string to convert
+ * @returns The first element from the parsed HTML
+ */
+export function createElementFromHTML(htmlString: string): HTMLElement {
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = htmlString.trim();
+  const element = tempDiv.firstElementChild as HTMLElement;
+
+  if (!element) {
+    throw new Error('Failed to create element from HTML string');
+  }
+
+  return element;
+}
+
+/**
  * Helper function to match expected variant combinations with possible game states in any order
  * This handles the common test pattern where we have multiple expected outcomes but
  * the order of variants is not guaranteed.

@@ -4,7 +4,7 @@ import {
   game,
   updateResources,
 } from './gameState.js';
-import { PropbableGameState } from './gameStateWithVariants.js';
+import { PropbableGameState } from './probableGameState.js';
 import {
   DiceRollsType,
   ResourceObjectType,
@@ -284,28 +284,23 @@ export function bankTrade(
 ): void {
   if (!playerName) return;
 
-  // TODO make a transaction type that is a bank trade
+  // Validate that there are actual resource changes
+  const hasChanges = Object.values(resourceChanges).some(
+    count => count && count !== 0
+  );
+  if (!hasChanges) return;
+
+  // Process the bank trade as a single transaction
   game.probableGameState.processTransaction({
-    type: TransactionTypeEnum.RESOURCE_LOSS,
+    type: TransactionTypeEnum.BANK_TRADE,
     playerName: playerName,
-    resources: Object.fromEntries(
-      Object.entries(resourceChanges)
-        .filter(([_, value]) => value < 0)
-        .map(([key, value]) => [key, -value])
-    ),
-  });
-  game.probableGameState.processTransaction({
-    type: TransactionTypeEnum.RESOURCE_GAIN,
-    playerName: playerName,
-    resources: Object.fromEntries(
-      Object.entries(resourceChanges).filter(([_, value]) => value > 0)
-    ),
+    resourceChanges: resourceChanges,
   });
 
   updateResources(playerName, resourceChanges);
 
   console.log(
-    `🏦 ${playerName} traded with bank. Changes: ${JSON.stringify(resourceChanges)}`
+    `🏦 ${playerName} made a bank trade: ${JSON.stringify(resourceChanges)}`
   );
 }
 

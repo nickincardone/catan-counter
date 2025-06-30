@@ -1,4 +1,4 @@
-import { PropbableGameState } from './gameStateWithVariants';
+import { PropbableGameState } from './probableGameState';
 
 export interface ResourceObjectType {
   sheep: number;
@@ -91,6 +91,7 @@ export enum TransactionTypeEnum {
   DICE_ROLL = 'DICE_ROLL',
   RESOURCE_GAIN = 'RESOURCE_GAIN',
   RESOURCE_LOSS = 'RESOURCE_LOSS',
+  BANK_TRADE = 'BANK_TRADE',
 }
 
 // Discriminated union - each transaction type has specific attributes
@@ -127,4 +128,9 @@ export type TransactionType =
       type: TransactionTypeEnum.RESOURCE_LOSS;
       playerName: string;
       resources: Partial<ResourceObjectType>;
+    }
+  | {
+      type: TransactionTypeEnum.BANK_TRADE;
+      playerName: string;
+      resourceChanges: Partial<ResourceObjectType>;
     };

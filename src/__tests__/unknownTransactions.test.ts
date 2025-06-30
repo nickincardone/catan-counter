@@ -10,7 +10,7 @@ import {
   unknownSteal,
 } from '../gameActions';
 import { game, resetGameState } from '../gameState';
-import { PropbableGameState } from '../gameStateWithVariants';
+import { PropbableGameState } from '../probableGameState';
 import {
   expectMatchingVariantCombinations,
   expectNonZeroResources,
@@ -167,6 +167,43 @@ describe('unknownTransactions', () => {
       playerOffer('Bob', { brick: 1 });
 
       expect(game.probableGameState.getUnknownTransactions()).toHaveLength(0);
+    });
+
+    it('should partial resolve unknown transactions - scenario 3', () => {
+      playerGetResources('Alice', { sheep: 3 });
+      playerGetResources('Bob', { tree: 2, brick: 1, ore: 1 });
+
+      unknownSteal('Alice', 'Bob');
+
+      expect(game.probableGameState.getUnknownTransactions()).toHaveLength(1);
+      const initialTransactionResourceProbabilities =
+        game.probableGameState.getTransactionResourceProbabilities(
+          game.probableGameState.getUnknownTransactions()[0].id
+        );
+
+      expectNonZeroResources(initialTransactionResourceProbabilities!, {
+        brick: 1 / 4,
+        ore: 1 / 4,
+        tree: 2 / 4,
+      });
+
+      bankTrade('Bob', { tree: -2, brick: 1 });
+
+      const unknownTransactions =
+        game.probableGameState.getUnknownTransactions();
+      expect(unknownTransactions).toHaveLength(1);
+      expect(unknownTransactions[0].isResolved).toBe(false);
+
+      const transactionResourceProbabilities =
+        game.probableGameState.getTransactionResourceProbabilities(
+          unknownTransactions[0].id
+        );
+
+      // actual is {ore: .5, brick: 0, tree: 0, wheat: 0, sheep: 0}
+      expectNonZeroResources(transactionResourceProbabilities!, {
+        ore: 1 / 2,
+        brick: 1 / 2,
+      });
     });
   });
   it('should resolve unknown transactions', () => {

@@ -267,8 +267,21 @@ export function parseCounterOfferResources(
 ): Partial<ResourceObjectType> {
   const resources: Partial<ResourceObjectType> = {};
 
-  // Find all resource images in the element
-  const resourceImages = element.querySelectorAll(RESOURCE_STRING);
+  const innerHTML = element.innerHTML;
+  const forIndex = innerHTML.indexOf(' for ');
+
+  let htmlBeforeFor: string;
+  if (forIndex === -1) {
+    htmlBeforeFor = innerHTML;
+  } else {
+    htmlBeforeFor = innerHTML.substring(0, forIndex);
+  }
+
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = htmlBeforeFor;
+
+  // Find all resource images in the offering part only
+  const resourceImages = tempDiv.querySelectorAll(RESOURCE_STRING);
 
   resourceImages.forEach(img => {
     const resourceType = getResourceTypeFromAlt(img.getAttribute('alt'));

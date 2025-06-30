@@ -10,7 +10,7 @@ import {
   unknownSteal,
 } from '../gameActions';
 import { game, resetGameState } from '../gameState';
-import { PropbableGameState } from '../gameStateWithVariants';
+import { PropbableGameState } from '../probableGameState';
 import {
   expectMatchingVariantCombinations,
   expectNonZeroResources,

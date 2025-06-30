@@ -6,7 +6,7 @@ import {
   UnknownTransaction,
 } from './types.js';
 import { getCurrentPlayerFromHeader } from './domUtils.js';
-import { PropbableGameState } from './gameStateWithVariants.js';
+import { PropbableGameState } from './probableGameState.js';
 
 export function getDefaultGame(): GameType {
   return {
