@@ -120,23 +120,43 @@ function stopDragAndResize(): void {
   isResizing = false;
 }
 
+function getOrderedPlayers() {
+  if (!game.youPlayerName) {
+    return game.players;
+  }
+
+  const youPlayerIndex = game.players.findIndex(
+    player => player.name === game.youPlayerName
+  );
+
+  if (youPlayerIndex === -1) {
+    return game.players;
+  }
+
+  // Create ordered array: players after youPlayer, then players before youPlayer, then youPlayer
+  const playersAfter = game.players.slice(youPlayerIndex + 1);
+  const playersBefore = game.players.slice(0, youPlayerIndex);
+  const youPlayer = game.players[youPlayerIndex];
+
+  return [...playersAfter, ...playersBefore, youPlayer];
+}
+
 function generateResourceProbabilityTable(): string {
   if (!game.probableGameState || game.players.length === 0) {
     return '';
   }
 
   const resourceNames = ['tree', 'brick', 'sheep', 'wheat', 'ore'];
-  const resourceEmojis = ['🌲', '🧱', '🐑', '🌾', '⛰️'];
   const resourceColors = [
-    '#a8e6cf',
-    '#ffeaa7',
-    '#f0f8ff',
-    '#fff8dc',
-    '#ddd6fe',
+    '#38c61b22',
+    '#cc7b6422',
+    '#8fb50e22',
+    '#f4bb2522',
+    '#9fa4a122',
   ];
 
   let table =
-    '<div style="margin: 15px 0;"><h4 style="margin: 0 0 10px 0; text-align: center;">🎯 Resource Probabilities</h4>';
+    '<div style="margin-top: 15px;"><h4 style="margin: 0 0 10px 0; text-align: center;">Resource Probabilities</h4>';
   table +=
     '<table style="width: 100%; border-collapse: collapse; margin: 10px 0;">';
 
@@ -147,15 +167,18 @@ function generateResourceProbabilityTable(): string {
 
   resourceNames.forEach((resource, index) => {
     table += `<th style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]};">
-      ${resourceEmojis[index]}<br>
-      <small>Min / +Prob</small>
+      <img src="${chrome.runtime.getURL(`assets/${resource}.svg`)}" 
+           style="width: 14.5px; height: 20px;" 
+           alt="${resource}" 
+           title="${resource}" /><br>
     </th>`;
   });
 
   table += '</tr></thead><tbody>';
 
-  // Player rows
-  game.players.forEach(player => {
+  // Player rows - using ordered players with youPlayer last
+  const orderedPlayers = getOrderedPlayers();
+  orderedPlayers.forEach(player => {
     const probabilities =
       game.probableGameState!.getPlayerResourceProbabilities(player.name);
 
@@ -175,7 +198,7 @@ function generateResourceProbabilityTable(): string {
         displayText += ` <span style="color:rgb(47, 120, 23); font-size: 10px;">+${additionalProb.toFixed(2)}</span>`;
       }
 
-      table += `<td style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]}; font-weight: bold;">
+      table += `<td style="padding: 8px; border: 1px solid #ddd; text-align: center; width: 65px;background: ${resourceColors[index]}; font-weight: bold;">
         ${displayText}
       </td>`;
     });
@@ -273,8 +296,144 @@ function generateDiceChart(): string {
   return chart;
 }
 
+function generateBlockedDiceDisplay(): string {
+  // Check if there are any blocked dice rolls
+  const hasBlockedRolls = Object.keys(game.blockedDiceRolls).length > 0;
+
+  if (!hasBlockedRolls) {
+    return '';
+  }
+
+  let display =
+    '<div style="margin: 15px 0;"><h4 style="margin: 0 0 10px 0; text-align: center;">🔒 Blocked by Robber</h4>';
+  display +=
+    '<div style="background: #f8f9fa; padding: 10px; border-radius: 6px; font-size: 12px; line-height: 1.4;">';
+
+  // Collect all blocked entries
+  const blockedEntries: Array<{
+    number: number;
+    resource: string;
+    count: number;
+  }> = [];
+
+  Object.entries(game.blockedDiceRolls).forEach(([diceNumber, resources]) => {
+    Object.entries(resources).forEach(([resource, count]) => {
+      if (count > 0) {
+        blockedEntries.push({
+          number: parseInt(diceNumber),
+          resource,
+          count,
+        });
+      }
+    });
+  });
+
+  // Sort by dice number, then by resource
+  blockedEntries.sort((a, b) => {
+    if (a.number !== b.number) {
+      return a.number - b.number;
+    }
+    return a.resource.localeCompare(b.resource);
+  });
+
+  // Generate the display text
+  const blockedTexts = blockedEntries.map(
+    entry => `${entry.number} ${entry.resource}: ${entry.count}`
+  );
+
+  display += blockedTexts.join('<br>');
+  display += '</div></div>';
+
+  return display;
+}
+
+function generateUnknownTransactionsDisplay(): string {
+  const unresolvedTransactions = game.probableGameState
+    .getUnknownTransactions()
+    .filter(t => !t.isResolved);
+
+  console.log(game.probableGameState.getUnknownTransactions());
+
+  if (unresolvedTransactions.length === 0) {
+    return '';
+  }
+
+  let display =
+    '<div style="margin: 15px 0; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px;">';
+  display +=
+    '<h4 style="margin: 0 0 10px 0; color: #856404;">🔍 Unknown Transactions</h4>';
+
+  unresolvedTransactions.forEach(transaction => {
+    const timestamp = new Date(transaction.timestamp).toLocaleTimeString();
+    display += `<div style="margin-bottom: 8px; padding: 8px; background: white; border-radius: 4px; font-size: 11px;">`;
+    display += `<strong>${transaction.thief}</strong> stole from <strong>${transaction.victim}</strong> `;
+    display += `<span style="color: #666;">(${timestamp})</span><br>`;
+
+    const transactionResourceProbabilities =
+      game.probableGameState.getTransactionResourceProbabilities(
+        transaction.id
+      );
+
+    console.log(transactionResourceProbabilities);
+
+    if (transactionResourceProbabilities) {
+      const probabilityText = Object.entries(transactionResourceProbabilities)
+        .filter(([_, probability]) => probability > 0)
+        .sort(([_, a], [__, b]) => b - a) // Sort by probability descending
+        .map(
+          ([resource, probability]) => `${resource}: ${probability.toFixed(2)}`
+        )
+        .join(', ');
+
+      if (probabilityText) {
+        display += `<small style="color: #666;">Could be: ${probabilityText}</small>`;
+      }
+    }
+
+    display += '</div>';
+  });
+
+  display += '</div>';
+  return display;
+}
+
+function generateMainContent(): string {
+  return `
+    ${generateResourceProbabilityTable()}
+    <div style="font-size: 12px; color: #666; text-align: center; line-height: 1.1;">Numbers shown are guaranteed resources, additional resources are shown as a probability</div>
+    ${generateUnknownTransactionsDisplay()}
+    ${generateDevCardsDisplay()}
+    <div style="font-size: 12px; color: #666; text-align: center; line-height: 1.1;">Cards in your hand are currently not counted</div>
+    ${generateDiceChart()}
+    ${generateBlockedDiceDisplay()}
+  `;
+}
+
+function generateWaitingContent(): string {
+  return `
+    <div style="
+      text-align: center; 
+      padding: 40px 20px; 
+      color: #666;
+      font-size: 14px;
+      line-height: 1.5;
+    ">
+      <div style="font-size: 48px; margin-bottom: 20px;">🎲</div>
+      <div style="font-weight: bold; margin-bottom: 10px; color: #2c3e50;">
+        Waiting for first dice roll...
+      </div>
+      <div>
+        The counter will start tracking resources once the first dice is rolled in the game.
+      </div>
+    </div>
+  `;
+}
+
 function updateOverlayContent(overlay: HTMLDivElement): void {
   const contentDisplay = isMinimized ? 'none' : 'block';
+  const mainContent = game.hasRolledFirstDice
+    ? generateMainContent()
+    : generateWaitingContent();
 
   overlay.innerHTML = `
     <div id="overlay-header" style="
@@ -300,22 +459,20 @@ function updateOverlayContent(overlay: HTMLDivElement): void {
       " title="${isMinimized ? 'Expand' : 'Minimize'}">${isMinimized ? '□' : '−'}</button>
     </div>
     
-         <div id="overlay-content" style="display: ${contentDisplay}; padding: 15px; max-height: 800px; overflow-y: auto; position: relative;">
-       ${generateResourceProbabilityTable()}
-       ${generateDevCardsDisplay()}
-       ${generateDiceChart()}
-       <div class="resize-handle" style="
-         position: absolute;
-         bottom: 0;
-         right: 0;
-         width: 20px;
-         height: 20px;
-         cursor: nw-resize;
-         background: linear-gradient(-45deg, transparent 0%, transparent 30%, #ccc 30%, #ccc 40%, transparent 40%, transparent 60%, #ccc 60%, #ccc 70%, transparent 70%);
-         border-radius: 0 0 6px 0;
-       " title="Drag to resize"></div>
-     </div>
-   `;
+    <div id="overlay-content" style="display: ${contentDisplay}; padding: 15px; max-height: 800px; overflow-y: auto; position: relative;">
+      ${mainContent}
+      <div class="resize-handle" style="
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 20px;
+        height: 20px;
+        cursor: nw-resize;
+        background: linear-gradient(-45deg, transparent 0%, transparent 30%, #ccc 30%, #ccc 40%, transparent 40%, transparent 60%, #ccc 60%, #ccc 70%, transparent 70%);
+        border-radius: 0 0 6px 0;
+      " title="Drag to resize"></div>
+    </div>
+  `;
 
   // Add minimize button functionality
   const minimizeBtn = overlay.querySelector(

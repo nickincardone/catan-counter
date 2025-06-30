@@ -1,12 +1,8 @@
 import {
-  addUnknownSteal,
-  attemptToResolveUnknownTransactions,
   autoDetectCurrentPlayer,
-  eliminateResourceFromVictimTransactions,
   ensurePlayerExists,
   game,
   updateResources,
-  youPlayerName,
 } from './gameState.js';
 import { PropbableGameState } from './gameStateWithVariants.js';
 import {
@@ -79,7 +75,7 @@ export function rollDice(diceTotal: number): void {
       game.probableGameState = new PropbableGameState(game.players);
 
       // Auto-detect current player on the first dice roll instead of showing popup
-      if (!youPlayerName && game.players.length > 0) {
+      if (!game.youPlayerName && game.players.length > 0) {
         const success = autoDetectCurrentPlayer();
         if (!success) {
           console.log(
@@ -90,6 +86,33 @@ export function rollDice(diceTotal: number): void {
     }
 
     game.diceRolls[diceTotal as keyof DiceRollsType]++;
+  }
+}
+
+/**
+ * Handle a blocked dice roll where the robber prevents resource production
+ */
+export function blockedDiceRoll(
+  diceNumber: number,
+  resourceType: string
+): void {
+  if (diceNumber >= 2 && diceNumber <= 12) {
+    // Initialize the dice number object if it doesn't exist
+    if (!game.blockedDiceRolls[diceNumber]) {
+      game.blockedDiceRolls[diceNumber] = {};
+    }
+
+    // Initialize the resource count if it doesn't exist
+    if (!game.blockedDiceRolls[diceNumber][resourceType]) {
+      game.blockedDiceRolls[diceNumber][resourceType] = 0;
+    }
+
+    // Increment the blocked count
+    game.blockedDiceRolls[diceNumber][resourceType]++;
+
+    console.log(
+      `🔒 Dice ${diceNumber} blocked for ${resourceType}. Total blocked: ${game.blockedDiceRolls[diceNumber][resourceType]}`
+    );
   }
 }
 
@@ -229,11 +252,6 @@ export function unknownSteal(
       victimName: victim,
       stolenResource: null,
     });
-
-    const transactionId = addUnknownSteal(thief, victim);
-    console.log(
-      `🔍 ${thief} stole unknown resource from ${victim} (Transaction: ${transactionId})`
-    );
   }
 }
 
@@ -544,45 +562,6 @@ export function playerOffer(
     playerName: playerName,
     offeredResources: offeredResources,
   });
-
-  // For each resource they're offering, they must have it
-  // This can resolve unknown transactions
-  Object.keys(offeredResources).forEach(resource => {
-    const key = resource as keyof ResourceObjectType;
-    const offeredCount = offeredResources[key];
-
-    if (offeredCount && offeredCount > 0) {
-      // Try to resolve unknown transactions for this resource
-      const resolved = attemptToResolveUnknownTransactions(
-        playerName,
-        key,
-        offeredCount
-      );
-
-      // If we couldn't resolve enough resources through transactions,
-      // the player must still have the resources to offer them
-      // (This handles the ambiguous case where multiple resolutions are possible)
-      const currentAmount = player.resources[key];
-      if (currentAmount < offeredCount) {
-        const shortfall = offeredCount - currentAmount;
-        player.resources[key] += shortfall;
-        console.log(
-          `➕ ${playerName} gained ${shortfall} ${key} to match offer (ambiguous resolution)`
-        );
-      }
-
-      // If player is offering exactly the amount they have of a resource,
-      // eliminate it from any unknown transactions where they were the victim
-      // (because they must still have it to be able to offer it)
-      if (player.resources[key] === offeredCount) {
-        eliminateResourceFromVictimTransactions(playerName, key);
-      }
-    }
-  });
-
-  console.log(
-    `💭 ${playerName} (offering: ${JSON.stringify(offeredResources)}) - checking for unknown transaction resolution`
-  );
 }
 
 /**

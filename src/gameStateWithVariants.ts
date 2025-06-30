@@ -10,6 +10,7 @@ import {
   TransactionType,
   TransactionTypeEnum,
   PlayerType,
+  UnknownTransaction,
 } from './types';
 
 function updateResourceAmount(
@@ -33,9 +34,6 @@ function isValidResourceType(
   return RESOURCE_TYPES.includes(resourceType as keyof ResourceObjectType);
 }
 
-/**
- * Enhanced game state manager using the variant system
- */
 export class PropbableGameState {
   private variantTree: VariantTree;
   private transactionProcessor: VariantTransactionProcessor;
@@ -56,6 +54,85 @@ export class PropbableGameState {
     );
   }
 
+  /**
+   * Get all unknown transactions
+   */
+  getUnknownTransactions(): UnknownTransaction[] {
+    return this.transactionProcessor.getUnresolvedTransactions();
+  }
+
+  /**
+   * Get unknown transaction by ID
+   */
+  getUnknownTransaction(id: string): UnknownTransaction | undefined {
+    return this.transactionProcessor.getUnknownTransaction(id);
+  }
+
+  /**
+   * Resolve unknown transaction by specifying what resource was stolen
+   */
+  resolveUnknownTransaction(
+    id: string,
+    resolvedResource: keyof ResourceObjectType
+  ): boolean {
+    return this.transactionProcessor.resolveUnknownTransaction(
+      id,
+      resolvedResource
+    );
+  }
+
+  /**
+   * Resolve all unknown transactions by looking at possible variants
+   * if there doesn't exist a node with that transaction id then mark it as resolved
+   * if there is only one node mark all transactions as resolved, never mark a transaction
+   * as unresolved in this function
+   */
+  resolveAllUnknownTransactions(): void {
+    const unresolvedTransactions = this.getUnknownTransactions();
+
+    for (const transaction of unresolvedTransactions) {
+      // Get all variant nodes associated with this transaction
+      const currentNodes = this.variantTree.getCurrentVariantNodes();
+      const transactionNodes = currentNodes.filter(
+        node => node.transactionId === transaction.id
+      );
+
+      if (transactionNodes.length === 0) {
+        // No nodes exist with this transaction ID - variants have been pruned away
+        // Mark as resolved but we don't know what resource was stolen
+        transaction.isResolved = true;
+        console.log(
+          `✅ Auto-resolved transaction ${transaction.id}: variants eliminated`
+        );
+      } else if (transactionNodes.length === 1) {
+        // Only one variant remains - we can determine what resource was stolen
+        const remainingNode = transactionNodes[0];
+        const stolenResource = remainingNode.stolenResource;
+
+        if (stolenResource) {
+          // Resolve the transaction with the determined resource
+          this.transactionProcessor.resolveUnknownTransaction(
+            transaction.id,
+            stolenResource
+          );
+          console.log(
+            `✅ Auto-resolved transaction ${transaction.id}: ${transaction.thief} stole ${stolenResource} from ${transaction.victim}`
+          );
+        } else {
+          // Mark as resolved even if we can't determine the resource
+          transaction.isResolved = true;
+          console.log(
+            `✅ Auto-resolved transaction ${transaction.id}: single variant remaining but resource unclear`
+          );
+        }
+      }
+      // If multiple nodes exist, leave the transaction unresolved as there's still uncertainty
+    }
+  }
+
+  /**
+   * Process a transaction
+   */
   processTransaction(transaction: TransactionType): void {
     switch (transaction.type) {
       case TransactionTypeEnum.ROBBER_STEAL: {
@@ -119,6 +196,9 @@ export class PropbableGameState {
           `Unknown transaction type: ${(exhaustiveCheck as any).type}`
         );
     }
+
+    // Auto-resolve any transactions that can now be determined
+    this.resolveAllUnknownTransactions();
   }
 
   /**
@@ -169,6 +249,7 @@ export class PropbableGameState {
       const playerState = gameState[playerName];
 
       if (playerState) {
+        // Execute the gain
         for (const [resourceType, amount] of Object.entries(resources)) {
           if (typeof amount === 'number' && isValidResourceType(resourceType)) {
             updateResourceAmount(playerState.resources, resourceType, amount);
@@ -411,6 +492,17 @@ export class PropbableGameState {
 
     console.log(
       `\nUncertainty Score: ${(this.getUncertaintyScore() * 100).toFixed(1)}%`
+    );
+  }
+
+  /**
+   * Get resource probabilities for a specific transaction
+   */
+  getTransactionResourceProbabilities(
+    transactionId: string
+  ): ResourceObjectType | null {
+    return this.transactionProcessor.getTransactionResourceProbabilities(
+      transactionId
     );
   }
 }

@@ -22,7 +22,6 @@ export interface UnknownTransaction {
   timestamp: number;
   thief: string;
   victim: string;
-  possibleResources: ResourceObjectType; // The resources the victim had that could be stolen
   isResolved: boolean;
   resolvedResource?: keyof ResourceObjectType;
 }
@@ -43,9 +42,13 @@ export interface PlayerType {
   totalCards: number;
 }
 
+export enum GameTypeEnum {
+  STANDARD = 'STANDARD',
+}
+
 export interface GameType {
   players: PlayerType[];
-  // type todo in the future we want to be able to handle nonstandard games
+  gameType: GameTypeEnum;
   gameResources: ResourceObjectType;
   devCards: number;
   knights: number;
@@ -55,9 +58,14 @@ export interface GameType {
   monopolies: number;
   diceRolls: DiceRollsType;
   remainingDiscoveryCardsProbabilities: DiscoveryCardType;
-  unknownTransactions: UnknownTransaction[];
   probableGameState: PropbableGameState;
   hasRolledFirstDice: boolean;
+  youPlayerName: string | null;
+  blockedDiceRolls: {
+    [diceNumber: number]: {
+      [resourceType: string]: number;
+    };
+  };
 }
 
 export interface DiceRollsType {

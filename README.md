@@ -9,6 +9,7 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - **Player Resources**: Tracks wheat, sheep, brick, wood, and ore for all players
 - **Development Cards**: Monitors knights, victory points, year of plenty, road builders, and monopolies
 - **Dice Rolls**: Records frequency of all dice roll results (2-12)
+- **Blocked Dice Tracking**: Monitors when robber blocks resource production by dice number and resource type
 - **Building Counts**: Tracks settlements, cities, and roads remaining for each player
 - **Victory Points**: Monitors VP progress for all players
 

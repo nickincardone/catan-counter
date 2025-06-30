@@ -10,6 +10,8 @@ import {
   parseCounterOfferResources,
   parseTradeResources,
   RESOURCE_STRING,
+  getBlockedDiceNumber,
+  getBlockedResourceType,
 } from './domUtils.js';
 import {
   bankTrade,
@@ -35,12 +37,9 @@ import {
   useRoadBuilding,
   useYearOfPlenty,
   yearOfPlentyTake,
+  blockedDiceRoll,
 } from './gameActions.js';
-import {
-  game,
-  isWaitingForYouPlayerSelection,
-  youPlayerName,
-} from './gameState.js';
+import { game, isWaitingForYouPlayerSelection } from './gameState.js';
 import { updateGameStateDisplay } from './overlay.js';
 import { ResourceObjectType } from './types.js';
 
@@ -54,9 +53,6 @@ function ignoreElement(element: HTMLElement, messageText: string): boolean {
     messageText.includes('will take over') ||
     // Reconnection messages
     messageText.includes('has reconnected') ||
-    // Robber blocking messages
-    messageText.includes('is blocked by the Robber') ||
-    messageText.includes('No resources produced') ||
     // HR elements
     element.querySelector('hr') !== null ||
     // Learn how to play messages
@@ -91,7 +87,7 @@ export function updateGameFromChat(element: HTMLElement): void {
   if (messageText.includes('stole') && messageText.includes('from you')) {
     const stolenResource = getResourceType(element);
     if (stolenResource) {
-      stealFromYou(playerName, youPlayerName, stolenResource);
+      stealFromYou(playerName, game.youPlayerName, stolenResource);
     }
   }
   // Scenario 1: Place settlement (keyword: "placed a")
@@ -106,6 +102,15 @@ export function updateGameFromChat(element: HTMLElement): void {
     const diceTotal = getDiceRollTotal(element);
     if (diceTotal) {
       rollDice(diceTotal);
+    }
+  }
+  // Scenario 2.5: Blocked dice (keyword: "is blocked by the Robber")
+  else if (messageText.includes('blocked by the Robber')) {
+    const diceNumber = getBlockedDiceNumber(element);
+    const resourceType = getBlockedResourceType(element);
+
+    if (diceNumber !== null && resourceType) {
+      blockedDiceRoll(diceNumber, resourceType);
     }
   }
   // Scenario 3: Place road (keyword: "placed a" + road image)
@@ -266,8 +271,5 @@ export function updateGameFromChat(element: HTMLElement): void {
   else {
     console.log('💬💬💬  New unknown message:', element);
   }
-
-  console.log(game.probableGameState.debugPrintVariants());
-
   updateGameStateDisplay();
 }

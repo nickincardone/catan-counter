@@ -98,7 +98,9 @@ describe('Chat Parser Integration - Steal Tracker Scenario', () => {
 
     // Verify no unknown transactions remain unresolved
     expect(
-      game.unknownTransactions.filter((t: any) => !t.isResolved)
+      game.probableGameState
+        .getUnknownTransactions()
+        .filter((t: any) => !t.isResolved)
     ).toHaveLength(1);
   });
 });
@@ -233,6 +235,10 @@ describe('Chat Parser Integration - Steal with Only One Resource Type', () => {
     expect(madel!.resourceProbabilities.tree).toBe(0);
 
     // Verify no unresolved transactions remain
-    expect(game.unknownTransactions.filter(t => !t.isResolved)).toHaveLength(0);
+    expect(
+      game.probableGameState
+        .getUnknownTransactions()
+        .filter((t: any) => !t.isResolved)
+    ).toHaveLength(0);
   });
 });

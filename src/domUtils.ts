@@ -265,18 +265,62 @@ export function parseBankTrade(
 export function parseCounterOfferResources(
   element: HTMLElement
 ): Partial<ResourceObjectType> {
-  // Get all images between "offering" and "for" to see what resources they have
-  const messageHTML = element.innerHTML;
-  const offeringSection = messageHTML.split('offering ')[1]?.split(' for ')[0];
+  const resources: Partial<ResourceObjectType> = {};
 
-  if (offeringSection) {
-    // Create a temporary element to parse the offering section
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = offeringSection;
+  // Find all resource images in the element
+  const resourceImages = element.querySelectorAll(RESOURCE_STRING);
 
-    // Extract resources from the offering section
-    return getResourcesFromImages(tempDiv, RESOURCE_STRING);
+  resourceImages.forEach(img => {
+    const resourceType = getResourceTypeFromAlt(img.getAttribute('alt'));
+    if (resourceType) {
+      resources[resourceType] = (resources[resourceType] || 0) + 1;
+    }
+  });
+
+  return resources;
+}
+
+/**
+ * Extract dice number from blocked dice message
+ * Example: <img alt="prob_6"> -> 6
+ */
+export function getBlockedDiceNumber(element: HTMLElement): number | null {
+  const diceImg = element.querySelector('img[alt^="prob_"]');
+  if (diceImg) {
+    const alt = diceImg.getAttribute('alt');
+    const match = alt?.match(/prob_(\d+)/);
+    return match ? parseInt(match[1]) : null;
   }
+  return null;
+}
 
-  return {};
+/**
+ * Extract resource type from blocked dice message
+ * Example: <img alt="wool tile"> -> sheep
+ */
+export function getBlockedResourceType(element: HTMLElement): string | null {
+  const tileImg = element.querySelector('img[alt$=" tile"]');
+  if (tileImg) {
+    const alt = tileImg.getAttribute('alt');
+    const match = alt?.match(/(\w+) tile/);
+    if (match) {
+      const resourceName = match[1];
+      // Convert tile resource names to our internal names
+      switch (resourceName) {
+        case 'grain':
+          return 'wheat';
+        case 'wool':
+          return 'sheep';
+        case 'lumber':
+          return 'tree';
+        case 'brick':
+          return 'brick';
+        case 'ore':
+          return 'ore';
+        default:
+          return resourceName;
+      }
+    }
+  }
+  return null;
 }

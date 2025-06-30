@@ -1,4 +1,4 @@
-import { ResourceObjectType } from './types';
+import { ResourceObjectType, UnknownTransaction } from './types';
 import {
   VariantTree,
   VariantNode,
@@ -6,16 +6,11 @@ import {
   RESOURCE_TYPES,
 } from './variants';
 
-/**
- * Transaction handlers using the variant system
- */
 export class VariantTransactionProcessor {
+  private unknownTransactions: UnknownTransaction[] = [];
+
   constructor(private variantTree: VariantTree) {}
 
-  /**
-   * Handle a steal from unknown resources
-   * Creates branches for each possible resource that could have been stolen
-   */
   processUnknownSteal(stealerName: string, victimName: string): void {
     const currentNodes = this.variantTree.getCurrentVariantNodes();
 
@@ -41,6 +36,8 @@ export class VariantTransactionProcessor {
         continue;
       }
 
+      const transactionId = `${stealerName}_${victimName}_${Date.now()}`;
+
       // Create a variant for each possible resource that could be stolen
       for (const resourceType of RESOURCE_TYPES) {
         const resourceCount = victimState.resources[resourceType];
@@ -59,8 +56,33 @@ export class VariantTransactionProcessor {
           }
           newGameState[stealerName].resources[resourceType] += 1;
 
-          newVariants.push(new VariantNode(node, probability, newGameState));
+          // Create variant node with transaction ID
+          newVariants.push(
+            new VariantNode(
+              node,
+              probability,
+              newGameState,
+              transactionId,
+              resourceType
+            )
+          );
         }
+      }
+
+      // Create transaction record if we have multiple possible resources
+      if (newVariants.length > 1 && transactionId) {
+        const transaction: UnknownTransaction = {
+          id: transactionId,
+          timestamp: Date.now(),
+          thief: stealerName,
+          victim: victimName,
+          isResolved: false,
+        };
+
+        this.unknownTransactions.push(transaction);
+        console.log(
+          `📝 Created unknown transaction ${transactionId}: ${stealerName} stole from ${victimName}`
+        );
       }
 
       // Add all possible steal variants as children
@@ -71,10 +93,6 @@ export class VariantTransactionProcessor {
     this.variantTree.pruneInvalidNodes();
   }
 
-  /**
-   * Handle a monopoly card play where we know the total amount stolen
-   * This eliminates branches that don't match the known total
-   */
   processMonopoly(
     playerName: string,
     resourceType: keyof ResourceObjectType,
@@ -118,9 +136,6 @@ export class VariantTransactionProcessor {
     }
   }
 
-  /**
-   * Handle a trade where we know the exact resources exchanged
-   */
   processTrade(
     player1: string,
     player2: string,
@@ -158,9 +173,6 @@ export class VariantTransactionProcessor {
     this.variantTree.pruneInvalidNodes();
   }
 
-  /**
-   * Handle a trade offer that eliminates branches where the player can't afford it
-   */
   processTradeOffer(
     playerName: string,
     offeredResources: Partial<ResourceObjectType>
@@ -177,9 +189,6 @@ export class VariantTransactionProcessor {
     }
   }
 
-  /**
-   * Get the most likely current game state
-   */
   getMostLikelyGameState(): {
     gameState: GameState;
     probability: number;
@@ -193,9 +202,6 @@ export class VariantTransactionProcessor {
     };
   }
 
-  /**
-   * Get all possible game states with their probabilities
-   */
   getAllPossibleGameStates(): Array<{
     gameState: GameState;
     probability: number;
@@ -287,5 +293,153 @@ export class VariantTransactionProcessor {
         playerState.resources[resourceType] += amount * multiplier;
       }
     }
+  }
+
+  /**
+   * Get all unresolved unknown transactions
+   */
+  getUnresolvedTransactions(): UnknownTransaction[] {
+    return this.unknownTransactions.filter(t => !t.isResolved);
+  }
+
+  /**
+   * Get unknown transaction by ID
+   */
+  getUnknownTransaction(id: string): UnknownTransaction | undefined {
+    return this.unknownTransactions.find(t => t.id === id);
+  }
+
+  /**
+   * Resolve unknown transaction by specifying what resource was stolen
+   */
+  resolveUnknownTransaction(
+    id: string,
+    resolvedResource: keyof ResourceObjectType
+  ): boolean {
+    const transaction = this.unknownTransactions.find(t => t.id === id);
+    if (!transaction || transaction.isResolved) {
+      console.warn(`Transaction ${id} not found or already resolved`);
+      return false;
+    }
+
+    // Mark transaction as resolved
+    transaction.isResolved = true;
+    transaction.resolvedResource = resolvedResource;
+
+    // Remove variant nodes that don't match the resolved resource
+    const currentNodes = this.variantTree.getCurrentVariantNodes();
+    for (const node of currentNodes) {
+      if (node.transactionId === id) {
+        // Check if this variant matches the resolved resource
+        const matches = this.variantMatchesResolvedResource(
+          node,
+          transaction,
+          resolvedResource
+        );
+        if (!matches) {
+          this.variantTree.removeVariantNode(node);
+        }
+      }
+    }
+
+    this.variantTree.pruneInvalidNodes();
+    console.log(
+      `✅ Manually resolved transaction ${id}: ${transaction.thief} stole ${resolvedResource} from ${transaction.victim}`
+    );
+    return true;
+  }
+
+  /**
+   * Check if a variant node matches the resolved resource for a transaction
+   */
+  variantMatchesResolvedResource(
+    node: VariantNode,
+    transaction: UnknownTransaction,
+    resolvedResource: keyof ResourceObjectType
+  ): boolean {
+    // Use the stored stolen resource if available
+    if (node.stolenResource) {
+      return node.stolenResource === resolvedResource;
+    }
+
+    // Fallback to the old method for backward compatibility
+    if (!node.parent) return true; // Root node always matches
+
+    const parentState = node.parent.gameState;
+    const currentState = node.gameState;
+
+    // Check if the thief gained the resolved resource and victim lost it
+    const thiefGained =
+      currentState[transaction.thief]?.resources[resolvedResource] -
+      parentState[transaction.thief]?.resources[resolvedResource];
+    const victimLost =
+      parentState[transaction.victim]?.resources[resolvedResource] -
+      currentState[transaction.victim]?.resources[resolvedResource];
+
+    return thiefGained === 1 && victimLost === 1;
+  }
+
+  /**
+   * Get resource probabilities for a specific transaction
+   */
+  getTransactionResourceProbabilities(
+    transactionId: string
+  ): ResourceObjectType | null {
+    const transaction = this.getUnknownTransaction(transactionId);
+    if (!transaction || transaction.isResolved) {
+      return null;
+    }
+
+    // Get all variant nodes associated with this transaction
+    const currentNodes = this.variantTree.getCurrentVariantNodes();
+    const transactionNodes = currentNodes.filter(
+      node => node.transactionId === transactionId
+    );
+
+    if (transactionNodes.length === 0) {
+      return null;
+    }
+
+    // Initialize result with all resources set to 0
+    const result: ResourceObjectType = {
+      tree: 0,
+      brick: 0,
+      sheep: 0,
+      wheat: 0,
+      ore: 0,
+    };
+
+    // Calculate probabilities for each resource based on variants
+    const resourceProbabilities = new Map<keyof ResourceObjectType, number>();
+    let totalProbability = 0;
+
+    for (const node of transactionNodes) {
+      // Calculate cumulative probability for this node
+      let probability = node.probability;
+      let parent = node.parent;
+      while (parent) {
+        probability *= parent.probability;
+        parent = parent.parent;
+      }
+
+      totalProbability += probability;
+
+      // Determine which resource this variant represents
+      const resource = node.stolenResource;
+      if (resource) {
+        resourceProbabilities.set(
+          resource,
+          (resourceProbabilities.get(resource) || 0) + probability
+        );
+      }
+    }
+
+    // Normalize probabilities and populate result
+    for (const [resource, probability] of resourceProbabilities.entries()) {
+      result[resource] =
+        totalProbability > 0 ? probability / totalProbability : 0;
+    }
+
+    return result;
   }
 }

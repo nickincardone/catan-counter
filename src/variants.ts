@@ -1,6 +1,6 @@
 // Variant system for tracking uncertain game states
 
-import { ResourceObjectType } from './types';
+import { ResourceObjectType } from './types.js';
 
 export interface GameState {
   [playerName: string]: PlayerState;
@@ -37,7 +37,9 @@ export class VariantNode {
   constructor(
     public parent: VariantNode | null,
     public probability: number,
-    public gameState: GameState
+    public gameState: GameState,
+    public transactionId?: string,
+    public stolenResource?: keyof ResourceObjectType
   ) {}
 
   /**
