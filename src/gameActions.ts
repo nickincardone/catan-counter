@@ -38,10 +38,6 @@ export function playerDiscard(
   });
 
   updateResources(playerName, playerChanges);
-
-  console.log(
-    `🗑️ ${playerName} discarded resources: ${JSON.stringify(discardedResources)}`
-  );
 }
 
 /**
@@ -57,9 +53,6 @@ export function placeSettlement(
   const player = game.players.find(p => p.name === playerName);
   if (player && player.settlements > 0) {
     player.settlements--;
-    console.log(
-      `🏠 ${playerName} placed a settlement. Remaining settlements: ${player.settlements}`
-    );
   }
 }
 
@@ -109,10 +102,6 @@ export function blockedDiceRoll(
 
     // Increment the blocked count
     game.blockedDiceRolls[diceNumber][resourceType]++;
-
-    console.log(
-      `🔒 Dice ${diceNumber} blocked for ${resourceType}. Total blocked: ${game.blockedDiceRolls[diceNumber][resourceType]}`
-    );
   }
 }
 
@@ -269,10 +258,6 @@ export function buyDevCard(playerName: string | null): void {
 
   game.devCards--;
   updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
-
-  console.log(
-    `🃏 ${playerName} bought a development card. Remaining dev cards: ${game.devCards}`
-  );
 }
 
 /**
@@ -298,10 +283,6 @@ export function bankTrade(
   });
 
   updateResources(playerName, resourceChanges);
-
-  console.log(
-    `🏦 ${playerName} made a bank trade: ${JSON.stringify(resourceChanges)}`
-  );
 }
 
 /**
@@ -378,9 +359,6 @@ export function buildRoad(playerName: string | null): void {
     });
     updateResources(playerName, { tree: -1, brick: -1 });
     player.roads--;
-    console.log(
-      `🛣️ ${playerName} built a road. Remaining roads: ${player.roads}`
-    );
   }
 }
 
@@ -393,9 +371,6 @@ export function moveRobber(playerName: string | null): void {
   const player = game.players.find(p => p.name === playerName);
   if (player) {
     player.totalRobbers++;
-    console.log(
-      `🔒 ${playerName} moved the robber. Total robber moves: ${player.totalRobbers}`
-    );
   }
 }
 
@@ -409,9 +384,6 @@ export function useYearOfPlenty(playerName: string | null): void {
   if (player) {
     game.yearOfPlenties--;
     player.discoveryCards.yearOfPlenties++;
-    console.log(
-      `🎯 ${playerName} used Year of Plenty. Remaining: ${game.yearOfPlenties}`
-    );
   }
 }
 
@@ -436,10 +408,6 @@ export function yearOfPlentyTake(
   });
 
   updateResources(playerName, resources);
-
-  console.log(
-    `🎯 ${playerName} took from bank via Year of Plenty: ${JSON.stringify(resources)}`
-  );
 }
 
 /**
@@ -452,9 +420,6 @@ export function useRoadBuilding(playerName: string | null): void {
   if (player) {
     game.roadBuilders--;
     player.discoveryCards.roadBuilders++;
-    console.log(
-      `🛣️ ${playerName} used Road Building. Remaining: ${game.roadBuilders}`
-    );
   }
 }
 
@@ -468,9 +433,6 @@ export function useMonopoly(playerName: string | null): void {
   if (player) {
     game.monopolies--;
     player.discoveryCards.monopolies++;
-    console.log(
-      `💰 ${playerName} used Monopoly. Remaining: ${game.monopolies}`
-    );
   }
 }
 
@@ -508,10 +470,6 @@ export function monopolySteal(
 
   // Add the actual stolen amount to monopoly player (directly, not via updateResources)
   monopolyPlayer.resources[resourceType] += actualStolen;
-
-  console.log(
-    `💰 ${playerName} monopolized ${actualStolen} ${resourceType} from all players (expected: ${totalStolen})`
-  );
 }
 
 /**

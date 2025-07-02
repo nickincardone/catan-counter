@@ -6,6 +6,13 @@ module.exports = {
   // Test file patterns
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
 
+  // Ignore specific files that shouldn't be run as tests
+  testPathIgnorePatterns: [
+    '<rootDir>/node_modules/',
+    '<rootDir>/src/__tests__/gameTransactionLogs/',
+    '<rootDir>/src/__tests__/testUtils.ts',
+  ],
+
   // Module resolution
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',

@@ -99,19 +99,15 @@ export class PropbableGameState {
     const unresolvedTransactions = this.getUnknownTransactions();
 
     for (const transaction of unresolvedTransactions) {
-      // Get all variant nodes associated with this transaction
-      const currentNodes = this.variantTree.getCurrentVariantNodes();
-      const transactionNodes = currentNodes.filter(
-        node => node.transactionId === transaction.id
+      // Get all variant nodes associated with this transaction (not just leaf nodes)
+      const transactionNodes = this.variantTree.getNodesWithTransactionId(
+        transaction.id
       );
 
       if (transactionNodes.length === 0) {
         // No nodes exist with this transaction ID - variants have been pruned away
         // Mark as resolved but we don't know what resource was stolen
         transaction.isResolved = true;
-        console.log(
-          `✅ Auto-resolved transaction ${transaction.id}: variants eliminated`
-        );
       } else if (transactionNodes.length === 1) {
         // Only one variant remains - we can determine what resource was stolen
         const remainingNode = transactionNodes[0];
@@ -123,15 +119,9 @@ export class PropbableGameState {
             transaction.id,
             stolenResource
           );
-          console.log(
-            `✅ Auto-resolved transaction ${transaction.id}: ${transaction.thief} stole ${stolenResource} from ${transaction.victim}`
-          );
         } else {
           // Mark as resolved even if we can't determine the resource
           transaction.isResolved = true;
-          console.log(
-            `✅ Auto-resolved transaction ${transaction.id}: single variant remaining but resource unclear`
-          );
         }
       }
       // If multiple nodes exist, leave the transaction unresolved as there's still uncertainty

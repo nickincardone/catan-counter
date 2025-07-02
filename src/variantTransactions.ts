@@ -8,11 +8,14 @@ import {
 
 export class VariantTransactionProcessor {
   private unknownTransactions: UnknownTransaction[] = [];
+  private transactionCounter: number = 0;
 
   constructor(private variantTree: VariantTree) {}
 
   processUnknownSteal(stealerName: string, victimName: string): void {
     const currentNodes = this.variantTree.getCurrentVariantNodes();
+    const transactionId = `${stealerName}_${victimName}_${Date.now()}_${++this.transactionCounter}`;
+    let shouldCreateTransaction = false;
 
     for (const node of currentNodes) {
       const newVariants: VariantNode[] = [];
@@ -35,8 +38,6 @@ export class VariantTransactionProcessor {
         this.variantTree.removeVariantNode(node);
         continue;
       }
-
-      const transactionId = `${stealerName}_${victimName}_${Date.now()}`;
 
       // Create a variant for each possible resource that could be stolen
       for (const resourceType of RESOURCE_TYPES) {
@@ -68,25 +69,24 @@ export class VariantTransactionProcessor {
           );
         }
       }
-
-      // Create transaction record if we have multiple possible resources
-      if (newVariants.length > 1 && transactionId) {
-        const transaction: UnknownTransaction = {
-          id: transactionId,
-          timestamp: Date.now(),
-          thief: stealerName,
-          victim: victimName,
-          isResolved: false,
-        };
-
-        this.unknownTransactions.push(transaction);
-        console.log(
-          `📝 Created unknown transaction ${transactionId}: ${stealerName} stole from ${victimName}`
-        );
+      if (newVariants.length > 1) {
+        shouldCreateTransaction = true;
       }
 
       // Add all possible steal variants as children
       node.addVariantNodes(newVariants);
+    }
+
+    if (shouldCreateTransaction) {
+      const transaction: UnknownTransaction = {
+        id: transactionId,
+        timestamp: Date.now(),
+        thief: stealerName,
+        victim: victimName,
+        isResolved: false,
+      };
+
+      this.unknownTransactions.push(transaction);
     }
 
     // Clean up invalid states
@@ -343,9 +343,6 @@ export class VariantTransactionProcessor {
     }
 
     this.variantTree.pruneInvalidNodes();
-    console.log(
-      `✅ Manually resolved transaction ${id}: ${transaction.thief} stole ${resolvedResource} from ${transaction.victim}`
-    );
     return true;
   }
 

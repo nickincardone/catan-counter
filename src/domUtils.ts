@@ -27,13 +27,15 @@ export function findChatContainer(): HTMLDivElement | null {
 }
 
 export function getPlayerName(element: HTMLElement): string | null {
-  const playerSpan = element.querySelector('span[style*="font-weight:600"]');
+  const playerSpan = element.querySelector(
+    'span[style*="font-weight:600"], span[style*="font-weight: 600"]'
+  );
   return playerSpan ? playerSpan.textContent || null : null;
 }
 
 export function getPlayerColor(element: HTMLElement): string {
   const playerSpan = element.querySelector(
-    'span[style*="font-weight:600"]'
+    'span[style*="font-weight:600"], span[style*="font-weight: 600"]'
   ) as HTMLElement;
   return playerSpan ? playerSpan.style.color || '#000' : '#000';
 }

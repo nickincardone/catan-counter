@@ -51,6 +51,7 @@ function ignoreElement(element: HTMLElement, messageText: string): boolean {
     // Disconnection messages
     messageText.includes('has disconnected') ||
     messageText.includes('will take over') ||
+    messageText.includes('left the game') ||
     // Reconnection messages
     messageText.includes('has reconnected') ||
     // HR elements
@@ -266,6 +267,10 @@ export function updateGameFromChat(element: HTMLElement): void {
   else if (messageText.includes('proposed counter offer to')) {
     const offeredResources = parseCounterOfferResources(element);
     playerOffer(playerName, offeredResources);
+  }
+  // Scenario 23: log game history when game is over
+  else if (messageText.includes('won the game!')) {
+    console.log(game.probableGameState.getTransactionHistory());
   }
   // Log any unknown messages
   else {

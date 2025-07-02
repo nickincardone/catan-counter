@@ -187,6 +187,25 @@ export class VariantTree {
   }
 
   /**
+   * Get all nodes with a specific transaction ID (not just leaf nodes)
+   */
+  getNodesWithTransactionId(
+    transactionId: string,
+    node: VariantNode = this.root,
+    result: VariantNode[] = []
+  ): VariantNode[] {
+    if (node.transactionId === transactionId) {
+      result.push(node);
+    }
+
+    for (const child of node.children) {
+      this.getNodesWithTransactionId(transactionId, child, result);
+    }
+
+    return result;
+  }
+
+  /**
    * Check if the tree is unary (single path from root to leaf)
    */
   private isUnary(): boolean {

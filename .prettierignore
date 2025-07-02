@@ -6,6 +6,8 @@ dist/
 build/
 *.js.map
 
+src/__tests__/scenarios/
+
 # Logs
 *.log
 npm-debug.log*

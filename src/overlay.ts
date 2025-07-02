@@ -220,8 +220,7 @@ function generateDevCardsDisplay(): string {
   ];
 
   let display = '<div style="margin: 15px 0;">';
-  display +=
-    '<h4 style="margin: 0 0 10px 0; text-align: center;">Development Cards Remaining</h4>';
+  display += `<h4 style="margin: 0 0 10px 0; text-align: center;">Development Cards Remaining: ${game.devCards}</h4>`;
   display +=
     '<div style="display: flex; justify-content: space-around; align-items: center; padding: 10px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">';
 
@@ -371,8 +370,6 @@ function generateUnknownTransactionsDisplay(): string {
       game.probableGameState.getTransactionResourceProbabilities(
         transaction.id
       );
-
-    console.log(transactionResourceProbabilities);
 
     if (transactionResourceProbabilities) {
       const probabilityText = Object.entries(transactionResourceProbabilities)

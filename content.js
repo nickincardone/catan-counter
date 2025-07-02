@@ -432,6 +432,18 @@
             return result;
         }
         /**
+         * Get all nodes with a specific transaction ID (not just leaf nodes)
+         */
+        getNodesWithTransactionId(transactionId, node = this.root, result = []) {
+            if (node.transactionId === transactionId) {
+                result.push(node);
+            }
+            for (const child of node.children) {
+                this.getNodesWithTransactionId(transactionId, child, result);
+            }
+            return result;
+        }
+        /**
          * Check if the tree is unary (single path from root to leaf)
          */
         isUnary() {
@@ -472,9 +484,12 @@
         constructor(variantTree) {
             this.variantTree = variantTree;
             this.unknownTransactions = [];
+            this.transactionCounter = 0;
         }
         processUnknownSteal(stealerName, victimName) {
             const currentNodes = this.variantTree.getCurrentVariantNodes();
+            const transactionId = `${stealerName}_${victimName}_${Date.now()}_${++this.transactionCounter}`;
+            let shouldCreateTransaction = false;
             for (const node of currentNodes) {
                 const newVariants = [];
                 const gameState = node.gameState;
@@ -490,7 +505,6 @@
                     this.variantTree.removeVariantNode(node);
                     continue;
                 }
-                const transactionId = `${stealerName}_${victimName}_${Date.now()}`;
                 // Create a variant for each possible resource that could be stolen
                 for (const resourceType of RESOURCE_TYPES) {
                     const resourceCount = victimState.resources[resourceType];
@@ -509,20 +523,21 @@
                         newVariants.push(new VariantNode(node, probability, newGameState, transactionId, resourceType));
                     }
                 }
-                // Create transaction record if we have multiple possible resources
-                if (newVariants.length > 1 && transactionId) {
-                    const transaction = {
-                        id: transactionId,
-                        timestamp: Date.now(),
-                        thief: stealerName,
-                        victim: victimName,
-                        isResolved: false,
-                    };
-                    this.unknownTransactions.push(transaction);
-                    console.log(`📝 Created unknown transaction ${transactionId}: ${stealerName} stole from ${victimName}`);
+                if (newVariants.length > 1) {
+                    shouldCreateTransaction = true;
                 }
                 // Add all possible steal variants as children
                 node.addVariantNodes(newVariants);
+            }
+            if (shouldCreateTransaction) {
+                const transaction = {
+                    id: transactionId,
+                    timestamp: Date.now(),
+                    thief: stealerName,
+                    victim: victimName,
+                    isResolved: false,
+                };
+                this.unknownTransactions.push(transaction);
             }
             // Clean up invalid states
             this.variantTree.pruneInvalidNodes();
@@ -829,9 +844,8 @@
         resolveAllUnknownTransactions() {
             const unresolvedTransactions = this.getUnknownTransactions();
             for (const transaction of unresolvedTransactions) {
-                // Get all variant nodes associated with this transaction
-                const currentNodes = this.variantTree.getCurrentVariantNodes();
-                const transactionNodes = currentNodes.filter(node => node.transactionId === transaction.id);
+                // Get all variant nodes associated with this transaction (not just leaf nodes)
+                const transactionNodes = this.variantTree.getNodesWithTransactionId(transaction.id);
                 if (transactionNodes.length === 0) {
                     // No nodes exist with this transaction ID - variants have been pruned away
                     // Mark as resolved but we don't know what resource was stolen
@@ -1530,7 +1544,6 @@
             resourceChanges: resourceChanges,
         });
         updateResources(playerName, resourceChanges);
-        console.log(`🏦 ${playerName} made a bank trade: ${JSON.stringify(resourceChanges)}`);
     }
     /**
      * Handle a player using a knight card
@@ -1919,8 +1932,7 @@
             { key: 'victoryPoints', name: 'Victory Point', icon: 'vp.svg' },
         ];
         let display = '<div style="margin: 15px 0;">';
-        display +=
-            '<h4 style="margin: 0 0 10px 0; text-align: center;">Development Cards Remaining</h4>';
+        display += `<h4 style="margin: 0 0 10px 0; text-align: center;">Development Cards Remaining: ${game.devCards}</h4>`;
         display +=
             '<div style="display: flex; justify-content: space-around; align-items: center; padding: 10px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">';
         devCardTypes.forEach(cardType => {
@@ -2033,7 +2045,6 @@
             display += `<strong>${transaction.thief}</strong> stole from <strong>${transaction.victim}</strong> `;
             display += `<span style="color: #666;">(${timestamp})</span><br>`;
             const transactionResourceProbabilities = game.probableGameState.getTransactionResourceProbabilities(transaction.id);
-            console.log(transactionResourceProbabilities);
             if (transactionResourceProbabilities) {
                 const probabilityText = Object.entries(transactionResourceProbabilities)
                     .filter(([_, probability]) => probability > 0)
@@ -2163,6 +2174,7 @@
         // Disconnection messages
         messageText.includes('has disconnected') ||
             messageText.includes('will take over') ||
+            messageText.includes('left the game') ||
             // Reconnection messages
             messageText.includes('has reconnected') ||
             // HR elements
@@ -2344,6 +2356,10 @@
         else if (messageText.includes('proposed counter offer to')) {
             const offeredResources = parseCounterOfferResources(element);
             playerOffer(playerName, offeredResources);
+        }
+        // Scenario 23: log game history when game is over
+        else if (messageText.includes('won the game!')) {
+            console.log(game.probableGameState.getTransactionHistory());
         }
         // Log any unknown messages
         else {
