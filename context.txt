@@ -1,0 +1,144 @@
+# Catan Counter - Variant Node System & Unknown Transactions
+I created this file to help AI agents quickly understand the Varian Node System, if I need their help debugging issues
+
+## Overview
+This system tracks probabilistic game states in Settlers of Catan by maintaining a tree of possible game variants when information is uncertain (e.g., when a player steals an unknown resource).
+
+## Key Concepts
+
+### Variant Nodes (`src/variants.ts`)
+- **VariantNode**: Represents a possible game state with parent/child relationships
+- **VariantTree**: Manages the complete tree of possible game states
+- **GameState**: Object mapping player names to their resource states
+- **Variant**: A specific game state with its probability
+
+### Unknown Transactions (`src/types.ts`)
+- **UnknownTransaction**: Tracks steal transactions where the stolen resource is unknown
+- Contains: id, timestamp, thief, victim, isResolved, resolvedResource
+
+## Architecture
+
+### Core Files
+1. **`src/variants.ts`**: Variant tree structure and node management
+2. **`src/variantTransactions.ts`**: Transaction processing and probability calculations
+3. **`src/probableGameState.ts`**: Main interface for game state management
+4. **`src/gameActions.ts`**: User action handlers (steal, trade, etc.)
+5. **`src/types.ts`**: Type definitions
+
+### Key Classes
+- **PropbableGameState**: Main orchestrator, processes transactions and resolves unknowns
+- **VariantTransactionProcessor**: Handles transaction-specific logic
+- **VariantTree**: Manages the tree structure and pruning
+- **VariantNode**: Individual nodes with transaction chain tracking
+
+## Transaction Chain System
+
+### Problem Solved
+When multiple unknown steals happen in sequence, older transaction IDs were being overwritten. Example:
+1. Alice steals from Bob → transaction ID 1
+2. Bob steals from Alice → transaction ID 2 (overwrites 1)
+3. Charlie steals from Bob → transaction ID 3 (overwrites 2)
+
+All final nodes ended up with only the last transaction ID, making resolution impossible.
+
+### Solution: Transaction Chains
+Each VariantNode maintains a chain of all transactions that led to it:
+
+```typescript
+// In VariantNode
+getTransactionChain(): string[] // Returns all transaction IDs from root to this node
+hasTransactionId(transactionId: string): boolean // Checks if transaction is in chain
+```
+
+### Key Functions
+
+#### `src/variants.ts`
+- **`VariantNode.getTransactionChain()`**: Returns chronological list of transaction IDs
+- **`VariantNode.hasTransactionId()`**: Checks if node was affected by a transaction
+- **`VariantTree.getNodesWithTransactionId()`**: Finds all nodes with a transaction in their chain
+- **`VariantTree.getCurrentVariantNodes()`**: Gets all leaf nodes (final game states)
+
+#### `src/probableGameState.ts`
+- **`resolveAllUnknownTransactions()`**: Main resolution logic
+- **`findStolenResourceInChain()`**: Traverses parent chain to find stolen resource
+- **`processTransaction()`**: Handles all transaction types, calls resolution
+
+#### `src/variantTransactions.ts`
+- **`processUnknownSteal()`**: Creates variants for each possible stolen resource
+- **`getTransactionResourceProbabilities()`**: Calculates resource probabilities for a transaction
+- **`resolveUnknownTransaction()`**: Marks transaction as resolved and prunes variants
+
+## How Unknown Transactions Work
+
+### Creation Process
+1. **unknownSteal()** called → checks if victim has only one resource type
+2. If multiple types → **processUnknownSteal()** creates variants
+3. For each current leaf node:
+   - Calculate victim's total resources
+   - Create new variant for each possible stolen resource
+   - Each variant gets probability = (victim's resource count / total resources)
+   - Assign unique transaction ID and stolen resource to new nodes
+
+### Resolution Process
+1. **resolveAllUnknownTransactions()** called after each transaction
+2. For each unresolved transaction:
+   - Find all leaf nodes with that transaction in their chain
+   - If 0 nodes → mark resolved (variants pruned)
+   - If 1 node → resolve with that node's stolen resource
+   - If multiple nodes with same stolen resource → resolve
+   - If multiple nodes with different stolen resources → leave unresolved
+
+### Resource Probability Calculation
+- **getTransactionResourceProbabilities()** finds all leaf nodes with the transaction
+- Calculates cumulative probability for each node (node.probability * all parents)
+- Groups by stolen resource type and normalizes probabilities
+
+## Transaction Processing Flow
+
+```
+User Action (e.g., buyDevCard) 
+→ gameActions.ts function
+→ probableGameState.processTransaction()
+→ variantTransactions.processUnknownSteal() [if unknown steal]
+→ Create new VariantNodes with transaction ID
+→ resolveAllUnknownTransactions()
+→ Check if any transactions can now be resolved
+```
+
+## Debugging Common Issues
+
+### Transaction Resolution Problems
+1. **Check transaction chains**: Use `node.getTransactionChain()` to see all transactions
+2. **Verify leaf node count**: `variantTree.getCurrentVariantNodes().length`
+3. **Check transaction node mapping**: `variantTree.getNodesWithTransactionId(transactionId)`
+4. **Examine probabilities**: `getTransactionResourceProbabilities(transactionId)`
+
+### Variant Tree Issues
+1. **Invalid states**: Check `pruneInvalidNodes()` logic
+2. **Probability validation**: Ensure child probabilities sum to 1
+3. **Tree simplification**: `isUnary()` collapses single-path trees
+
+## Example Debug Flow
+```typescript
+// Check current state
+console.log('Variant count:', gameState.getVariantCount());
+console.log('Unknown transactions:', gameState.getUnknownTransactions().length);
+
+// Check transaction chains
+const leafNodes = gameState.variantTree.getCurrentVariantNodes();
+console.log('Leaf node transaction IDs:', leafNodes.map(n => n.transactionId));
+
+// Check specific transaction
+const transaction = gameState.getUnknownTransactions()[0];
+const nodes = gameState.variantTree.getNodesWithTransactionId(transaction.id);
+console.log(`Transaction ${transaction.id} has ${nodes.length} nodes`);
+```
+
+## Important Notes
+- **Transaction IDs are unique**: Format is `${thief}_${victim}_${timestamp}_${counter}`
+- **Only leaf nodes represent final game states**: Use `getCurrentVariantNodes()`
+- **Resolution is automatic**: Called after every transaction via `processTransaction()`
+- **Probabilities must sum to 1**: Enforced in `addVariantNodes()`
+- **Invalid states are pruned**: Negative resources, impossible trades, etc.
+
+This system enables probabilistic tracking of game states with uncertain information, automatically resolving unknowns when new information makes them deterministic. 

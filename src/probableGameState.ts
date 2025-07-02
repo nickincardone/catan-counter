@@ -1,5 +1,6 @@
 import {
   VariantTree,
+  VariantNode,
   GameState,
   PlayerState,
   RESOURCE_TYPES,
@@ -99,9 +100,10 @@ export class PropbableGameState {
     const unresolvedTransactions = this.getUnknownTransactions();
 
     for (const transaction of unresolvedTransactions) {
-      // Get all variant nodes associated with this transaction (not just leaf nodes)
-      const transactionNodes = this.variantTree.getNodesWithTransactionId(
-        transaction.id
+      // Get all current leaf nodes that have this transaction in their chain
+      const allLeafNodes = this.variantTree.getCurrentVariantNodes();
+      const transactionNodes = allLeafNodes.filter(node =>
+        node.hasTransactionId(transaction.id)
       );
 
       if (transactionNodes.length === 0) {
@@ -111,7 +113,12 @@ export class PropbableGameState {
       } else if (transactionNodes.length === 1) {
         // Only one variant remains - we can determine what resource was stolen
         const remainingNode = transactionNodes[0];
-        const stolenResource = remainingNode.stolenResource;
+
+        // Find the stolen resource by looking at the transaction chain
+        const stolenResource = this.findStolenResourceInChain(
+          remainingNode,
+          transaction.id
+        );
 
         if (stolenResource) {
           // Resolve the transaction with the determined resource
@@ -123,9 +130,52 @@ export class PropbableGameState {
           // Mark as resolved even if we can't determine the resource
           transaction.isResolved = true;
         }
+      } else {
+        // Multiple nodes exist - check if they all have the same stolen resource for this transaction
+        const stolenResources = new Set<string>();
+
+        for (const node of transactionNodes) {
+          const stolenResource = this.findStolenResourceInChain(
+            node,
+            transaction.id
+          );
+          if (stolenResource) {
+            stolenResources.add(stolenResource);
+          }
+        }
+
+        if (stolenResources.size === 1) {
+          // All variants agree on what resource was stolen
+          const stolenResource = Array.from(
+            stolenResources
+          )[0] as keyof ResourceObjectType;
+          this.transactionProcessor.resolveUnknownTransaction(
+            transaction.id,
+            stolenResource
+          );
+        }
       }
-      // If multiple nodes exist, leave the transaction unresolved as there's still uncertainty
+      // If multiple nodes exist with different stolen resources, leave the transaction unresolved
     }
+  }
+
+  /**
+   * Find the stolen resource for a specific transaction in a node's chain
+   */
+  private findStolenResourceInChain(
+    node: VariantNode,
+    transactionId: string
+  ): keyof ResourceObjectType | null {
+    let current: VariantNode | null = node;
+
+    while (current) {
+      if (current.transactionId === transactionId && current.stolenResource) {
+        return current.stolenResource;
+      }
+      current = current.parent;
+    }
+
+    return null;
   }
 
   /**

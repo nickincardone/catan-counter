@@ -20,11 +20,11 @@
         return null;
     }
     function getPlayerName(element) {
-        const playerSpan = element.querySelector('span[style*="font-weight:600"]');
+        const playerSpan = element.querySelector('span[style*="font-weight:600"], span[style*="font-weight: 600"]');
         return playerSpan ? playerSpan.textContent || null : null;
     }
     function getPlayerColor(element) {
-        const playerSpan = element.querySelector('span[style*="font-weight:600"]');
+        const playerSpan = element.querySelector('span[style*="font-weight:600"], span[style*="font-weight: 600"]');
         return playerSpan ? playerSpan.style.color || '#000' : '#000';
     }
     /**
@@ -318,6 +318,26 @@
             this.children = [];
         }
         /**
+         * Get all transaction IDs that led to this node (including parent transactions)
+         */
+        getTransactionChain() {
+            const chain = [];
+            let current = this;
+            while (current) {
+                if (current.transactionId) {
+                    chain.unshift(current.transactionId); // Add to beginning to maintain chronological order
+                }
+                current = current.parent;
+            }
+            return chain;
+        }
+        /**
+         * Check if this node was created as part of a specific transaction
+         */
+        hasTransactionId(transactionId) {
+            return this.getTransactionChain().includes(transactionId);
+        }
+        /**
          * Add multiple variant nodes as children
          */
         addVariantNodes(variants) {
@@ -433,9 +453,10 @@
         }
         /**
          * Get all nodes with a specific transaction ID (not just leaf nodes)
+         * This includes nodes that were created as part of the transaction chain
          */
         getNodesWithTransactionId(transactionId, node = this.root, result = []) {
-            if (node.transactionId === transactionId) {
+            if (node.hasTransactionId(transactionId)) {
                 result.push(node);
             }
             for (const child of node.children) {
@@ -716,7 +737,6 @@
                 }
             }
             this.variantTree.pruneInvalidNodes();
-            console.log(`✅ Manually resolved transaction ${id}: ${transaction.thief} stole ${resolvedResource} from ${transaction.victim}`);
             return true;
         }
         /**
@@ -741,6 +761,19 @@
             return thiefGained === 1 && victimLost === 1;
         }
         /**
+         * Find the stolen resource for a specific transaction in a node's chain
+         */
+        findStolenResourceInChain(node, transactionId) {
+            let current = node;
+            while (current) {
+                if (current.transactionId === transactionId && current.stolenResource) {
+                    return current.stolenResource;
+                }
+                current = current.parent;
+            }
+            return null;
+        }
+        /**
          * Get resource probabilities for a specific transaction
          */
         getTransactionResourceProbabilities(transactionId) {
@@ -750,7 +783,7 @@
             }
             // Get all variant nodes associated with this transaction
             const currentNodes = this.variantTree.getCurrentVariantNodes();
-            const transactionNodes = currentNodes.filter(node => node.transactionId === transactionId);
+            const transactionNodes = currentNodes.filter(node => node.hasTransactionId(transactionId));
             if (transactionNodes.length === 0) {
                 return null;
             }
@@ -774,8 +807,8 @@
                     parent = parent.parent;
                 }
                 totalProbability += probability;
-                // Determine which resource this variant represents
-                const resource = node.stolenResource;
+                // Determine which resource this variant represents for this specific transaction
+                const resource = this.findStolenResourceInChain(node, transactionId);
                 if (resource) {
                     resourceProbabilities.set(resource, (resourceProbabilities.get(resource) || 0) + probability);
                 }
@@ -844,31 +877,58 @@
         resolveAllUnknownTransactions() {
             const unresolvedTransactions = this.getUnknownTransactions();
             for (const transaction of unresolvedTransactions) {
-                // Get all variant nodes associated with this transaction (not just leaf nodes)
-                const transactionNodes = this.variantTree.getNodesWithTransactionId(transaction.id);
+                // Get all current leaf nodes that have this transaction in their chain
+                const allLeafNodes = this.variantTree.getCurrentVariantNodes();
+                const transactionNodes = allLeafNodes.filter(node => node.hasTransactionId(transaction.id));
                 if (transactionNodes.length === 0) {
                     // No nodes exist with this transaction ID - variants have been pruned away
                     // Mark as resolved but we don't know what resource was stolen
                     transaction.isResolved = true;
-                    console.log(`✅ Auto-resolved transaction ${transaction.id}: variants eliminated`);
                 }
                 else if (transactionNodes.length === 1) {
                     // Only one variant remains - we can determine what resource was stolen
                     const remainingNode = transactionNodes[0];
-                    const stolenResource = remainingNode.stolenResource;
+                    // Find the stolen resource by looking at the transaction chain
+                    const stolenResource = this.findStolenResourceInChain(remainingNode, transaction.id);
                     if (stolenResource) {
                         // Resolve the transaction with the determined resource
                         this.transactionProcessor.resolveUnknownTransaction(transaction.id, stolenResource);
-                        console.log(`✅ Auto-resolved transaction ${transaction.id}: ${transaction.thief} stole ${stolenResource} from ${transaction.victim}`);
                     }
                     else {
                         // Mark as resolved even if we can't determine the resource
                         transaction.isResolved = true;
-                        console.log(`✅ Auto-resolved transaction ${transaction.id}: single variant remaining but resource unclear`);
                     }
                 }
-                // If multiple nodes exist, leave the transaction unresolved as there's still uncertainty
+                else {
+                    // Multiple nodes exist - check if they all have the same stolen resource for this transaction
+                    const stolenResources = new Set();
+                    for (const node of transactionNodes) {
+                        const stolenResource = this.findStolenResourceInChain(node, transaction.id);
+                        if (stolenResource) {
+                            stolenResources.add(stolenResource);
+                        }
+                    }
+                    if (stolenResources.size === 1) {
+                        // All variants agree on what resource was stolen
+                        const stolenResource = Array.from(stolenResources)[0];
+                        this.transactionProcessor.resolveUnknownTransaction(transaction.id, stolenResource);
+                    }
+                }
+                // If multiple nodes exist with different stolen resources, leave the transaction unresolved
             }
+        }
+        /**
+         * Find the stolen resource for a specific transaction in a node's chain
+         */
+        findStolenResourceInChain(node, transactionId) {
+            let current = node;
+            while (current) {
+                if (current.transactionId === transactionId && current.stolenResource) {
+                    return current.stolenResource;
+                }
+                current = current.parent;
+            }
+            return null;
         }
         /**
          * Process a transaction
@@ -1356,7 +1416,6 @@
             }
         });
         updateResources(playerName, playerChanges);
-        console.log(`🗑️ ${playerName} discarded resources: ${JSON.stringify(discardedResources)}`);
     }
     /**
      * Handle a player placing a settlement
@@ -1368,7 +1427,6 @@
         const player = game.players.find(p => p.name === playerName);
         if (player && player.settlements > 0) {
             player.settlements--;
-            console.log(`🏠 ${playerName} placed a settlement. Remaining settlements: ${player.settlements}`);
         }
     }
     /**
@@ -1406,7 +1464,6 @@
             }
             // Increment the blocked count
             game.blockedDiceRolls[diceNumber][resourceType]++;
-            console.log(`🔒 Dice ${diceNumber} blocked for ${resourceType}. Total blocked: ${game.blockedDiceRolls[diceNumber][resourceType]}`);
         }
     }
     /**
@@ -1525,7 +1582,6 @@
         });
         game.devCards--;
         updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
-        console.log(`🃏 ${playerName} bought a development card. Remaining dev cards: ${game.devCards}`);
     }
     /**
      * Handle a player trading with the bank
@@ -1615,7 +1671,6 @@
             });
             updateResources(playerName, { tree: -1, brick: -1 });
             player.roads--;
-            console.log(`🛣️ ${playerName} built a road. Remaining roads: ${player.roads}`);
         }
     }
     /**
@@ -1627,7 +1682,6 @@
         const player = game.players.find(p => p.name === playerName);
         if (player) {
             player.totalRobbers++;
-            console.log(`🔒 ${playerName} moved the robber. Total robber moves: ${player.totalRobbers}`);
         }
     }
     /**
@@ -1640,7 +1694,6 @@
         if (player) {
             game.yearOfPlenties--;
             player.discoveryCards.yearOfPlenties++;
-            console.log(`🎯 ${playerName} used Year of Plenty. Remaining: ${game.yearOfPlenties}`);
         }
     }
     /**
@@ -1658,7 +1711,6 @@
             resources: resources,
         });
         updateResources(playerName, resources);
-        console.log(`🎯 ${playerName} took from bank via Year of Plenty: ${JSON.stringify(resources)}`);
     }
     /**
      * Handle a player using Road Building card
@@ -1670,7 +1722,6 @@
         if (player) {
             game.roadBuilders--;
             player.discoveryCards.roadBuilders++;
-            console.log(`🛣️ ${playerName} used Road Building. Remaining: ${game.roadBuilders}`);
         }
     }
     /**
@@ -1683,7 +1734,6 @@
         if (player) {
             game.monopolies--;
             player.discoveryCards.monopolies++;
-            console.log(`💰 ${playerName} used Monopoly. Remaining: ${game.monopolies}`);
         }
     }
     /**
@@ -1714,7 +1764,6 @@
         });
         // Add the actual stolen amount to monopoly player (directly, not via updateResources)
         monopolyPlayer.resources[resourceType] += actualStolen;
-        console.log(`💰 ${playerName} monopolized ${actualStolen} ${resourceType} from all players (expected: ${totalStolen})`);
     }
     /**
      * Handle a player receiving starting resources

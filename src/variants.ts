@@ -43,6 +43,30 @@ export class VariantNode {
   ) {}
 
   /**
+   * Get all transaction IDs that led to this node (including parent transactions)
+   */
+  getTransactionChain(): string[] {
+    const chain: string[] = [];
+    let current: VariantNode | null = this;
+
+    while (current) {
+      if (current.transactionId) {
+        chain.unshift(current.transactionId); // Add to beginning to maintain chronological order
+      }
+      current = current.parent;
+    }
+
+    return chain;
+  }
+
+  /**
+   * Check if this node was created as part of a specific transaction
+   */
+  hasTransactionId(transactionId: string): boolean {
+    return this.getTransactionChain().includes(transactionId);
+  }
+
+  /**
    * Add multiple variant nodes as children
    */
   addVariantNodes(variants: VariantNode[]): void {
@@ -188,13 +212,14 @@ export class VariantTree {
 
   /**
    * Get all nodes with a specific transaction ID (not just leaf nodes)
+   * This includes nodes that were created as part of the transaction chain
    */
   getNodesWithTransactionId(
     transactionId: string,
     node: VariantNode = this.root,
     result: VariantNode[] = []
   ): VariantNode[] {
-    if (node.transactionId === transactionId) {
+    if (node.hasTransactionId(transactionId)) {
       result.push(node);
     }
 

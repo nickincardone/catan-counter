@@ -3,6 +3,7 @@ import {
   bankTrade,
   buildRoad,
   buildSettlement,
+  buyDevCard,
   monopolySteal,
   placeSettlement,
   playerGetResources,
@@ -204,6 +205,25 @@ describe('unknownTransactions', () => {
         ore: 1 / 2,
         brick: 1 / 2,
       });
+    });
+
+    it('should partial resolve unknown transactions - scenario 4', () => {
+      playerGetResources('Alice', { brick: 2, wheat: 1 });
+      playerGetResources('Bob', { wheat: 1, sheep: 1 });
+      playerGetResources('Charlie', { brick: 1, sheep: 1, wheat: 1 });
+
+      unknownSteal('Alice', 'Bob');
+      unknownSteal('Bob', 'Alice');
+
+      playerGetResources('Bob', { ore: 1 });
+
+      unknownSteal('Charlie', 'Bob');
+
+      buyDevCard('Charlie');
+
+      // Charlie bought a dev card so he had to steal the ore from bob,
+      // so the last unknown transaction should be resolved
+      expect(game.probableGameState.getUnknownTransactions()).toHaveLength(2);
     });
   });
   it('should resolve unknown transactions', () => {

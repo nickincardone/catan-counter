@@ -377,6 +377,25 @@ export class VariantTransactionProcessor {
   }
 
   /**
+   * Find the stolen resource for a specific transaction in a node's chain
+   */
+  private findStolenResourceInChain(
+    node: VariantNode,
+    transactionId: string
+  ): keyof ResourceObjectType | null {
+    let current: VariantNode | null = node;
+
+    while (current) {
+      if (current.transactionId === transactionId && current.stolenResource) {
+        return current.stolenResource;
+      }
+      current = current.parent;
+    }
+
+    return null;
+  }
+
+  /**
    * Get resource probabilities for a specific transaction
    */
   getTransactionResourceProbabilities(
@@ -389,8 +408,8 @@ export class VariantTransactionProcessor {
 
     // Get all variant nodes associated with this transaction
     const currentNodes = this.variantTree.getCurrentVariantNodes();
-    const transactionNodes = currentNodes.filter(
-      node => node.transactionId === transactionId
+    const transactionNodes = currentNodes.filter(node =>
+      node.hasTransactionId(transactionId)
     );
 
     if (transactionNodes.length === 0) {
@@ -421,8 +440,8 @@ export class VariantTransactionProcessor {
 
       totalProbability += probability;
 
-      // Determine which resource this variant represents
-      const resource = node.stolenResource;
+      // Determine which resource this variant represents for this specific transaction
+      const resource = this.findStolenResourceInChain(node, transactionId);
       if (resource) {
         resourceProbabilities.set(
           resource,
