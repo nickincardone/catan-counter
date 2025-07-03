@@ -1813,6 +1813,142 @@
         console.log(`🦹 ${thief} stole ${stolenResource} from you (${victim})`);
     }
 
+    // =============================================================================
+    // UTILITY FUNCTIONS
+    // =============================================================================
+    const RESOURCE_ICONS = {
+        tree: 'tree.svg',
+        brick: 'brick.svg',
+        sheep: 'sheep.svg',
+        wheat: 'wheat.svg',
+        ore: 'ore.svg',
+    };
+    const STYLES = {
+        modalBackdrop: `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10002;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  `,
+        modalDialog: `
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+    width: 90%;
+    font-family: Arial, sans-serif;
+  `,
+        primaryButton: `
+    padding: 12px;
+    border: 2px solid #3498db;
+    background: #ecf0f1;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.2s;
+  `,
+        secondaryButton: `
+    padding: 8px 16px;
+    border: 1px solid #ccc;
+    background: #f8f9fa;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #666;
+  `,
+        resolveButton: `
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 10px;
+    cursor: pointer;
+    opacity: 0.8;
+  `,
+    };
+    /**
+     * Format resource name with proper capitalization
+     */
+    function formatResourceName(resource) {
+        return String(resource).charAt(0).toUpperCase() + String(resource).slice(1);
+    }
+    /**
+     * Get resource icon URL
+     */
+    function getResourceIconUrl(resource) {
+        return chrome.runtime.getURL(`assets/${RESOURCE_ICONS[resource]}`);
+    }
+    /**
+     * Create a modal backdrop element
+     */
+    function createModalBackdrop() {
+        const backdrop = document.createElement('div');
+        backdrop.style.cssText = STYLES.modalBackdrop;
+        return backdrop;
+    }
+    /**
+     * Create a modal dialog element
+     */
+    function createModalDialog() {
+        const dialog = document.createElement('div');
+        dialog.style.cssText = STYLES.modalDialog;
+        return dialog;
+    }
+    /**
+     * Create a resource button with icon and probability
+     */
+    function createResourceButton(resource, probability, onClick) {
+        const button = document.createElement('button');
+        button.setAttribute('data-resource', resource);
+        button.style.cssText = `
+    ${STYLES.primaryButton}
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  `;
+        const iconUrl = getResourceIconUrl(resource);
+        button.innerHTML = `
+    <img src="${iconUrl}" 
+         style="width: 20px; height: 20px;" 
+         alt="${resource}" />
+    <span>${formatResourceName(resource)}</span>
+    <span style="margin-left: auto; font-size: 12px; opacity: 0.7;">${(probability * 100).toFixed(1)}%</span>
+  `;
+        // Add hover effects
+        button.addEventListener('mouseover', () => {
+            button.style.background = '#3498db';
+            button.style.color = 'white';
+        });
+        button.addEventListener('mouseout', () => {
+            button.style.background = '#ecf0f1';
+            button.style.color = 'black';
+        });
+        button.addEventListener('click', onClick);
+        return button;
+    }
+    /**
+     * Format probability text from resource probabilities
+     */
+    function formatProbabilityText(resourceProbabilities) {
+        return Object.entries(resourceProbabilities)
+            .filter(([_, probability]) => probability > 0)
+            .sort(([_, a], [__, b]) => b - a)
+            .map(([resource, probability]) => `${resource}: ${probability.toFixed(2)}`)
+            .join(', ');
+    }
+    // =============================================================================
+    // MAIN OVERLAY FUNCTIONALITY
+    // =============================================================================
     // Create draggable overlay for game state display
     let gameStateOverlay = null;
     let isDragging = false;
@@ -1940,11 +2076,14 @@
         table +=
             '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Player</th>';
         resourceNames.forEach((resource, index) => {
+            const cardsInPlay = game.gameResources[resource];
+            const totalPossible = 19;
             table += `<th style="padding: 8px; border: 1px solid #ddd; text-align: center; background: ${resourceColors[index]};">
-      <img src="${chrome.runtime.getURL(`assets/${resource}.svg`)}" 
+      <img src="${getResourceIconUrl(resource)}" 
            style="width: 14.5px; height: 20px;" 
            alt="${resource}" 
            title="${resource}" /><br>
+      <small style="font-size: 9px; color: #666;">${cardsInPlay}/${totalPossible}</small>
     </th>`;
         });
         table += '</tr></thead><tbody>';
@@ -1980,6 +2119,10 @@
             { key: 'yearOfPlenties', name: 'Year of Plenty', icon: 'yop.svg' },
             { key: 'victoryPoints', name: 'Victory Point', icon: 'vp.svg' },
         ];
+        /**
+         * Get dev card icon URL
+         */
+        const getDevCardIconUrl = (icon) => chrome.runtime.getURL(`assets/${icon}`);
         let display = '<div style="margin: 15px 0;">';
         display += `<h4 style="margin: 0 0 10px 0; text-align: center;">Development Cards Remaining: ${game.devCards}</h4>`;
         display +=
@@ -1994,7 +2137,7 @@
             display += `
       <div style="display: flex; flex-direction: column; align-items: center; min-width: 60px;">
         <div style="width: 32px; height: 40px; margin-bottom: 5px; display: flex; align-items: center; justify-content: center; background: white; border-radius: 4px; border: 1px solid #ddd;">
-                     <img src="${chrome.runtime.getURL(`assets/${cardType.icon}`)}" 
+          <img src="${getDevCardIconUrl(cardType.icon)}" 
                style="width: 24px; height: 32px;" 
                alt="${cardType.name}" 
                title="${cardType.name}" />
@@ -2090,16 +2233,28 @@
             '<h4 style="margin: 0 0 10px 0; color: #856404;">🔍 Unknown Transactions</h4>';
         unresolvedTransactions.forEach(transaction => {
             const timestamp = new Date(transaction.timestamp).toLocaleTimeString();
-            display += `<div style="margin-bottom: 8px; padding: 8px; background: white; border-radius: 4px; font-size: 11px;">`;
+            display += `<div 
+      class="unknown-transaction-item" 
+      data-transaction-id="${transaction.id}"
+      style="
+        margin-bottom: 8px; 
+        padding: 8px; 
+        background: white; 
+        border-radius: 4px; 
+        font-size: 11px; 
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+        border: 1px solid transparent;
+      "
+      onmouseover="this.style.backgroundColor='#f8f9fa'; this.style.borderColor='#007bff';"
+      onmouseout="this.style.backgroundColor='white'; this.style.borderColor='transparent';"
+      title="Click to resolve this transaction"
+    >`;
             display += `<strong>${transaction.thief}</strong> stole from <strong>${transaction.victim}</strong> `;
             display += `<span style="color: #666;">(${timestamp})</span><br>`;
             const transactionResourceProbabilities = game.probableGameState.getTransactionResourceProbabilities(transaction.id);
             if (transactionResourceProbabilities) {
-                const probabilityText = Object.entries(transactionResourceProbabilities)
-                    .filter(([_, probability]) => probability > 0)
-                    .sort(([_, a], [__, b]) => b - a) // Sort by probability descending
-                    .map(([resource, probability]) => `${resource}: ${probability.toFixed(2)}`)
-                    .join(', ');
+                const probabilityText = formatProbabilityText(transactionResourceProbabilities);
                 if (probabilityText) {
                     display += `<small style="color: #666;">Could be: ${probabilityText}</small>`;
                 }
@@ -2108,6 +2263,84 @@
         });
         display += '</div>';
         return display;
+    }
+    /**
+     * Show modal for manually resolving an unknown transaction
+     */
+    function showTransactionResolutionModal(transactionId) {
+        const transaction = game.probableGameState.getUnknownTransaction(transactionId);
+        if (!transaction) {
+            console.error(`Transaction ${transactionId} not found`);
+            return;
+        }
+        const transactionResourceProbabilities = game.probableGameState.getTransactionResourceProbabilities(transactionId);
+        if (!transactionResourceProbabilities) {
+            console.error(`No resource probabilities found for transaction ${transactionId}`);
+            return;
+        }
+        // Get only the resources that are possible (probability > 0)
+        const possibleResources = Object.entries(transactionResourceProbabilities)
+            .filter(([_, probability]) => probability > 0)
+            .sort(([_, a], [__, b]) => b - a); // Sort by probability descending
+        if (possibleResources.length === 0) {
+            console.error(`No possible resources found for transaction ${transactionId}`);
+            return;
+        }
+        const backdrop = createModalBackdrop();
+        const dialog = createModalDialog();
+        dialog.innerHTML = `
+    <h3 style="margin: 0 0 15px 0; color: #2c3e50;">🔍 Resolve Unknown Transaction</h3>
+    <p style="margin: 0 0 15px 0; color: #555;">
+      <strong>${transaction.thief}</strong> stole from <strong>${transaction.victim}</strong><br>
+      <small style="color: #666;">What resource was stolen?</small>
+    </p>
+    <div id="resource-buttons" style="display: flex; flex-direction: column; gap: 10px;">
+    </div>
+    <div style="margin-top: 15px; display: flex; justify-content: flex-end;">
+      <button 
+        id="cancel-resolve-btn"
+        style="${STYLES.secondaryButton}"
+      >Cancel</button>
+    </div>
+  `;
+        const resourceButtonsContainer = dialog.querySelector('#resource-buttons');
+        // Create resource buttons
+        possibleResources.forEach(([resource, probability]) => {
+            const button = createResourceButton(resource, probability, () => {
+                resolveTransaction(transactionId, resource);
+                document.body.removeChild(backdrop);
+            });
+            resourceButtonsContainer === null || resourceButtonsContainer === void 0 ? void 0 : resourceButtonsContainer.appendChild(button);
+        });
+        backdrop.appendChild(dialog);
+        document.body.appendChild(backdrop);
+        // Add cancel button handler
+        const cancelBtn = dialog.querySelector('#cancel-resolve-btn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {
+                document.body.removeChild(backdrop);
+            });
+        }
+        // Close on backdrop click
+        backdrop.addEventListener('click', e => {
+            if (e.target === backdrop) {
+                document.body.removeChild(backdrop);
+            }
+        });
+    }
+    /**
+     * Resolve a transaction with the specified resource
+     */
+    function resolveTransaction(transactionId, resource) {
+        const success = game.probableGameState.resolveUnknownTransaction(transactionId, resource);
+        if (success) {
+            console.log(`✅ Manually resolved transaction ${transactionId} with resource: ${resource}`);
+            // Update the display to reflect the resolution
+            updateGameStateDisplay();
+        }
+        else {
+            console.error(`❌ Failed to resolve transaction ${transactionId} with resource: ${resource}`);
+        }
     }
     function generateMainContent() {
         return `
@@ -2190,6 +2423,16 @@
                 toggleMinimize();
             });
         }
+        // Add event listeners for transaction items
+        const transactionItems = overlay.querySelectorAll('.unknown-transaction-item');
+        transactionItems.forEach(item => {
+            item.addEventListener('click', e => {
+                const transactionId = item.getAttribute('data-transaction-id');
+                if (transactionId) {
+                    showTransactionResolutionModal(transactionId);
+                }
+            });
+        });
     }
     function toggleMinimize() {
         isMinimized = !isMinimized;
