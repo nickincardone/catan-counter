@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const RESOURCE_STRING = 'img[alt="grain"], img[alt="wool"], img[alt="lumber"], img[alt="brick"], img[alt="ore"]';
+    const RESOURCE_STRING = 'img[alt="grain"], img[alt="wool"], img[alt="lumber"], img[alt="brick"], img[alt="ore"], img[alt="Grain"], img[alt="Wool"], img[alt="Lumber"], img[alt="Brick"], img[alt="Ore"]';
     function findChatContainer() {
         const divs = document.querySelectorAll('div');
         for (const outerDiv of Array.from(divs)) {
@@ -66,7 +66,9 @@
         return null;
     }
     function getResourceTypeFromAlt(alt) {
-        switch (alt) {
+        if (!alt)
+            return null;
+        switch (alt.toLowerCase()) {
             case 'grain':
                 return 'wheat';
             case 'wool':
@@ -85,8 +87,9 @@
         const spans = element.querySelectorAll('span[style*="font-weight:600"], span[style*="font-weight: 600"]');
         return spans.length > 1 ? spans[1].textContent || null : null;
     }
-    function getResourcesFromImages(element, selector, stopAt) {
+    function getResourcesFromImages(element, stopAt) {
         const resources = { sheep: 0, wheat: 0, brick: 0, tree: 0, ore: 0 };
+        const selector = RESOURCE_STRING;
         let targetElement = element;
         // If stopAt is provided, create a truncated element
         if (stopAt) {
@@ -100,7 +103,8 @@
         }
         const images = targetElement.querySelectorAll(selector);
         images.forEach(img => {
-            const alt = img.getAttribute('alt');
+            var _a;
+            const alt = (_a = img.getAttribute('alt')) === null || _a === void 0 ? void 0 : _a.toLowerCase();
             switch (alt) {
                 case 'grain':
                     resources.wheat++;
@@ -2504,7 +2508,7 @@
         }
         // Scenario 1: Place settlement (keyword: "placed a")
         else if (messageText.includes('placed a') &&
-            element.querySelector('img[alt="settlement"]')) {
+            element.querySelector('img[alt="settlement"], img[alt="Settlement"]')) {
             placeSettlement(playerName, getPlayerColor(element));
         }
         // Scenario 2: Roll dice (keyword: "rolled")
@@ -2524,7 +2528,7 @@
         }
         // Scenario 3: Place road (keyword: "placed a" + road image)
         else if (messageText.includes('placed a') &&
-            element.querySelector('img[alt="road"]')) {
+            element.querySelector('img[alt="road"], img[alt="Road"]')) {
             placeInitialRoad(playerName);
         }
         // Scenario 4: Known trade (keyword: "gave" and "got" and "from")
@@ -2555,7 +2559,7 @@
         }
         // Scenario 5: Get resources (keyword: "got")
         else if (messageText.includes('got')) {
-            const gotResources = getResourcesFromImages(element, RESOURCE_STRING);
+            const gotResources = getResourcesFromImages(element);
             playerGetResources(playerName, gotResources);
         }
         // Scenario 6: Steal (keyword: "stole" and "from")
@@ -2568,7 +2572,7 @@
         }
         // Scenario 7: Buy dev card (keyword: "bought" + development card image)
         else if (messageText.includes('bought') &&
-            element.querySelector('img[alt="development card"]')) {
+            element.querySelector('img[alt="development card"], img[alt="Development card"], img[alt="Development Card"]')) {
             buyDevCard(playerName);
         }
         // Scenario 8: Bank trade (keyword: "gave bank" and "took")
@@ -2584,17 +2588,17 @@
         }
         // Scenario 10: Build settlement (keyword: "built a" + settlement image)
         else if (messageText.includes('built a') &&
-            element.querySelector('img[alt="settlement"]')) {
+            element.querySelector('img[alt="settlement"], img[alt="Settlement"]')) {
             buildSettlement(playerName);
         }
         // Scenario 11: Build city (keyword: "built a" + city image)
         else if (messageText.includes('built a') &&
-            element.querySelector('img[alt="city"]')) {
+            element.querySelector('img[alt="city"], img[alt="City"]')) {
             buildCity(playerName);
         }
         // Scenario 12: Build road (keyword: "built a" + road image)
         else if (messageText.includes('built a') &&
-            element.querySelector('img[alt="road"]')) {
+            element.querySelector('img[alt="road"], img[alt="Road"]')) {
             buildRoad(playerName);
         }
         // Scenario 13: Move robber (keyword: "moved Robber")
@@ -2608,7 +2612,7 @@
         }
         // Scenario 15: Year of Plenty take (keyword: "took from bank")
         else if (messageText.includes('took from bank')) {
-            const takenResources = getResourcesFromImages(element, RESOURCE_STRING);
+            const takenResources = getResourcesFromImages(element);
             yearOfPlentyTake(playerName, takenResources);
         }
         // Scenario 16: Use Road Building (keyword: "used" + "Road Building")
@@ -2631,17 +2635,17 @@
         }
         // Scenario 19: Starting resources (keyword: "received starting resources")
         else if (messageText.includes('received starting resources')) {
-            const startingResources = getResourcesFromImages(element, RESOURCE_STRING);
+            const startingResources = getResourcesFromImages(element);
             receiveStartingResources(playerName, startingResources);
         }
         // Scenario 20: Wants to give (can resolve unknown transactions)
         else if (messageText.includes('wants to give')) {
-            const offeredResources = getResourcesFromImages(element, RESOURCE_STRING, ' for ');
+            const offeredResources = getResourcesFromImages(element, ' for ');
             playerOffer(playerName, offeredResources);
         }
         // Scenario 21: Discards (keyword: "discarded")
         else if (messageText.includes('discarded')) {
-            const discardedResources = getResourcesFromImages(element, RESOURCE_STRING);
+            const discardedResources = getResourcesFromImages(element);
             playerDiscard(playerName, discardedResources);
         }
         // Scenario 22: Proposed counter offer

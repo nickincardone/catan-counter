@@ -9,7 +9,6 @@ import {
   parseBankTrade,
   parseCounterOfferResources,
   parseTradeResources,
-  RESOURCE_STRING,
   getBlockedDiceNumber,
   getBlockedResourceType,
 } from './domUtils.js';
@@ -94,7 +93,7 @@ export function updateGameFromChat(element: HTMLElement): void {
   // Scenario 1: Place settlement (keyword: "placed a")
   else if (
     messageText.includes('placed a') &&
-    element.querySelector('img[alt="settlement"]')
+    element.querySelector('img[alt="settlement"], img[alt="Settlement"]')
   ) {
     placeSettlement(playerName, getPlayerColor(element));
   }
@@ -117,7 +116,7 @@ export function updateGameFromChat(element: HTMLElement): void {
   // Scenario 3: Place road (keyword: "placed a" + road image)
   else if (
     messageText.includes('placed a') &&
-    element.querySelector('img[alt="road"]')
+    element.querySelector('img[alt="road"], img[alt="Road"]')
   ) {
     placeInitialRoad(playerName);
   }
@@ -155,7 +154,7 @@ export function updateGameFromChat(element: HTMLElement): void {
   }
   // Scenario 5: Get resources (keyword: "got")
   else if (messageText.includes('got')) {
-    const gotResources = getResourcesFromImages(element, RESOURCE_STRING);
+    const gotResources = getResourcesFromImages(element);
     playerGetResources(playerName, gotResources);
   }
   // Scenario 6: Steal (keyword: "stole" and "from")
@@ -170,7 +169,9 @@ export function updateGameFromChat(element: HTMLElement): void {
   // Scenario 7: Buy dev card (keyword: "bought" + development card image)
   else if (
     messageText.includes('bought') &&
-    element.querySelector('img[alt="development card"]')
+    element.querySelector(
+      'img[alt="development card"], img[alt="Development card"], img[alt="Development Card"]'
+    )
   ) {
     buyDevCard(playerName);
   }
@@ -188,21 +189,21 @@ export function updateGameFromChat(element: HTMLElement): void {
   // Scenario 10: Build settlement (keyword: "built a" + settlement image)
   else if (
     messageText.includes('built a') &&
-    element.querySelector('img[alt="settlement"]')
+    element.querySelector('img[alt="settlement"], img[alt="Settlement"]')
   ) {
     buildSettlement(playerName);
   }
   // Scenario 11: Build city (keyword: "built a" + city image)
   else if (
     messageText.includes('built a') &&
-    element.querySelector('img[alt="city"]')
+    element.querySelector('img[alt="city"], img[alt="City"]')
   ) {
     buildCity(playerName);
   }
   // Scenario 12: Build road (keyword: "built a" + road image)
   else if (
     messageText.includes('built a') &&
-    element.querySelector('img[alt="road"]')
+    element.querySelector('img[alt="road"], img[alt="Road"]')
   ) {
     buildRoad(playerName);
   }
@@ -219,7 +220,7 @@ export function updateGameFromChat(element: HTMLElement): void {
   }
   // Scenario 15: Year of Plenty take (keyword: "took from bank")
   else if (messageText.includes('took from bank')) {
-    const takenResources = getResourcesFromImages(element, RESOURCE_STRING);
+    const takenResources = getResourcesFromImages(element);
     yearOfPlentyTake(playerName, takenResources);
   }
   // Scenario 16: Use Road Building (keyword: "used" + "Road Building")
@@ -245,22 +246,18 @@ export function updateGameFromChat(element: HTMLElement): void {
   }
   // Scenario 19: Starting resources (keyword: "received starting resources")
   else if (messageText.includes('received starting resources')) {
-    const startingResources = getResourcesFromImages(element, RESOURCE_STRING);
+    const startingResources = getResourcesFromImages(element);
     receiveStartingResources(playerName, startingResources);
   }
 
   // Scenario 20: Wants to give (can resolve unknown transactions)
   else if (messageText.includes('wants to give')) {
-    const offeredResources = getResourcesFromImages(
-      element,
-      RESOURCE_STRING,
-      ' for '
-    );
+    const offeredResources = getResourcesFromImages(element, ' for ');
     playerOffer(playerName, offeredResources);
   }
   // Scenario 21: Discards (keyword: "discarded")
   else if (messageText.includes('discarded')) {
-    const discardedResources = getResourcesFromImages(element, RESOURCE_STRING);
+    const discardedResources = getResourcesFromImages(element);
     playerDiscard(playerName, discardedResources);
   }
   // Scenario 22: Proposed counter offer

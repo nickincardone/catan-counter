@@ -1,7 +1,7 @@
 import { ResourceObjectType } from './types.js';
 
 export const RESOURCE_STRING =
-  'img[alt="grain"], img[alt="wool"], img[alt="lumber"], img[alt="brick"], img[alt="ore"]';
+  'img[alt="grain"], img[alt="wool"], img[alt="lumber"], img[alt="brick"], img[alt="ore"], img[alt="Grain"], img[alt="Wool"], img[alt="Lumber"], img[alt="Brick"], img[alt="Ore"]';
 
 export function findChatContainer(): HTMLDivElement | null {
   const divs = document.querySelectorAll<HTMLDivElement>('div');
@@ -89,7 +89,9 @@ export function getResourceType(
 export function getResourceTypeFromAlt(
   alt: string | null
 ): keyof ResourceObjectType | null {
-  switch (alt) {
+  if (!alt) return null;
+
+  switch (alt.toLowerCase()) {
     case 'grain':
       return 'wheat';
     case 'wool':
@@ -114,10 +116,10 @@ export function getTradePartner(element: HTMLElement): string | null {
 
 export function getResourcesFromImages(
   element: HTMLElement,
-  selector: string,
   stopAt?: string
 ): { [key in keyof ResourceObjectType]: number } {
   const resources = { sheep: 0, wheat: 0, brick: 0, tree: 0, ore: 0 };
+  const selector = RESOURCE_STRING;
 
   let targetElement = element;
 
@@ -135,7 +137,7 @@ export function getResourcesFromImages(
   const images = targetElement.querySelectorAll(selector);
 
   images.forEach(img => {
-    const alt = img.getAttribute('alt');
+    const alt = img.getAttribute('alt')?.toLowerCase();
     switch (alt) {
       case 'grain':
         resources.wheat++;
