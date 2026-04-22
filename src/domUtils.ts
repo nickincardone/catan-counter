@@ -3,7 +3,7 @@ import { ResourceObjectType } from './types.js';
 export const RESOURCE_STRING =
   'img[alt="grain"], img[alt="wool"], img[alt="lumber"], img[alt="brick"], img[alt="ore"], img[alt="Grain"], img[alt="Wool"], img[alt="Lumber"], img[alt="Brick"], img[alt="Ore"]';
 
-export function findChatContainer(): HTMLDivElement | null {
+export function findChatContainer(): HTMLElement | null {
   const divs = document.querySelectorAll<HTMLDivElement>('div');
 
   for (const outerDiv of Array.from(divs)) {
@@ -16,7 +16,7 @@ export function findChatContainer(): HTMLDivElement | null {
             'a[href="#open-rulebook"]'
           );
           if (anchor) {
-            return outerDiv;
+            return outerDiv.parentElement;
           }
         }
       }
@@ -41,11 +41,11 @@ export function getPlayerColor(element: HTMLElement): string {
 }
 
 /**
- * Automatically detects the current player from the header profile username
+ * Automatically detects the current player from the web-header-username
  * This eliminates the need for user input popups
  */
 export function getCurrentPlayerFromHeader(): string | null {
-  const headerElement = document.getElementById('header_profile_username');
+  const headerElement = document.getElementById('web-header-username');
   if (!headerElement) {
     console.log('🔍 header_profile_username element not found');
     return null;
