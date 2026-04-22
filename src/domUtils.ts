@@ -47,7 +47,7 @@ export function getPlayerColor(element: HTMLElement): string {
 export function getCurrentPlayerFromHeader(): string | null {
   const headerElement = document.getElementById('web-header-username');
   if (!headerElement) {
-    console.log('🔍 header_profile_username element not found');
+    console.log('🔍 web-header-username element not found');
     return null;
   }
 
@@ -55,7 +55,7 @@ export function getCurrentPlayerFromHeader(): string | null {
   if (currentPlayer) {
     console.log(`🎯 Auto-detected current player: ${currentPlayer}`);
   } else {
-    console.log('🔍 header_profile_username element found but empty');
+    console.log('🔍 web-header-username element found but empty');
   }
 
   return currentPlayer;
