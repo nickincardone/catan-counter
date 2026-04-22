@@ -60,6 +60,29 @@ function ignoreElement(element: HTMLElement, messageText: string): boolean {
   );
 }
 
+/**
+ * Checks if an element represents a duplicate chat message
+ * This can be solved in a greedy fashion by checking the chat number (data-index attribute) against the last processed chat number in game state
+ */
+function checkDuplicateElement(element: HTMLElement): boolean {
+  // Get ID from the element
+  const dataIndexAttr = element.attributes.getNamedItem('data-index');
+
+  // If no data-index attribute, treat as duplicate to be safe
+  if (!dataIndexAttr) return true;
+  const chatNumber = parseInt(dataIndexAttr.value);
+
+  // Check if this chat number has already been processed
+  if (chatNumber < game.chatsProcessed) {
+    console.log(`⏭️ Skipping already processed chat #${chatNumber}`);
+    return true;
+  }
+
+  // Update the last processed chat number
+  game.chatsProcessed = chatNumber;
+  return false;
+}
+
 export function updateGameFromChat(element: HTMLElement): void {
   // If we're waiting for "you" player selection, don't process new messages
   if (isWaitingForYouPlayerSelection) return;
@@ -67,6 +90,8 @@ export function updateGameFromChat(element: HTMLElement): void {
   const messageText = element.textContent?.replace(/\s+/g, ' ').trim() || '';
 
   if (ignoreElement(element, messageText)) return;
+
+  if (checkDuplicateElement(element)) return;
 
   let playerName = getPlayerName(element);
 
