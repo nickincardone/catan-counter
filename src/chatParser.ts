@@ -90,7 +90,7 @@ export function updateGameFromChat(element: HTMLElement): void {
   const messageText = element.textContent?.replace(/\s+/g, ' ').trim() || '';
 
   if (ignoreElement(element, messageText)) return;
-  
+
   if (checkDuplicateElement(element)) return;
 
   let playerName = getPlayerName(element);

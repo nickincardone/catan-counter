@@ -11,7 +11,7 @@
                     if (child.tagName === 'SPAN') {
                         const anchor = child.querySelector('a[href="#open-rulebook"]');
                         if (anchor) {
-                            return outerDiv;
+                            return outerDiv.parentElement;
                         }
                     }
                 }
@@ -28,14 +28,14 @@
         return playerSpan ? playerSpan.style.color || '#000' : '#000';
     }
     /**
-     * Automatically detects the current player from the header profile username
+     * Automatically detects the current player from the web-header-username
      * This eliminates the need for user input popups
      */
     function getCurrentPlayerFromHeader() {
         var _a;
-        const headerElement = document.getElementById('header_profile_username');
+        const headerElement = document.getElementById('web-header-username');
         if (!headerElement) {
-            console.log('🔍 header_profile_username element not found');
+            console.log('🔍 web-header-username element not found');
             return null;
         }
         const currentPlayer = ((_a = headerElement.textContent) === null || _a === void 0 ? void 0 : _a.trim()) || null;
@@ -43,7 +43,7 @@
             console.log(`🎯 Auto-detected current player: ${currentPlayer}`);
         }
         else {
-            console.log('🔍 header_profile_username element found but empty');
+            console.log('🔍 web-header-username element found but empty');
         }
         return currentPlayer;
     }
@@ -1293,6 +1293,7 @@
         return {
             players: [],
             gameType: GameTypeEnum.STANDARD,
+            chatsProcessed: 0,
             gameResources: {
                 sheep: 19,
                 wheat: 19,
@@ -1339,7 +1340,7 @@
         isWaitingForYouPlayerSelection = false;
     }
     /**
-     * Automatically sets the current player from header_profile_username
+     * Automatically sets the current player from web-header-username
      * Returns true if successful, false otherwise
      */
     function autoDetectCurrentPlayer() {
@@ -1351,6 +1352,9 @@
         }
         console.log('❌ Failed to auto-detect current player');
         return false;
+    }
+    function markYouPlayerAsked() {
+        isWaitingForYouPlayerSelection = true;
     }
     function ensurePlayerExists(playerName, color) {
         const existingPlayer = game.players.find(p => p.name === playerName);
@@ -1397,424 +1401,6 @@
                 game.gameResources[key] -= change;
             }
         });
-    }
-
-    /**
-     * Handle a player discarding resources
-     */
-    function playerDiscard(playerName, discardedResources) {
-        if (!playerName)
-            return;
-        // Remove resources from player (negative values, automatically adds to bank)
-        const playerChanges = {};
-        game.probableGameState.processTransaction({
-            type: TransactionTypeEnum.RESOURCE_LOSS,
-            playerName: playerName,
-            resources: discardedResources,
-        });
-        Object.keys(discardedResources).forEach(resource => {
-            const key = resource;
-            const count = discardedResources[key];
-            if (count && count > 0) {
-                playerChanges[key] = -count;
-            }
-        });
-        updateResources(playerName, playerChanges);
-    }
-    /**
-     * Handle a player placing a settlement
-     */
-    function placeSettlement(playerName, color) {
-        if (!playerName)
-            return;
-        ensurePlayerExists(playerName, color);
-        const player = game.players.find(p => p.name === playerName);
-        if (player && player.settlements > 0) {
-            player.settlements--;
-        }
-    }
-    /**
-     * Handle a dice roll
-     */
-    function rollDice(diceTotal) {
-        if (diceTotal >= 2 && diceTotal <= 12) {
-            if (!game.hasRolledFirstDice) {
-                game.hasRolledFirstDice = true;
-                // setting up probable game state with all players
-                game.probableGameState = new PropbableGameState(game.players);
-                // Auto-detect current player on the first dice roll instead of showing popup
-                if (!game.youPlayerName && game.players.length > 0) {
-                    const success = autoDetectCurrentPlayer();
-                    if (!success) {
-                        console.log('⚠️ Could not auto-detect current player. Manual selection may be needed.');
-                    }
-                }
-            }
-            game.diceRolls[diceTotal]++;
-        }
-    }
-    /**
-     * Handle a blocked dice roll where the robber prevents resource production
-     */
-    function blockedDiceRoll(diceNumber, resourceType) {
-        if (diceNumber >= 2 && diceNumber <= 12) {
-            // Initialize the dice number object if it doesn't exist
-            if (!game.blockedDiceRolls[diceNumber]) {
-                game.blockedDiceRolls[diceNumber] = {};
-            }
-            // Initialize the resource count if it doesn't exist
-            if (!game.blockedDiceRolls[diceNumber][resourceType]) {
-                game.blockedDiceRolls[diceNumber][resourceType] = 0;
-            }
-            // Increment the blocked count
-            game.blockedDiceRolls[diceNumber][resourceType]++;
-        }
-    }
-    /**
-     * Handle a player placing inital road, no brick/tree spent
-     */
-    function placeInitialRoad(playerName) {
-        if (!playerName)
-            return;
-        const player = game.players.find(p => p.name === playerName);
-        if (player && player.roads > 0) {
-            player.roads--;
-        }
-    }
-    /**
-     * Handle a trade between two players
-     */
-    function playerTrade(playerName, tradePartner, resourceChanges) {
-        if (!playerName || !tradePartner)
-            return;
-        // Validate that there are actual resource changes
-        const hasChanges = Object.values(resourceChanges).some(count => count && count !== 0);
-        if (!hasChanges)
-            return;
-        // add call to game probable processor to handle trade
-        game.probableGameState.processTransaction({
-            type: TransactionTypeEnum.TRADE,
-            player1: playerName,
-            player2: tradePartner,
-            resourceChanges: resourceChanges,
-        });
-        // Update the player who initiated the trade
-        updateResources(playerName, resourceChanges);
-        // Update the trade partner (opposite changes)
-        const partnerChanges = {};
-        Object.entries(resourceChanges).forEach(([resource, count]) => {
-            if (count && count !== 0) {
-                partnerChanges[resource] = -count;
-            }
-        });
-        updateResources(tradePartner, partnerChanges);
-    }
-    /**
-     * Handle a player getting resources
-     */
-    function playerGetResources(playerName, resources) {
-        if (!playerName)
-            return;
-        // Validate that there are actual resources to get
-        const hasResources = Object.values(resources).some(count => count && count > 0);
-        if (!hasResources)
-            return;
-        // add call to game probable processor to handle resource gain
-        game.probableGameState.processTransaction({
-            type: TransactionTypeEnum.RESOURCE_GAIN,
-            playerName: playerName,
-            resources: resources,
-        });
-        updateResources(playerName, resources);
-    }
-    /**
-     * Handle a known steal where we know what resource was stolen
-     */
-    function knownSteal(thief, victim, resource) {
-        if (!thief || !victim)
-            return;
-        game.probableGameState.processTransaction({
-            type: TransactionTypeEnum.ROBBER_STEAL,
-            stealerName: thief,
-            victimName: victim,
-            stolenResource: resource,
-        });
-        updateResources(thief, { [resource]: 1 });
-        updateResources(victim, { [resource]: -1 });
-    }
-    /**
-     * Handle an unknown steal - tries to deduce the resource or records it as unknown
-     */
-    function unknownSteal(thief, victim) {
-        if (!thief || !victim)
-            return;
-        // Check if victim has only one type of resource across ALL possible variants
-        const victimProbabilities = game.probableGameState.getPlayerResourceProbabilities(victim);
-        // Count how many resource types the victim could possibly have
-        const possibleResourceTypes = Object.entries(victimProbabilities.minimumResources)
-            .filter(([_, count]) => count > 0)
-            .concat(Object.entries(victimProbabilities.additionalResourceProbabilities).filter(([_, probability]) => probability > 0));
-        // Remove duplicates by converting to Set and back
-        const uniqueResourceTypes = [
-            ...new Set(possibleResourceTypes.map(([resourceType]) => resourceType)),
-        ];
-        if (uniqueResourceTypes.length === 1) {
-            // Victim has only one type of resource - we can deduce what was stolen
-            const resourceType = uniqueResourceTypes[0];
-            knownSteal(thief, victim, resourceType);
-        }
-        else {
-            // Unknown steal - we don't know what resource was stolen
-            game.probableGameState.processTransaction({
-                type: TransactionTypeEnum.ROBBER_STEAL,
-                stealerName: thief,
-                victimName: victim,
-                stolenResource: null,
-            });
-        }
-    }
-    /**
-     * Handle a player buying a development card
-     */
-    function buyDevCard(playerName) {
-        if (!playerName)
-            return;
-        game.probableGameState.processTransaction({
-            type: TransactionTypeEnum.RESOURCE_LOSS,
-            playerName: playerName,
-            resources: { wheat: 1, sheep: 1, ore: 1 },
-        });
-        game.devCards--;
-        updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
-    }
-    /**
-     * Handle a player trading with the bank
-     */
-    function bankTrade(playerName, resourceChanges) {
-        if (!playerName)
-            return;
-        // Validate that there are actual resource changes
-        const hasChanges = Object.values(resourceChanges).some(count => count && count !== 0);
-        if (!hasChanges)
-            return;
-        // Process the bank trade as a single transaction
-        game.probableGameState.processTransaction({
-            type: TransactionTypeEnum.BANK_TRADE,
-            playerName: playerName,
-            resourceChanges: resourceChanges,
-        });
-        updateResources(playerName, resourceChanges);
-    }
-    /**
-     * Handle a player using a knight card
-     */
-    function useKnight(playerName) {
-        if (!playerName)
-            return;
-        const player = game.players.find(p => p.name === playerName);
-        if (player) {
-            player.knights++;
-            player.discoveryCards.knights++;
-            game.knights--;
-        }
-    }
-    /**
-     * Handle a player building a settlement
-     */
-    function buildSettlement(playerName) {
-        if (!playerName)
-            return;
-        const player = game.players.find(p => p.name === playerName);
-        if (player) {
-            game.probableGameState.processTransaction({
-                type: TransactionTypeEnum.RESOURCE_LOSS,
-                playerName: playerName,
-                resources: { tree: 1, wheat: 1, brick: 1, sheep: 1 },
-            });
-            updateResources(playerName, {
-                tree: -1,
-                wheat: -1,
-                brick: -1,
-                sheep: -1,
-            });
-            player.settlements--;
-            player.victoryPoints++;
-        }
-    }
-    /**
-     * Handle a player building a city
-     */
-    function buildCity(playerName) {
-        if (!playerName)
-            return;
-        const player = game.players.find(p => p.name === playerName);
-        if (player) {
-            game.probableGameState.processTransaction({
-                type: TransactionTypeEnum.RESOURCE_LOSS,
-                playerName: playerName,
-                resources: { ore: 3, wheat: 2 },
-            });
-            updateResources(playerName, { ore: -3, wheat: -2 });
-            player.cities--;
-            player.settlements++; // City replaces settlement
-            player.victoryPoints++;
-        }
-    }
-    /**
-     * Handle a player building a road
-     */
-    function buildRoad(playerName) {
-        if (!playerName)
-            return;
-        const player = game.players.find(p => p.name === playerName);
-        if (player) {
-            game.probableGameState.processTransaction({
-                type: TransactionTypeEnum.RESOURCE_LOSS,
-                playerName: playerName,
-                resources: { tree: 1, brick: 1 },
-            });
-            updateResources(playerName, { tree: -1, brick: -1 });
-            player.roads--;
-        }
-    }
-    /**
-     * Handle a player moving the robber
-     */
-    function moveRobber(playerName) {
-        if (!playerName)
-            return;
-        const player = game.players.find(p => p.name === playerName);
-        if (player) {
-            player.totalRobbers++;
-        }
-    }
-    /**
-     * Handle a player using Year of Plenty card
-     */
-    function useYearOfPlenty(playerName) {
-        if (!playerName)
-            return;
-        const player = game.players.find(p => p.name === playerName);
-        if (player) {
-            game.yearOfPlenties--;
-            player.discoveryCards.yearOfPlenties++;
-        }
-    }
-    /**
-     * Handle a player taking resources from bank via Year of Plenty
-     */
-    function yearOfPlentyTake(playerName, resources) {
-        if (!playerName)
-            return;
-        const hasResources = Object.values(resources).some(count => count && count > 0);
-        if (!hasResources)
-            return;
-        game.probableGameState.processTransaction({
-            type: TransactionTypeEnum.RESOURCE_GAIN,
-            playerName: playerName,
-            resources: resources,
-        });
-        updateResources(playerName, resources);
-    }
-    /**
-     * Handle a player using Road Building card
-     */
-    function useRoadBuilding(playerName) {
-        if (!playerName)
-            return;
-        const player = game.players.find(p => p.name === playerName);
-        if (player) {
-            game.roadBuilders--;
-            player.discoveryCards.roadBuilders++;
-        }
-    }
-    /**
-     * Handle a player using Monopoly card
-     */
-    function useMonopoly(playerName) {
-        if (!playerName)
-            return;
-        const player = game.players.find(p => p.name === playerName);
-        if (player) {
-            game.monopolies--;
-            player.discoveryCards.monopolies++;
-        }
-    }
-    /**
-     * Handle monopoly resource steal - takes resources from all other players
-     */
-    function monopolySteal(playerName, resourceType, totalStolen) {
-        if (!playerName || totalStolen <= 0)
-            return;
-        const monopolyPlayer = game.players.find(p => p.name === playerName);
-        if (!monopolyPlayer)
-            return;
-        // Calculate total resources to steal and remove from other players
-        let actualStolen = 0;
-        game.players.forEach(otherPlayer => {
-            if (otherPlayer.name !== playerName) {
-                const playerHas = otherPlayer.resources[resourceType];
-                if (playerHas > 0) {
-                    actualStolen += playerHas;
-                    otherPlayer.resources[resourceType] = 0;
-                }
-            }
-        });
-        game.probableGameState.processTransaction({
-            type: TransactionTypeEnum.MONOPOLY,
-            playerName: playerName,
-            resourceType: resourceType,
-            totalStolen: totalStolen,
-        });
-        // Add the actual stolen amount to monopoly player (directly, not via updateResources)
-        monopolyPlayer.resources[resourceType] += actualStolen;
-    }
-    /**
-     * Handle a player receiving starting resources
-     */
-    function receiveStartingResources(playerName, resources) {
-        if (!playerName)
-            return;
-        const hasResources = Object.values(resources).some(count => count && count > 0);
-        if (!hasResources)
-            return;
-        updateResources(playerName, resources);
-        console.log(`🏁 ${playerName} received starting resources: ${JSON.stringify(resources)}`);
-    }
-    /**
-     * Handle a player offering resources in trade (helps resolve unknown transactions)
-     */
-    function playerOffer(playerName, offeredResources) {
-        if (!playerName)
-            return;
-        const hasResources = Object.values(offeredResources).some(count => count && count > 0);
-        if (!hasResources)
-            return;
-        const player = game.players.find(p => p.name === playerName);
-        if (!player)
-            return;
-        game.probableGameState.processTransaction({
-            type: TransactionTypeEnum.TRADE_OFFER,
-            playerName: playerName,
-            offeredResources: offeredResources,
-        });
-    }
-    /**
-     * Handle a player stealing a specific resource from the current player
-     */
-    function stealFromYou(thief, victim, stolenResource) {
-        if (!thief || !victim)
-            return;
-        game.probableGameState.processTransaction({
-            type: TransactionTypeEnum.ROBBER_STEAL,
-            stealerName: thief,
-            victimName: victim,
-            stolenResource: stolenResource,
-        });
-        // Transfer resource from victim to thief
-        updateResources(thief, { [stolenResource]: 1 });
-        updateResources(victim, { [stolenResource]: -1 });
-        console.log(`🦹 ${thief} stole ${stolenResource} from you (${victim})`);
     }
 
     // =============================================================================
@@ -2461,6 +2047,505 @@
             gameStateOverlay.style.transform = `scale(${currentScale})`;
         }
     }
+    function showYouPlayerDialog() {
+        if (game.players.length === 0)
+            return;
+        // Mark that we've asked to prevent multiple dialogs
+        markYouPlayerAsked();
+        // Create modal backdrop
+        const backdrop = document.createElement('div');
+        backdrop.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10001;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  `;
+        // Create dialog
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+    width: 90%;
+    font-family: Arial, sans-serif;
+  `;
+        dialog.innerHTML = `
+    <h3 style="margin: 0 0 15px 0; color: #2c3e50;">🎲 Catan Counter Setup</h3>
+    <p style="margin: 0 0 20px 0; color: #555;">
+      Which player are you? This helps the extension track when resources are stolen "from you".
+    </p>
+    <div id="player-buttons" style="display: flex; flex-direction: column; gap: 10px;">
+      ${game.players
+        .map(player => `
+        <button 
+          data-player="${player.name}" 
+          style="
+            padding: 12px; 
+            border: 2px solid #3498db; 
+            background: #ecf0f1; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-weight: bold;
+            transition: all 0.2s;
+          "
+          onmouseover="this.style.background='#3498db'; this.style.color='white';"
+          onmouseout="this.style.background='#ecf0f1'; this.style.color='black';"
+        >
+          ${player.name}
+        </button>
+      `)
+        .join('')}
+    </div>
+  `;
+        backdrop.appendChild(dialog);
+        document.body.appendChild(backdrop);
+        // Add click handlers
+        const buttons = dialog.querySelectorAll('[data-player]');
+        buttons.forEach(button => {
+            button.addEventListener('click', () => {
+                const playerName = button.getAttribute('data-player');
+                if (playerName) {
+                    setYouPlayer(playerName);
+                    console.log(`🎯 "You" player set to: ${playerName}`);
+                    document.body.removeChild(backdrop);
+                }
+            });
+        });
+        // Close on backdrop click
+        backdrop.addEventListener('click', e => {
+            if (e.target === backdrop) {
+                document.body.removeChild(backdrop);
+            }
+        });
+    }
+
+    /**
+     * Handle a player discarding resources
+     */
+    function playerDiscard(playerName, discardedResources) {
+        if (!playerName)
+            return;
+        // Remove resources from player (negative values, automatically adds to bank)
+        const playerChanges = {};
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_LOSS,
+            playerName: playerName,
+            resources: discardedResources,
+        });
+        Object.keys(discardedResources).forEach(resource => {
+            const key = resource;
+            const count = discardedResources[key];
+            if (count && count > 0) {
+                playerChanges[key] = -count;
+            }
+        });
+        updateResources(playerName, playerChanges);
+    }
+    /**
+     * Handle a player placing a settlement
+     */
+    function placeSettlement(playerName, color) {
+        if (!playerName)
+            return;
+        ensurePlayerExists(playerName, color);
+        const player = game.players.find(p => p.name === playerName);
+        if (player && player.settlements > 0) {
+            player.settlements--;
+        }
+    }
+    /**
+     * Handle a dice roll
+     */
+    function rollDice(diceTotal) {
+        if (diceTotal >= 2 && diceTotal <= 12) {
+            if (!game.hasRolledFirstDice) {
+                game.hasRolledFirstDice = true;
+                // setting up probable game state with all players
+                game.probableGameState = new PropbableGameState(game.players);
+                // Auto-detect current player on the first dice roll instead of showing popup
+                if (!game.youPlayerName && game.players.length > 0) {
+                    const success = autoDetectCurrentPlayer();
+                    if (!success) {
+                        console.log('⚠️ Could not auto-detect current player. Asking for manual selection.');
+                        // Manually ask for player name
+                        showYouPlayerDialog();
+                    }
+                }
+            }
+            game.diceRolls[diceTotal]++;
+        }
+    }
+    /**
+     * Handle a blocked dice roll where the robber prevents resource production
+     */
+    function blockedDiceRoll(diceNumber, resourceType) {
+        if (diceNumber >= 2 && diceNumber <= 12) {
+            // Initialize the dice number object if it doesn't exist
+            if (!game.blockedDiceRolls[diceNumber]) {
+                game.blockedDiceRolls[diceNumber] = {};
+            }
+            // Initialize the resource count if it doesn't exist
+            if (!game.blockedDiceRolls[diceNumber][resourceType]) {
+                game.blockedDiceRolls[diceNumber][resourceType] = 0;
+            }
+            // Increment the blocked count
+            game.blockedDiceRolls[diceNumber][resourceType]++;
+        }
+    }
+    /**
+     * Handle a player placing inital road, no brick/tree spent
+     */
+    function placeInitialRoad(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player && player.roads > 0) {
+            player.roads--;
+        }
+    }
+    /**
+     * Handle a trade between two players
+     */
+    function playerTrade(playerName, tradePartner, resourceChanges) {
+        if (!playerName || !tradePartner)
+            return;
+        // Validate that there are actual resource changes
+        const hasChanges = Object.values(resourceChanges).some(count => count && count !== 0);
+        if (!hasChanges)
+            return;
+        // add call to game probable processor to handle trade
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.TRADE,
+            player1: playerName,
+            player2: tradePartner,
+            resourceChanges: resourceChanges,
+        });
+        // Update the player who initiated the trade
+        updateResources(playerName, resourceChanges);
+        // Update the trade partner (opposite changes)
+        const partnerChanges = {};
+        Object.entries(resourceChanges).forEach(([resource, count]) => {
+            if (count && count !== 0) {
+                partnerChanges[resource] = -count;
+            }
+        });
+        updateResources(tradePartner, partnerChanges);
+    }
+    /**
+     * Handle a player getting resources
+     */
+    function playerGetResources(playerName, resources) {
+        if (!playerName)
+            return;
+        // Validate that there are actual resources to get
+        const hasResources = Object.values(resources).some(count => count && count > 0);
+        if (!hasResources)
+            return;
+        // add call to game probable processor to handle resource gain
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_GAIN,
+            playerName: playerName,
+            resources: resources,
+        });
+        updateResources(playerName, resources);
+    }
+    /**
+     * Handle a known steal where we know what resource was stolen
+     */
+    function knownSteal(thief, victim, resource) {
+        if (!thief || !victim)
+            return;
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.ROBBER_STEAL,
+            stealerName: thief,
+            victimName: victim,
+            stolenResource: resource,
+        });
+        updateResources(thief, { [resource]: 1 });
+        updateResources(victim, { [resource]: -1 });
+    }
+    /**
+     * Handle an unknown steal - tries to deduce the resource or records it as unknown
+     */
+    function unknownSteal(thief, victim) {
+        if (!thief || !victim)
+            return;
+        // Check if victim has only one type of resource across ALL possible variants
+        const victimProbabilities = game.probableGameState.getPlayerResourceProbabilities(victim);
+        // Count how many resource types the victim could possibly have
+        const possibleResourceTypes = Object.entries(victimProbabilities.minimumResources)
+            .filter(([_, count]) => count > 0)
+            .concat(Object.entries(victimProbabilities.additionalResourceProbabilities).filter(([_, probability]) => probability > 0));
+        // Remove duplicates by converting to Set and back
+        const uniqueResourceTypes = [
+            ...new Set(possibleResourceTypes.map(([resourceType]) => resourceType)),
+        ];
+        if (uniqueResourceTypes.length === 1) {
+            // Victim has only one type of resource - we can deduce what was stolen
+            const resourceType = uniqueResourceTypes[0];
+            knownSteal(thief, victim, resourceType);
+        }
+        else {
+            // Unknown steal - we don't know what resource was stolen
+            game.probableGameState.processTransaction({
+                type: TransactionTypeEnum.ROBBER_STEAL,
+                stealerName: thief,
+                victimName: victim,
+                stolenResource: null,
+            });
+        }
+    }
+    /**
+     * Handle a player buying a development card
+     */
+    function buyDevCard(playerName) {
+        if (!playerName)
+            return;
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_LOSS,
+            playerName: playerName,
+            resources: { wheat: 1, sheep: 1, ore: 1 },
+        });
+        game.devCards--;
+        updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
+    }
+    /**
+     * Handle a player trading with the bank
+     */
+    function bankTrade(playerName, resourceChanges) {
+        if (!playerName)
+            return;
+        // Validate that there are actual resource changes
+        const hasChanges = Object.values(resourceChanges).some(count => count && count !== 0);
+        if (!hasChanges)
+            return;
+        // Process the bank trade as a single transaction
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.BANK_TRADE,
+            playerName: playerName,
+            resourceChanges: resourceChanges,
+        });
+        updateResources(playerName, resourceChanges);
+    }
+    /**
+     * Handle a player using a knight card
+     */
+    function useKnight(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            player.knights++;
+            player.discoveryCards.knights++;
+            game.knights--;
+        }
+    }
+    /**
+     * Handle a player building a settlement
+     */
+    function buildSettlement(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.probableGameState.processTransaction({
+                type: TransactionTypeEnum.RESOURCE_LOSS,
+                playerName: playerName,
+                resources: { tree: 1, wheat: 1, brick: 1, sheep: 1 },
+            });
+            updateResources(playerName, {
+                tree: -1,
+                wheat: -1,
+                brick: -1,
+                sheep: -1,
+            });
+            player.settlements--;
+            player.victoryPoints++;
+        }
+    }
+    /**
+     * Handle a player building a city
+     */
+    function buildCity(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.probableGameState.processTransaction({
+                type: TransactionTypeEnum.RESOURCE_LOSS,
+                playerName: playerName,
+                resources: { ore: 3, wheat: 2 },
+            });
+            updateResources(playerName, { ore: -3, wheat: -2 });
+            player.cities--;
+            player.settlements++; // City replaces settlement
+            player.victoryPoints++;
+        }
+    }
+    /**
+     * Handle a player building a road
+     */
+    function buildRoad(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.probableGameState.processTransaction({
+                type: TransactionTypeEnum.RESOURCE_LOSS,
+                playerName: playerName,
+                resources: { tree: 1, brick: 1 },
+            });
+            updateResources(playerName, { tree: -1, brick: -1 });
+            player.roads--;
+        }
+    }
+    /**
+     * Handle a player moving the robber
+     */
+    function moveRobber(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            player.totalRobbers++;
+        }
+    }
+    /**
+     * Handle a player using Year of Plenty card
+     */
+    function useYearOfPlenty(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.yearOfPlenties--;
+            player.discoveryCards.yearOfPlenties++;
+        }
+    }
+    /**
+     * Handle a player taking resources from bank via Year of Plenty
+     */
+    function yearOfPlentyTake(playerName, resources) {
+        if (!playerName)
+            return;
+        const hasResources = Object.values(resources).some(count => count && count > 0);
+        if (!hasResources)
+            return;
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_GAIN,
+            playerName: playerName,
+            resources: resources,
+        });
+        updateResources(playerName, resources);
+    }
+    /**
+     * Handle a player using Road Building card
+     */
+    function useRoadBuilding(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.roadBuilders--;
+            player.discoveryCards.roadBuilders++;
+        }
+    }
+    /**
+     * Handle a player using Monopoly card
+     */
+    function useMonopoly(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.monopolies--;
+            player.discoveryCards.monopolies++;
+        }
+    }
+    /**
+     * Handle monopoly resource steal - takes resources from all other players
+     */
+    function monopolySteal(playerName, resourceType, totalStolen) {
+        if (!playerName || totalStolen <= 0)
+            return;
+        const monopolyPlayer = game.players.find(p => p.name === playerName);
+        if (!monopolyPlayer)
+            return;
+        // Calculate total resources to steal and remove from other players
+        let actualStolen = 0;
+        game.players.forEach(otherPlayer => {
+            if (otherPlayer.name !== playerName) {
+                const playerHas = otherPlayer.resources[resourceType];
+                if (playerHas > 0) {
+                    actualStolen += playerHas;
+                    otherPlayer.resources[resourceType] = 0;
+                }
+            }
+        });
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.MONOPOLY,
+            playerName: playerName,
+            resourceType: resourceType,
+            totalStolen: totalStolen,
+        });
+        // Add the actual stolen amount to monopoly player (directly, not via updateResources)
+        monopolyPlayer.resources[resourceType] += actualStolen;
+    }
+    /**
+     * Handle a player receiving starting resources
+     */
+    function receiveStartingResources(playerName, resources) {
+        if (!playerName)
+            return;
+        const hasResources = Object.values(resources).some(count => count && count > 0);
+        if (!hasResources)
+            return;
+        updateResources(playerName, resources);
+        console.log(`🏁 ${playerName} received starting resources: ${JSON.stringify(resources)}`);
+    }
+    /**
+     * Handle a player offering resources in trade (helps resolve unknown transactions)
+     */
+    function playerOffer(playerName, offeredResources) {
+        if (!playerName)
+            return;
+        const hasResources = Object.values(offeredResources).some(count => count && count > 0);
+        if (!hasResources)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (!player)
+            return;
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.TRADE_OFFER,
+            playerName: playerName,
+            offeredResources: offeredResources,
+        });
+    }
+    /**
+     * Handle a player stealing a specific resource from the current player
+     */
+    function stealFromYou(thief, victim, stolenResource) {
+        if (!thief || !victim)
+            return;
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.ROBBER_STEAL,
+            stealerName: thief,
+            victimName: victim,
+            stolenResource: stolenResource,
+        });
+        // Transfer resource from victim to thief
+        updateResources(thief, { [stolenResource]: 1 });
+        updateResources(victim, { [stolenResource]: -1 });
+        console.log(`🦹 ${thief} stole ${stolenResource} from you (${victim})`);
+    }
 
     /**
      * Check if an element should be ignored (not processed)
@@ -2478,6 +2563,26 @@
             // Learn how to play messages
             messageText.includes('Learn how to play'));
     }
+    /**
+     * Checks if an element represents a duplicate chat message
+     * This can be solved in a greedy fashion by checking the chat number (data-index attribute) against the last processed chat number in game state
+     */
+    function checkDuplicateElement(element) {
+        // Get ID from the element
+        const dataIndexAttr = element.attributes.getNamedItem('data-index');
+        // If no data-index attribute, treat as duplicate to be safe
+        if (!dataIndexAttr)
+            return true;
+        const chatNumber = parseInt(dataIndexAttr.value);
+        // Check if this chat number has already been processed
+        if (chatNumber < game.chatsProcessed) {
+            console.log(`⏭️ Skipping already processed chat #${chatNumber}`);
+            return true;
+        }
+        // Update the last processed chat number
+        game.chatsProcessed = chatNumber;
+        return false;
+    }
     function updateGameFromChat(element) {
         var _a;
         // If we're waiting for "you" player selection, don't process new messages
@@ -2485,6 +2590,8 @@
             return;
         const messageText = ((_a = element.textContent) === null || _a === void 0 ? void 0 : _a.replace(/\s+/g, ' ').trim()) || '';
         if (ignoreElement(element, messageText))
+            return;
+        if (checkDuplicateElement(element))
             return;
         let playerName = getPlayerName(element);
         // getting correct player name when it says "You stole"
