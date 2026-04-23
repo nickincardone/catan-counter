@@ -4,6 +4,7 @@ import {
   game,
   updateResources,
 } from './gameState.js';
+import { showYouPlayerDialog } from './overlay.js';
 import { PropbableGameState } from './probableGameState.js';
 import {
   DiceRollsType,
@@ -72,8 +73,10 @@ export function rollDice(diceTotal: number): void {
         const success = autoDetectCurrentPlayer();
         if (!success) {
           console.log(
-            '⚠️ Could not auto-detect current player. Manual selection may be needed.'
+            '⚠️ Could not auto-detect current player. Asking for manual selection.'
           );
+          // Manually ask for player name
+          showYouPlayerDialog();
         }
       }
     }

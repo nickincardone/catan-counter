@@ -839,3 +839,96 @@ export function updateGameStateDisplay(): void {
 export function setYouPlayerSelectedCallback(callback: () => void): void {
   youPlayerSelectedCallback = callback;
 }
+
+export function showYouPlayerDialog(): void {
+  if (game.players.length === 0) return;
+
+  // Mark that we've asked to prevent multiple dialogs
+  markYouPlayerAsked();
+
+  // Create modal backdrop
+  const backdrop = document.createElement('div');
+  backdrop.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10001;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  `;
+
+  // Create dialog
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+    width: 90%;
+    font-family: Arial, sans-serif;
+  `;
+
+  dialog.innerHTML = `
+    <h3 style="margin: 0 0 15px 0; color: #2c3e50;">🎲 Catan Counter Setup</h3>
+    <p style="margin: 0 0 20px 0; color: #555;">
+      Which player are you? This helps the extension track when resources are stolen "from you".
+    </p>
+    <div id="player-buttons" style="display: flex; flex-direction: column; gap: 10px;">
+      ${game.players
+        .map(
+          player => `
+        <button 
+          data-player="${player.name}" 
+          style="
+            padding: 12px; 
+            border: 2px solid #3498db; 
+            background: #ecf0f1; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-weight: bold;
+            transition: all 0.2s;
+          "
+          onmouseover="this.style.background='#3498db'; this.style.color='white';"
+          onmouseout="this.style.background='#ecf0f1'; this.style.color='black';"
+        >
+          ${player.name}
+        </button>
+      `
+        )
+        .join('')}
+    </div>
+  `;
+
+  backdrop.appendChild(dialog);
+  document.body.appendChild(backdrop);
+
+  // Add click handlers
+  const buttons = dialog.querySelectorAll('[data-player]');
+  buttons.forEach(button => {
+    button.addEventListener('click', () => {
+      const playerName = button.getAttribute('data-player');
+      if (playerName) {
+        setYouPlayer(playerName);
+        console.log(`🎯 "You" player set to: ${playerName}`);
+        document.body.removeChild(backdrop);
+
+        // Trigger reprocessing callback if provided
+        if (youPlayerSelectedCallback) {
+          youPlayerSelectedCallback();
+        }
+      }
+    });
+  });
+
+  // Close on backdrop click
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) {
+      document.body.removeChild(backdrop);
+    }
+  });
+}
