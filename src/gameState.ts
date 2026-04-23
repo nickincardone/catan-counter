@@ -63,7 +63,7 @@ export function setYouPlayer(playerName: string): void {
 }
 
 /**
- * Automatically sets the current player from header_profile_username
+ * Automatically sets the current player from web-header-username
  * Returns true if successful, false otherwise
  */
 export function autoDetectCurrentPlayer(): boolean {
