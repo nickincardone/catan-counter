@@ -12,6 +12,7 @@ export function getDefaultGame(): GameType {
   return {
     players: [],
     gameType: GameTypeEnum.STANDARD,
+    chatsProcessed: 0,
     gameResources: {
       sheep: 19,
       wheat: 19,
