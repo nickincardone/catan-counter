@@ -33,7 +33,7 @@
      */
     function getCurrentPlayerFromHeader() {
         var _a;
-        const headerElement = document.getElementById('web-header-username');
+        const headerElement = document.getElementsByClassName('web-header-username')[0];
         if (!headerElement) {
             console.log('🔍 web-header-username element not found');
             return null;

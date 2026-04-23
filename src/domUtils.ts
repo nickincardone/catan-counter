@@ -45,7 +45,7 @@ export function getPlayerColor(element: HTMLElement): string {
  * This eliminates the need for user input popups
  */
 export function getCurrentPlayerFromHeader(): string | null {
-  const headerElement = document.getElementById('web-header-username');
+  const headerElement = document.getElementsByClassName('web-header-username')[0];
   if (!headerElement) {
     console.log('🔍 web-header-username element not found');
     return null;
