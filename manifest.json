@@ -1,5 +1,5 @@
 {
-  "manifest_version": 5,
+  "manifest_version": 3,
   "name": "Colonist.io Dice Stats",
   "version": "1.0",
   "description": "Tracks dice rolls in colonist.io games.",
