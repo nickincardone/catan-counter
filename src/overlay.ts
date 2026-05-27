@@ -198,6 +198,9 @@ let isResizing = false;
 let currentScale = 1;
 let resizeStartData = { x: 0, y: 0, scale: 1 };
 let youPlayerSelectedCallback: (() => void) | null = null;
+// True while content.ts is scrolling the chat to rebuild history after a page
+// load/refresh. The overlay shows a loader instead of (stale/partial) counts.
+let isLoadingHistory = false;
 
 function createGameStateOverlay(): HTMLDivElement {
   const overlay = document.createElement('div');
@@ -715,6 +718,35 @@ function generateMainContent(): string {
   `;
 }
 
+function generateLoadingContent(): string {
+  return `
+    <div style="
+      text-align: center;
+      padding: 40px 20px;
+      color: #666;
+      font-size: 14px;
+      line-height: 1.5;
+    ">
+      <style>@keyframes catan-spin { to { transform: rotate(360deg); } }</style>
+      <div class="catan-spinner" style="
+        width: 40px;
+        height: 40px;
+        margin: 0 auto 18px;
+        border: 4px solid #e0e0e0;
+        border-top-color: #2c3e50;
+        border-radius: 50%;
+        animation: catan-spin 0.8s linear infinite;
+      "></div>
+      <div style="font-weight: bold; margin-bottom: 8px; color: #2c3e50;">
+        Loading game history…
+      </div>
+      <div>
+        Scrolling the chat and rebuilding resource counts.
+      </div>
+    </div>
+  `;
+}
+
 function generateWaitingContent(): string {
   return `
     <div style="
@@ -737,9 +769,11 @@ function generateWaitingContent(): string {
 
 function updateOverlayContent(overlay: HTMLDivElement): void {
   const contentDisplay = isMinimized ? 'none' : 'block';
-  const mainContent = game.hasRolledFirstDice
-    ? generateMainContent()
-    : generateWaitingContent();
+  const mainContent = isLoadingHistory
+    ? generateLoadingContent()
+    : game.hasRolledFirstDice
+      ? generateMainContent()
+      : generateWaitingContent();
 
   overlay.innerHTML = `
     <div id="overlay-header" style="
@@ -838,6 +872,18 @@ export function updateGameStateDisplay(): void {
 
 export function setYouPlayerSelectedCallback(callback: () => void): void {
   youPlayerSelectedCallback = callback;
+}
+
+/**
+ * Toggle the "loading game history" state. While true the overlay shows a
+ * spinner instead of the resource tables, since the counts are still being
+ * rebuilt by scrolling the chat (see content.ts loadChatHistory).
+ */
+export function setHistoryLoading(loading: boolean): void {
+  isLoadingHistory = loading;
+  if (gameStateOverlay) {
+    updateOverlayContent(gameStateOverlay);
+  }
 }
 
 export function showYouPlayerDialog(): void {

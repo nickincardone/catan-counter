@@ -160,6 +160,47 @@ export class PropbableGameState {
   }
 
   /**
+   * Prune variants using known per-player hand sizes (read from colonist's
+   * `[data-player-information-container]` panel). Any variant in which a player's
+   * total resource cards doesn't match their known count is impossible and is
+   * removed. This resolves steals the chat alone can't — notably after a monopoly,
+   * when variants disagree on how many cards a player kept.
+   *
+   * Safe no-op unless a strict, non-empty subset of variants matches all the given
+   * counts, so contradictory or non-discriminating data never empties or collapses
+   * the tree (and we never try to remove the root).
+   */
+  pruneByHandCounts(handCounts: { [playerName: string]: number }): void {
+    const nodes = this.variantTree.getCurrentVariantNodes();
+    if (nodes.length <= 1) return; // nothing to disambiguate
+
+    const matchesCounts = (node: VariantNode): boolean =>
+      Object.entries(handCounts).every(([playerName, count]) => {
+        const playerState = node.gameState[playerName];
+        if (!playerState) return true; // unknown player -> no constraint
+        const total = RESOURCE_TYPES.reduce(
+          (sum, resourceType) => sum + playerState.resources[resourceType],
+          0
+        );
+        return total === count;
+      });
+
+    const validNodes = nodes.filter(matchesCounts);
+
+    // Ignore contradictory (none match) or non-discriminating (all match) data.
+    if (validNodes.length === 0 || validNodes.length === nodes.length) return;
+
+    for (const node of nodes) {
+      if (!matchesCounts(node)) {
+        this.variantTree.removeVariantNode(node);
+      }
+    }
+
+    this.variantTree.pruneInvalidNodes();
+    this.resolveAllUnknownTransactions();
+  }
+
+  /**
    * Find the stolen resource for a specific transaction in a node's chain
    */
   private findStolenResourceInChain(

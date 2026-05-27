@@ -11,6 +11,7 @@ import {
   parseTradeResources,
   getBlockedDiceNumber,
   getBlockedResourceType,
+  getPlayerCardCounts,
 } from './domUtils.js';
 import {
   bankTrade,
@@ -72,8 +73,11 @@ function checkDuplicateElement(element: HTMLElement): boolean {
   if (!dataIndexAttr) return true;
   const chatNumber = parseInt(dataIndexAttr.value);
 
-  // Check if this chat number has already been processed
-  if (chatNumber < game.chatsProcessed) {
+  // Skip if this chat number has already been processed. Uses <= (not <) so the
+  // boundary message isn't re-counted when the virtual scroller re-renders it in
+  // an overlapping window during history loading. game.chatsProcessed starts at
+  // -1 so the first message (data-index 0) is still processed.
+  if (chatNumber <= game.chatsProcessed) {
     console.log(`⏭️ Skipping already processed chat #${chatNumber}`);
     return true;
   }
@@ -81,6 +85,24 @@ function checkDuplicateElement(element: HTMLElement): boolean {
   // Update the last processed chat number
   game.chatsProcessed = chatNumber;
   return false;
+}
+
+/**
+ * Refine the variant tree using the live per-player hand counts shown in
+ * colonist's player-information panel (see domUtils.getPlayerCardCounts). This
+ * resolves steals the chat alone can't — e.g. after a monopoly. Call it only for
+ * live messages, NOT during history replay (the panel reflects the present, not
+ * the replayed past). Safe to call anytime: pruneByHandCounts no-ops unless the
+ * counts strictly discriminate between current variants.
+ */
+export function applyHandCountResolution(): void {
+  const names = game.players.map(p => p.name);
+  if (names.length === 0) return;
+
+  const counts = getPlayerCardCounts(names);
+  if (Object.keys(counts).length > 0) {
+    game.probableGameState.pruneByHandCounts(counts);
+  }
 }
 
 export function updateGameFromChat(element: HTMLElement): void {

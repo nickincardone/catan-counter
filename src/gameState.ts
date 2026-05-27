@@ -12,7 +12,9 @@ export function getDefaultGame(): GameType {
   return {
     players: [],
     gameType: GameTypeEnum.STANDARD,
-    chatsProcessed: 0,
+    // Highest chat data-index processed so far; -1 means "none yet" so that the
+    // first message (data-index 0) is still processed. See checkDuplicateElement.
+    chatsProcessed: -1,
     gameResources: {
       sheep: 19,
       wheat: 19,

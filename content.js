@@ -1,23 +1,82 @@
 (function () {
     'use strict';
 
+    /******************************************************************************
+    Copyright (c) Microsoft Corporation.
+
+    Permission to use, copy, modify, and/or distribute this software for any
+    purpose with or without fee is hereby granted.
+
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+    REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+    AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+    INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+    LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+    OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+    PERFORMANCE OF THIS SOFTWARE.
+    ***************************************************************************** */
+
+    function __awaiter(thisArg, _arguments, P, generator) {
+        function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+        return new (P || (P = Promise))(function (resolve, reject) {
+            function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+            function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+            function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+            step((generator = generator.apply(thisArg, _arguments || [])).next());
+        });
+    }
+
+    typeof SuppressedError === "function" ? SuppressedError : function (error, suppressed, message) {
+        var e = new Error(message);
+        return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
+    };
+
     const RESOURCE_STRING = 'img[alt="grain"], img[alt="wool"], img[alt="lumber"], img[alt="brick"], img[alt="ore"], img[alt="Grain"], img[alt="Wool"], img[alt="Lumber"], img[alt="Brick"], img[alt="Ore"]';
     function findChatContainer() {
-        const divs = document.querySelectorAll('div');
-        for (const outerDiv of Array.from(divs)) {
-            const firstChild = outerDiv.firstElementChild;
-            if ((firstChild === null || firstChild === void 0 ? void 0 : firstChild.tagName) === 'DIV') {
-                for (const child of Array.from(firstChild.children)) {
-                    if (child.tagName === 'SPAN') {
-                        const anchor = child.querySelector('a[href="#open-rulebook"]');
-                        if (anchor) {
-                            return outerDiv.parentElement;
-                        }
-                    }
-                }
+        // Colonist renders the chat log as a virtual scroller whose children are the
+        // individual message rows, each tagged with a `data-index`. Find any rendered
+        // row and return its parent (the scroller) so callers can iterate its children
+        // and observe it for newly added messages.
+        //
+        // We intentionally do NOT key off the "Learn how to play in the rulebook"
+        // (a[href="#open-rulebook"]) welcome message: it only lives at the top of the
+        // log and scrolls out of the virtualized DOM as the game progresses, so relying
+        // on it left the overlay unable to attach after a mid-game page refresh.
+        const firstMessageRow = document.querySelector('[data-index]');
+        return firstMessageRow ? firstMessageRow.parentElement : null;
+    }
+    /**
+     * Read each player's current resource-card count from colonist's player panel
+     * (`[data-player-information-container]` -> one `[data-player-color]` block per
+     * player, each containing a `[data-resource-card]` count). Returns a map of
+     * player name -> card count for the requested players only.
+     *
+     * These counts are the signal the chat alone can't provide: combined with the
+     * variant engine they let `pruneByHandCounts` resolve steals (e.g. after a
+     * monopoly). Block-to-name matching uses the known player names (longest match
+     * first) to avoid partial-name collisions.
+     */
+    function getPlayerCardCounts(playerNames) {
+        const counts = {};
+        const container = document.querySelector('[data-player-information-container]');
+        if (!container)
+            return counts;
+        const blocks = container.querySelectorAll('[data-player-color]');
+        blocks.forEach(block => {
+            var _a, _b;
+            const text = block.textContent || '';
+            const name = playerNames
+                .filter(n => text.includes(n))
+                .sort((a, b) => b.length - a.length)[0];
+            if (!name)
+                return;
+            const cardEl = block.querySelector('[data-resource-card]');
+            const count = parseInt((_b = (_a = cardEl === null || cardEl === void 0 ? void 0 : cardEl.textContent) === null || _a === void 0 ? void 0 : _a.trim()) !== null && _b !== void 0 ? _b : '', 10);
+            if (!Number.isNaN(count)) {
+                counts[name] = count;
             }
-        }
-        return null;
+        });
+        return counts;
     }
     function getPlayerName(element) {
         const playerSpan = element.querySelector('span[style*="font-weight:600"], span[style*="font-weight: 600"]');
@@ -922,6 +981,40 @@
             }
         }
         /**
+         * Prune variants using known per-player hand sizes (read from colonist's
+         * `[data-player-information-container]` panel). Any variant in which a player's
+         * total resource cards doesn't match their known count is impossible and is
+         * removed. This resolves steals the chat alone can't — notably after a monopoly,
+         * when variants disagree on how many cards a player kept.
+         *
+         * Safe no-op unless a strict, non-empty subset of variants matches all the given
+         * counts, so contradictory or non-discriminating data never empties or collapses
+         * the tree (and we never try to remove the root).
+         */
+        pruneByHandCounts(handCounts) {
+            const nodes = this.variantTree.getCurrentVariantNodes();
+            if (nodes.length <= 1)
+                return; // nothing to disambiguate
+            const matchesCounts = (node) => Object.entries(handCounts).every(([playerName, count]) => {
+                const playerState = node.gameState[playerName];
+                if (!playerState)
+                    return true; // unknown player -> no constraint
+                const total = RESOURCE_TYPES.reduce((sum, resourceType) => sum + playerState.resources[resourceType], 0);
+                return total === count;
+            });
+            const validNodes = nodes.filter(matchesCounts);
+            // Ignore contradictory (none match) or non-discriminating (all match) data.
+            if (validNodes.length === 0 || validNodes.length === nodes.length)
+                return;
+            for (const node of nodes) {
+                if (!matchesCounts(node)) {
+                    this.variantTree.removeVariantNode(node);
+                }
+            }
+            this.variantTree.pruneInvalidNodes();
+            this.resolveAllUnknownTransactions();
+        }
+        /**
          * Find the stolen resource for a specific transaction in a node's chain
          */
         findStolenResourceInChain(node, transactionId) {
@@ -1293,7 +1386,9 @@
         return {
             players: [],
             gameType: GameTypeEnum.STANDARD,
-            chatsProcessed: 0,
+            // Highest chat data-index processed so far; -1 means "none yet" so that the
+            // first message (data-index 0) is still processed. See checkDuplicateElement.
+            chatsProcessed: -1,
             gameResources: {
                 sheep: 19,
                 wheat: 19,
@@ -1547,6 +1642,9 @@
     let isResizing = false;
     let currentScale = 1;
     let resizeStartData = { x: 0, y: 0, scale: 1 };
+    // True while content.ts is scrolling the chat to rebuild history after a page
+    // load/refresh. The overlay shows a loader instead of (stale/partial) counts.
+    let isLoadingHistory = false;
     function createGameStateOverlay() {
         const overlay = document.createElement('div');
         overlay.id = 'catan-game-state-overlay';
@@ -1943,6 +2041,34 @@
     ${generateBlockedDiceDisplay()}
   `;
     }
+    function generateLoadingContent() {
+        return `
+    <div style="
+      text-align: center;
+      padding: 40px 20px;
+      color: #666;
+      font-size: 14px;
+      line-height: 1.5;
+    ">
+      <style>@keyframes catan-spin { to { transform: rotate(360deg); } }</style>
+      <div class="catan-spinner" style="
+        width: 40px;
+        height: 40px;
+        margin: 0 auto 18px;
+        border: 4px solid #e0e0e0;
+        border-top-color: #2c3e50;
+        border-radius: 50%;
+        animation: catan-spin 0.8s linear infinite;
+      "></div>
+      <div style="font-weight: bold; margin-bottom: 8px; color: #2c3e50;">
+        Loading game history…
+      </div>
+      <div>
+        Scrolling the chat and rebuilding resource counts.
+      </div>
+    </div>
+  `;
+    }
     function generateWaitingContent() {
         return `
     <div style="
@@ -1964,9 +2090,11 @@
     }
     function updateOverlayContent(overlay) {
         const contentDisplay = isMinimized ? 'none' : 'block';
-        const mainContent = game.hasRolledFirstDice
-            ? generateMainContent()
-            : generateWaitingContent();
+        const mainContent = isLoadingHistory
+            ? generateLoadingContent()
+            : game.hasRolledFirstDice
+                ? generateMainContent()
+                : generateWaitingContent();
         overlay.innerHTML = `
     <div id="overlay-header" style="
       background: #2c3e50; 
@@ -2045,6 +2173,17 @@
             updateOverlayContent(gameStateOverlay);
             // Reapply the current scale after updating content
             gameStateOverlay.style.transform = `scale(${currentScale})`;
+        }
+    }
+    /**
+     * Toggle the "loading game history" state. While true the overlay shows a
+     * spinner instead of the resource tables, since the counts are still being
+     * rebuilt by scrolling the chat (see content.ts loadChatHistory).
+     */
+    function setHistoryLoading(loading) {
+        isLoadingHistory = loading;
+        if (gameStateOverlay) {
+            updateOverlayContent(gameStateOverlay);
         }
     }
     function showYouPlayerDialog() {
@@ -2574,14 +2713,34 @@
         if (!dataIndexAttr)
             return true;
         const chatNumber = parseInt(dataIndexAttr.value);
-        // Check if this chat number has already been processed
-        if (chatNumber < game.chatsProcessed) {
+        // Skip if this chat number has already been processed. Uses <= (not <) so the
+        // boundary message isn't re-counted when the virtual scroller re-renders it in
+        // an overlapping window during history loading. game.chatsProcessed starts at
+        // -1 so the first message (data-index 0) is still processed.
+        if (chatNumber <= game.chatsProcessed) {
             console.log(`⏭️ Skipping already processed chat #${chatNumber}`);
             return true;
         }
         // Update the last processed chat number
         game.chatsProcessed = chatNumber;
         return false;
+    }
+    /**
+     * Refine the variant tree using the live per-player hand counts shown in
+     * colonist's player-information panel (see domUtils.getPlayerCardCounts). This
+     * resolves steals the chat alone can't — e.g. after a monopoly. Call it only for
+     * live messages, NOT during history replay (the panel reflects the present, not
+     * the replayed past). Safe to call anytime: pruneByHandCounts no-ops unless the
+     * counts strictly discriminate between current variants.
+     */
+    function applyHandCountResolution() {
+        const names = game.players.map(p => p.name);
+        if (names.length === 0)
+            return;
+        const counts = getPlayerCardCounts(names);
+        if (Object.keys(counts).length > 0) {
+            game.probableGameState.pruneByHandCounts(counts);
+        }
     }
     function updateGameFromChat(element) {
         var _a;
@@ -2773,36 +2932,102 @@
 
     // content.ts
     const chatMutationCallback = (mutationsList) => {
+        let processedAny = false;
         for (const mutation of mutationsList) {
             mutation.addedNodes.forEach(addedNode => {
                 if (addedNode.nodeType === Node.ELEMENT_NODE) {
                     const element = addedNode;
                     updateGameFromChat(element);
+                    processedAny = true;
                 }
             });
         }
+        if (processedAny) {
+            // Wait for colonist's player-information panel to reflect this message, then
+            // refine the variant tree by the live hand counts. Deferring a frame avoids
+            // reading stale counts (and pruneByHandCounts no-ops if they don't help).
+            requestAnimationFrame(() => {
+                applyHandCountResolution();
+                updateGameStateDisplay();
+            });
+        }
     };
+    /**
+     * Process all currently-rendered message rows, sorted by data-index ascending so
+     * resources are applied in chronological order. Already-processed rows are
+     * skipped by the parser's data-index dedup, so calling this repeatedly is safe.
+     */
+    function processRenderedMessages(chatContainer) {
+        const rows = Array.from(chatContainer.querySelectorAll('[data-index]')).sort((a, b) => Number(a.getAttribute('data-index')) -
+            Number(b.getAttribute('data-index')));
+        for (const row of rows) {
+            updateGameFromChat(row);
+        }
+    }
+    /**
+     * Rebuild full game history after a page load/refresh.
+     *
+     * Colonist renders the chat as a virtual scroller that only keeps ~15 message
+     * rows in the DOM at once, so on refresh the extension would otherwise see only
+     * the most recent messages and miscount. We scroll the chat container from top to
+     * bottom; each scroll step renders a fresh window of rows which we process in
+     * ascending data-index order. Going top→bottom means indices are encountered in
+     * chronological order, so the data-index dedup applies each message exactly once.
+     */
+    function loadChatHistory(chatContainer) {
+        return __awaiter(this, void 0, void 0, function* () {
+            // The scrollable element is the chat container's parent (the virtual scroller
+            // itself has full height; its parent has overflow-y:auto).
+            const scrollEl = chatContainer.parentElement;
+            const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+            // Not virtualized (or everything already fits): just process what's rendered.
+            if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight + 5) {
+                processRenderedMessages(chatContainer);
+                return;
+            }
+            const maxScroll = () => scrollEl.scrollHeight - scrollEl.clientHeight;
+            // Step by ~half a viewport so consecutive windows overlap (no skipped rows).
+            const step = Math.max(50, Math.floor(scrollEl.clientHeight * 0.5));
+            scrollEl.scrollTop = 0;
+            yield sleep(120); // let the scroller render the top of the log
+            let pos = 0;
+            let guard = 0;
+            while (guard++ < 1000) {
+                processRenderedMessages(chatContainer);
+                if (pos >= maxScroll())
+                    break;
+                pos = Math.min(pos + step, maxScroll());
+                scrollEl.scrollTop = pos;
+                yield sleep(90); // wait for the next window of rows to render
+            }
+            // Final pass at the bottom in case the last window rendered after the loop.
+            processRenderedMessages(chatContainer);
+        });
+    }
     function tryFindChat() {
         const chatContainer = findChatContainer();
         if (chatContainer) {
             console.log('✅ Chat container found!');
+            // Stop polling now that we've located the chat.
+            clearInterval(intervalId);
             autoDetectCurrentPlayer();
             // Show the game state overlay
             showGameStateOverlay();
-            // Process existing messages in case user refreshed the page
-            const existingMessages = chatContainer.children;
-            console.log(`📜 Processing ${existingMessages.length} existing messages...`);
-            for (let i = 0; i < existingMessages.length; i++) {
-                const element = existingMessages[i];
-                if (element.nodeType === Node.ELEMENT_NODE) {
-                    updateGameFromChat(element);
-                }
-            }
-            console.log('✅ Finished processing existing messages');
-            // Set up observer for new messages
-            const observer = new MutationObserver(chatMutationCallback);
-            observer.observe(chatContainer, { childList: true });
-            clearInterval(intervalId);
+            // Scroll through and process the full chat history (handles page refresh,
+            // where only the most recent messages are initially rendered), then watch
+            // for new messages.
+            console.log('📜 Loading chat history...');
+            setHistoryLoading(true);
+            loadChatHistory(chatContainer)
+                .then(() => {
+                console.log('✅ Finished processing chat history');
+            })
+                .finally(() => {
+                // Calculations done: drop the loader and show the rebuilt counts.
+                setHistoryLoading(false);
+                const observer = new MutationObserver(chatMutationCallback);
+                observer.observe(chatContainer, { childList: true });
+            });
         }
         else {
             console.log('⏳ Chat container not found, retrying...');

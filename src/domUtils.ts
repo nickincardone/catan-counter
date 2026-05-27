@@ -4,26 +4,53 @@ export const RESOURCE_STRING =
   'img[alt="grain"], img[alt="wool"], img[alt="lumber"], img[alt="brick"], img[alt="ore"], img[alt="Grain"], img[alt="Wool"], img[alt="Lumber"], img[alt="Brick"], img[alt="Ore"]';
 
 export function findChatContainer(): HTMLElement | null {
-  const divs = document.querySelectorAll<HTMLDivElement>('div');
+  // Colonist renders the chat log as a virtual scroller whose children are the
+  // individual message rows, each tagged with a `data-index`. Find any rendered
+  // row and return its parent (the scroller) so callers can iterate its children
+  // and observe it for newly added messages.
+  //
+  // We intentionally do NOT key off the "Learn how to play in the rulebook"
+  // (a[href="#open-rulebook"]) welcome message: it only lives at the top of the
+  // log and scrolls out of the virtualized DOM as the game progresses, so relying
+  // on it left the overlay unable to attach after a mid-game page refresh.
+  const firstMessageRow = document.querySelector('[data-index]');
+  return firstMessageRow ? firstMessageRow.parentElement : null;
+}
 
-  for (const outerDiv of Array.from(divs)) {
-    const firstChild = outerDiv.firstElementChild;
+/**
+ * Read each player's current resource-card count from colonist's player panel
+ * (`[data-player-information-container]` -> one `[data-player-color]` block per
+ * player, each containing a `[data-resource-card]` count). Returns a map of
+ * player name -> card count for the requested players only.
+ *
+ * These counts are the signal the chat alone can't provide: combined with the
+ * variant engine they let `pruneByHandCounts` resolve steals (e.g. after a
+ * monopoly). Block-to-name matching uses the known player names (longest match
+ * first) to avoid partial-name collisions.
+ */
+export function getPlayerCardCounts(playerNames: string[]): {
+  [playerName: string]: number;
+} {
+  const counts: { [playerName: string]: number } = {};
+  const container = document.querySelector('[data-player-information-container]');
+  if (!container) return counts;
 
-    if (firstChild?.tagName === 'DIV') {
-      for (const child of Array.from(firstChild.children)) {
-        if (child.tagName === 'SPAN') {
-          const anchor = child.querySelector<HTMLAnchorElement>(
-            'a[href="#open-rulebook"]'
-          );
-          if (anchor) {
-            return outerDiv.parentElement;
-          }
-        }
-      }
+  const blocks = container.querySelectorAll<HTMLElement>('[data-player-color]');
+  blocks.forEach(block => {
+    const text = block.textContent || '';
+    const name = playerNames
+      .filter(n => text.includes(n))
+      .sort((a, b) => b.length - a.length)[0];
+    if (!name) return;
+
+    const cardEl = block.querySelector('[data-resource-card]');
+    const count = parseInt(cardEl?.textContent?.trim() ?? '', 10);
+    if (!Number.isNaN(count)) {
+      counts[name] = count;
     }
-  }
+  });
 
-  return null;
+  return counts;
 }
 
 export function getPlayerName(element: HTMLElement): string | null {

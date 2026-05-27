@@ -24,6 +24,12 @@ module.exports = {
     '!src/**/*.d.ts',
     '!src/**/*.test.ts',
     '!src/**/*.spec.ts',
+    // content.ts is the bootstrap entry point: it self-executes on import
+    // (setInterval + MutationObserver wiring) and is exercised by the live
+    // test-change skill, not unit tests. Excluded to keep coverage meaningful.
+    '!src/content.ts',
+    // Test fixtures / helpers, not product code.
+    '!src/__tests__/**',
   ],
 
   // Coverage thresholds (lowered initially, increase as you add more tests)
