@@ -32,7 +32,7 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 ### 📊 **Real-time Monitoring**
 
 - **Live Updates**: Game state updates automatically as chat messages appear
-- **Page Refresh Support**: Processes existing chat history when page is refreshed
+- **Page Refresh Recovery**: colonist renders the chat as a virtual scroller that only keeps ~15 messages in the DOM, so on refresh the extension scrolls the chat from top to bottom to rebuild the **entire** game history in chronological order (deduping by each message's `data-index`). A spinner is shown in the overlay while this runs and is replaced by the resource tables once the counts are rebuilt.
 - **Intelligent Processing**: Pauses during setup, then reprocesses for accuracy
 - **Comprehensive Logging**: Detailed console output for debugging
 
@@ -57,14 +57,16 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - **Probabilistic Resource Display**: Shows minimum guaranteed resources and probability of having additional resources (e.g., "2 +67%" means at least 2 guaranteed, 67% chance of more)
 - **Branch Elimination**: When players make offers or spend resources, impossible variants are automatically pruned
 - **Automatic Deduction**: Single-resource-type steals are instantly resolved without creating variants
+- **Hand-Count Resolution**: Reads each player's current resource-card count from colonist's player-information panel (`[data-player-information-container]`) and prunes any variant whose per-player totals don't match. This resolves uncertain steals that the chat alone cannot — most notably **after a monopoly**, where different variants disagree on how many cards a player kept, the known hand sizes pin the distribution and collapse the remaining ambiguity.
 
 ## Installation
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
+- Node.js — version is pinned in [`.nvmrc`](.nvmrc) (currently Node 24). With
+  [nvm](https://github.com/nvm-sh/nvm) installed, run `nvm use` in the repo root.
 - npm
-- Google Chrome browser
+- Google Chrome (or another Chromium-based browser)
 
 ### Setup
 
