@@ -155,6 +155,27 @@ export function installViewportControl(): void {
     window.postMessage(message, window.location.origin);
   }
 
+  /**
+   * Report once colonist has had a chance to re-lay out.
+   *
+   * A frame is the natural moment to measure, but requestAnimationFrame does
+   * not fire at all in a background tab — and a game can easily be loaded, or
+   * left, in one. Relying on it alone meant the reply never arrived there, the
+   * content script timed out, and v2 silently fell back to covering the page
+   * for the rest of the session. So race the frame against a timer and report
+   * on whichever comes first.
+   */
+  function scheduleReport(nonce: number): void {
+    let done = false;
+    const once = () => {
+      if (done) return;
+      done = true;
+      report(nonce);
+    };
+    requestAnimationFrame(once);
+    window.setTimeout(once, 48);
+  }
+
   window.addEventListener('message', event => {
     if (event.source !== window || event.origin !== window.location.origin)
       return;
@@ -166,8 +187,7 @@ export function installViewportControl(): void {
       inset = { ...ZERO_INSET };
       removeOverride();
       window.dispatchEvent(new Event('resize'));
-      // Let colonist finish laying out at full size before reporting back.
-      requestAnimationFrame(() => report(nonce));
+      scheduleReport(nonce);
       return;
     }
 
@@ -179,6 +199,6 @@ export function installViewportControl(): void {
     inset = { ...ZERO_INSET, ...(command.inset ?? ZERO_INSET) };
     applyOverride();
     window.dispatchEvent(new Event('resize'));
-    requestAnimationFrame(() => report(nonce));
+    scheduleReport(nonce);
   });
 }

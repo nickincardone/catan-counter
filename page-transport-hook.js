@@ -121,6 +121,27 @@
             };
             window.postMessage(message, window.location.origin);
         }
+        /**
+         * Report once colonist has had a chance to re-lay out.
+         *
+         * A frame is the natural moment to measure, but requestAnimationFrame does
+         * not fire at all in a background tab — and a game can easily be loaded, or
+         * left, in one. Relying on it alone meant the reply never arrived there, the
+         * content script timed out, and v2 silently fell back to covering the page
+         * for the rest of the session. So race the frame against a timer and report
+         * on whichever comes first.
+         */
+        function scheduleReport(nonce) {
+            let done = false;
+            const once = () => {
+                if (done)
+                    return;
+                done = true;
+                report(nonce);
+            };
+            requestAnimationFrame(once);
+            window.setTimeout(once, 48);
+        }
         window.addEventListener('message', event => {
             var _a;
             if (event.source !== window || event.origin !== window.location.origin)
@@ -133,8 +154,7 @@
                 inset = Object.assign({}, ZERO_INSET);
                 removeOverride();
                 window.dispatchEvent(new Event('resize'));
-                // Let colonist finish laying out at full size before reporting back.
-                requestAnimationFrame(() => report(nonce));
+                scheduleReport(nonce);
                 return;
             }
             if (command.type === 'measure') {
@@ -144,7 +164,7 @@
             inset = Object.assign(Object.assign({}, ZERO_INSET), ((_a = command.inset) !== null && _a !== void 0 ? _a : ZERO_INSET));
             applyOverride();
             window.dispatchEvent(new Event('resize'));
-            requestAnimationFrame(() => report(nonce));
+            scheduleReport(nonce);
         });
     }
 

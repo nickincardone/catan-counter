@@ -25,17 +25,17 @@ logic, not eyeballed from the screenshot.
 These were decided up front and the plan assumes them. Changing one changes work
 downstream, so they're recorded here rather than buried in a phase.
 
-| # | Decision | Choice |
-|---|---|---|
-| 1 | How the colonist page shrinks | **Squeeze the layout** — give the page real margins so colonist re-lays out at a smaller viewport. Not `transform: scale`. |
-| 2 | v1/v2 switching | **Extension toolbar popup** (new surface — there is no `action` today). Persisted in `chrome.storage`, applied live without reload. |
-| 3 | Gutters at launch | **Left + bottom render content; all four (left/right/top/bottom) are first-class in the layout engine.** Empty gutters collapse to zero. |
-| 4 | Per-player VP / knights / buildings (tracked but never rendered) | **New `players` section, registered but unplaced by default.** It exists to prove the section system handles more than the mocked four. |
-| 5 | Rail header "T14 · 88% CERTAIN" | **Dropped for now.** Turn count isn't tracked and the certainty number needs a definition first. Header is logo + title + collapse chevron. |
-| 6 | Dev deck caption | **Who played it / how many played** — attribution from `player.discoveryCards`, `"N unseen"` for never-revealed types. |
-| 7 | Unknown-steal resolution | **Inline chips + UNDO.** Replaces v1's modal in v2. Undo needs a new tracker capability (§6.1). |
-| 8 | Fonts | **Bundle Nunito + IBM Plex Mono woff2** as web-accessible resources. No dependence on colonist's CSP. |
-| 9 | Collapse / resize | Chevron collapses the rail to a **~28px strip** (page reclaims the space); inner edge is a **drag handle** to resize, 250–380px, persisted. |
+| #   | Decision                                                         | Choice                                                                                                                                      |
+| --- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | How the colonist page shrinks                                    | **Squeeze the layout** — give the page real margins so colonist re-lays out at a smaller viewport. Not `transform: scale`.                  |
+| 2   | v1/v2 switching                                                  | **Extension toolbar popup** (new surface — there is no `action` today). Persisted in `chrome.storage`, applied live without reload.         |
+| 3   | Gutters at launch                                                | **Left + bottom render content; all four (left/right/top/bottom) are first-class in the layout engine.** Empty gutters collapse to zero.    |
+| 4   | Per-player VP / knights / buildings (tracked but never rendered) | **New `players` section, registered but unplaced by default.** It exists to prove the section system handles more than the mocked four.     |
+| 5   | Rail header "T14 · 88% CERTAIN"                                  | **Dropped for now.** Turn count isn't tracked and the certainty number needs a definition first. Header is logo + title + collapse chevron. |
+| 6   | Dev deck caption                                                 | **Who played it / how many played** — attribution from `player.discoveryCards`, `"N unseen"` for never-revealed types.                      |
+| 7   | Unknown-steal resolution                                         | **Inline chips + UNDO.** Replaces v1's modal in v2. Undo needs a new tracker capability (§6.1).                                             |
+| 8   | Fonts                                                            | **Bundle Nunito + IBM Plex Mono woff2** as web-accessible resources. No dependence on colonist's CSP.                                       |
+| 9   | Collapse / resize                                                | Chevron collapses the rail to a **~28px strip** (page reclaims the space); inner edge is a **drag handle** to resize, 250–380px, persisted. |
 
 ---
 
@@ -48,13 +48,13 @@ downstream, so they're recorded here rather than buried in a phase.
 and content produced as **HTML strings concatenated into `innerHTML`** on every
 update. It renders exactly five things:
 
-| v1 block | Function | Notes |
-|---|---|---|
-| Resource probability table | `generateResourceProbabilityTable()` | Per-player 5 resources, `min` + `+prob`; header shows bank left (mislabeled `cardsInPlay`) |
-| Unknown transactions | `generateUnknownTransactionsDisplay()` | List + click → **modal** (`showTransactionResolutionModal`) |
-| Dev cards remaining | `generateDevCardsDisplay()` | Global deck only, `left/total` per type |
-| Dice chart | `generateDiceChart()` | Bars, no expected-rate marker |
-| Blocked by robber | `generateBlockedDiceDisplay()` | Dice number + resource + count |
+| v1 block                   | Function                               | Notes                                                                                      |
+| -------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Resource probability table | `generateResourceProbabilityTable()`   | Per-player 5 resources, `min` + `+prob`; header shows bank left (mislabeled `cardsInPlay`) |
+| Unknown transactions       | `generateUnknownTransactionsDisplay()` | List + click → **modal** (`showTransactionResolutionModal`)                                |
+| Dev cards remaining        | `generateDevCardsDisplay()`            | Global deck only, `left/total` per type                                                    |
+| Dice chart                 | `generateDiceChart()`                  | Bars, no expected-rate marker                                                              |
+| Blocked by robber          | `generateBlockedDiceDisplay()`         | Dice number + resource + count                                                             |
 
 Plus two pieces of chrome that v2 must also provide: the **history-loading
 spinner** (`setHistoryLoading`) and the **"which player are you?" dialog**
@@ -75,25 +75,25 @@ src/gameActions.ts → showYouPlayerDialog
 Almost everything the mockup shows already exists in state. Marked **NEW** where
 it does not.
 
-| Mockup field | Source |
-|---|---|
-| bank left `19/19` | `game.gameResources[res]` (bank remaining, starts 19) / 19 |
-| player known counts | `probableGameState.getPlayerResourceProbabilities(name).minimumResources` |
-| player `+50%` fractions | `…​.additionalResourceProbabilities` |
-| row summary `5 known` | sum of `minimumResources` |
-| player color | `player.color` |
-| steal list | `probableGameState.getUnknownTransactions()` |
-| steal candidate chips + % | `probableGameState.getTransactionResourceProbabilities(id)` |
-| steal timestamp | `UnknownTransaction.timestamp` |
-| resolve a steal | `probableGameState.resolveUnknownTransaction(id, res)` |
-| **undo a resolution** | **NEW** — §6.1 |
-| dice counts | `game.diceRolls` |
-| dice expected-rate tick | **NEW (view-model math only)** — `total × odds(n)/36` |
-| blocked by robber | `game.blockedDiceRolls` |
-| dev deck left/total | `game.knights` / `monopolies` / `roadBuilders` / `yearOfPlenties` / `victoryPoints` |
+| Mockup field                           | Source                                                                                      |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- |
+| bank left `19/19`                      | `game.gameResources[res]` (bank remaining, starts 19) / 19                                  |
+| player known counts                    | `probableGameState.getPlayerResourceProbabilities(name).minimumResources`                   |
+| player `+50%` fractions                | `…​.additionalResourceProbabilities`                                                        |
+| row summary `5 known`                  | sum of `minimumResources`                                                                   |
+| player color                           | `player.color`                                                                              |
+| steal list                             | `probableGameState.getUnknownTransactions()`                                                |
+| steal candidate chips + %              | `probableGameState.getTransactionResourceProbabilities(id)`                                 |
+| steal timestamp                        | `UnknownTransaction.timestamp`                                                              |
+| resolve a steal                        | `probableGameState.resolveUnknownTransaction(id, res)`                                      |
+| **undo a resolution**                  | **NEW** — §6.1                                                                              |
+| dice counts                            | `game.diceRolls`                                                                            |
+| dice expected-rate tick                | **NEW (view-model math only)** — `total × odds(n)/36`                                       |
+| blocked by robber                      | `game.blockedDiceRolls`                                                                     |
+| dev deck left/total                    | `game.knights` / `monopolies` / `roadBuilders` / `yearOfPlenties` / `victoryPoints`         |
 | **dev caption "emipaco" / "2 played"** | **NEW (derivation only)** — `player.discoveryCards.*` already counts plays per player; §6.2 |
-| players section (VP/knights/buildings) | `player.victoryPoints`, `.knights`, `.settlements`, `.cities`, `.roads` |
-| header turn / certainty | dropped (decision 5) |
+| players section (VP/knights/buildings) | `player.victoryPoints`, `.knights`, `.settlements`, `.cities`, `.roads`                     |
+| header turn / certainty                | dropped (decision 5)                                                                        |
 
 **Nothing in the mockup requires new game-logic parsing.** The only genuinely new
 tracker behavior is undo (§6.1). Everything else is presentation or arithmetic
@@ -128,30 +128,30 @@ over data the tracker already produces.
 ```ts
 // src/ui/shell/theme.ts
 export const THEME = {
-  panel:        '#0f2c46',   // rail + bottom bar background
-  hairline:     'rgba(255,255,255,.09)',
-  surface:      'rgba(255,255,255,.05)',   // cards, rows, dev tiles
-  surfaceEmpty: 'rgba(255,255,255,.02)',   // a zero resource cell
-  accent:       '#f4c542',   // logo, UNKNOWN STEALS label, ×N counts
-  good:         '#7fd4c1',   // probability fractions, hot dice, confirmed
-  goodText:     '#a8e8da',
-  danger:       '#e35b5b',   // the 7 bar
-  bar:          '#4d7ea3',   // normal dice bar
-  text:         '#ffffff',
-  textBody:     '#dbe6ee',
-  textMuted:    '#9fb8cc',
-  label:        '#7fa8c9',   // section labels
-  labelDim:     '#5b7f9c',   // right-hand hints ("bank left")
-  monoDim:      '#6f93ae',
-  zero:         '#3f566b',   // a 0 that isn't real
+  panel: '#0f2c46', // rail + bottom bar background
+  hairline: 'rgba(255,255,255,.09)',
+  surface: 'rgba(255,255,255,.05)', // cards, rows, dev tiles
+  surfaceEmpty: 'rgba(255,255,255,.02)', // a zero resource cell
+  accent: '#f4c542', // logo, UNKNOWN STEALS label, ×N counts
+  good: '#7fd4c1', // probability fractions, hot dice, confirmed
+  goodText: '#a8e8da',
+  danger: '#e35b5b', // the 7 bar
+  bar: '#4d7ea3', // normal dice bar
+  text: '#ffffff',
+  textBody: '#dbe6ee',
+  textMuted: '#9fb8cc',
+  label: '#7fa8c9', // section labels
+  labelDim: '#5b7f9c', // right-hand hints ("bank left")
+  monoDim: '#6f93ae',
+  zero: '#3f566b', // a 0 that isn't real
 } as const;
 
 export const RESOURCE_STYLE = {
-  tree:  { color: '#3f8f2f', tint: 'rgba(63,143,47,.22)'  },
-  brick: { color: '#cf5b32', tint: 'rgba(207,91,50,.22)'  },
+  tree: { color: '#3f8f2f', tint: 'rgba(63,143,47,.22)' },
+  brick: { color: '#cf5b32', tint: 'rgba(207,91,50,.22)' },
   sheep: { color: '#8dc63f', tint: 'rgba(141,198,63,.22)' },
   wheat: { color: '#e8b23a', tint: 'rgba(232,178,58,.22)' },
-  ore:   { color: '#9aa8ae', tint: 'rgba(154,168,174,.22)'},
+  ore: { color: '#9aa8ae', tint: 'rgba(154,168,174,.22)' },
 } as const;
 ```
 
@@ -165,6 +165,7 @@ chips, dev cards `26×36`.
 Order in the rail is top-to-bottom as listed.
 
 **`hands`** (left rail)
+
 - Header row: `HANDS` / `bank left`.
 - Bank row: grid `76px repeat(5, 1fr)`, each resource its card image with bank
   remaining beneath in mono 8px.
@@ -178,6 +179,7 @@ Order in the rail is top-to-bottom as listed.
   holdings from unresolved steals."
 
 **`unknown-steals`** (left rail)
+
 - Header: `UNKNOWN STEALS · N` (accent) / `click to resolve`.
 - Per steal: `<thief> stole from <victim>` with both names in player colors, a
   timestamp on the right, then candidate chips sorted by descending probability:
@@ -186,10 +188,12 @@ Order in the rail is top-to-bottom as listed.
   chip reading `wheat · confirmed`, and an `UNDO` affordance.
 
 **`blocked-robber`** (left rail)
+
 - Header: `BLOCKED BY ROBBER` / `N DENIED`.
 - Rows: dice number in a circle, resource icon, `×N` in accent.
 
 **`dice`** (bottom, weight 1.6)
+
 - Header: `DICE · N ROLLS` / `white tick = expected rate`.
 - Bars scaled to the max count; a 1px white line at the expected rate
   (`total × odds/36`) so over/under-performance is visible at a glance.
@@ -197,11 +201,13 @@ Order in the rail is top-to-bottom as listed.
 - Number labels below.
 
 **`dev-deck`** (bottom, weight 1)
+
 - Header: `DEV DECK · N LEFT` / `left / total`.
 - 5 equal tiles: card image, `left/total`, name, a progress bar, and the
   attribution caption (§6.2).
 
 **`players`** (registered, unplaced — decision 4)
+
 - Per player: VP, knights played, settlements/cities/roads remaining.
 
 ---
@@ -231,8 +237,8 @@ export interface GameView {
   bank: Record<ResourceKey, { left: number; total: number }>;
   steals: StealView[];
   blocked: BlockedView[];
-  dice: DiceView;          // counts, expected rates, total
-  devDeck: DevDeckView;    // per type: left, total, caption
+  dice: DiceView; // counts, expected rates, total
+  devDeck: DevDeckView; // per type: left, total, caption
   youPlayerName: string | null;
   isLoadingHistory: boolean;
 }
@@ -248,8 +254,12 @@ bank ratios, dev captions) lives here, and is unit tested directly.
 ```ts
 // src/ui/sections/types.ts
 export type SectionId =
-  | 'hands' | 'unknown-steals' | 'blocked-robber'
-  | 'dice' | 'dev-deck' | 'players';
+  | 'hands'
+  | 'unknown-steals'
+  | 'blocked-robber'
+  | 'dice'
+  | 'dev-deck'
+  | 'players';
 
 export type GutterAxis = 'vertical' | 'horizontal';
 
@@ -270,7 +280,11 @@ export interface SectionDefinition {
   supports: GutterAxis[];
   /** Refuse to place it somewhere it can't be read. */
   min: { width: number; height: number };
-  mount(host: HTMLElement, view: GameView, ctx: SectionContext): SectionInstance;
+  mount(
+    host: HTMLElement,
+    view: GameView,
+    ctx: SectionContext
+  ): SectionInstance;
 }
 ```
 
@@ -295,28 +309,44 @@ export type SectionAction =
 
 ```ts
 // src/ui/shell/layoutStore.ts
-export interface Placement { id: SectionId; weight?: number }
+export interface Placement {
+  id: SectionId;
+  weight?: number;
+}
 export interface GutterConfig {
-  size: number;            // px along the gutter's thickness
+  size: number; // px along the gutter's thickness
   collapsed: boolean;
   sections: Placement[];
 }
 export interface V2Layout {
   version: 1;
-  left:   GutterConfig;
-  right:  GutterConfig;
-  top:    GutterConfig;
+  left: GutterConfig;
+  right: GutterConfig;
+  top: GutterConfig;
   bottom: GutterConfig;
 }
 
 export const DEFAULT_LAYOUT: V2Layout = {
   version: 1,
-  left:   { size: 290, collapsed: false, sections: [
-             { id: 'hands' }, { id: 'unknown-steals' }, { id: 'blocked-robber' } ] },
-  bottom: { size: 176, collapsed: false, sections: [
-             { id: 'dice', weight: 1.6 }, { id: 'dev-deck', weight: 1 } ] },
-  right:  { size: 0, collapsed: true, sections: [] },
-  top:    { size: 0, collapsed: true, sections: [] },
+  left: {
+    size: 290,
+    collapsed: false,
+    sections: [
+      { id: 'hands' },
+      { id: 'unknown-steals' },
+      { id: 'blocked-robber' },
+    ],
+  },
+  bottom: {
+    size: 176,
+    collapsed: false,
+    sections: [
+      { id: 'dice', weight: 1.6 },
+      { id: 'dev-deck', weight: 1 },
+    ],
+  },
+  right: { size: 0, collapsed: true, sections: [] },
+  top: { size: 0, collapsed: true, sections: [] },
 };
 ```
 
@@ -352,17 +382,20 @@ releasePageFrame(): void
 ```
 
 Implementation:
+
 - **Viewport lie** (MAIN world): redefine `window.innerWidth`/`innerHeight` to
   report the space left over after the gutters, then dispatch a `resize` event so
   colonist re-lays out. This is the mechanism proven in Phase 0.
 - **Shift** (ISOLATED world is fine — it's just a stylesheet): one injected rule
   setting the CSS `translate` property on `body`'s direct children by the left/top
   insets. Never touch `transform`, which colonist uses for centering.
-- **Calibrate, don't assume** (Phase 0, finding 3): after applying, measure the
-  union bounding box of colonist's layers and compare it to the intended free
-  strip. If the gap is off by more than a couple of pixels, adjust the lie and
-  retry — capped at ~3 iterations, caching the converged offset per viewport size
-  so steady-state costs nothing.
+- **Pin, don't iterate** (revised in Phase 8 against a live game): the inset
+  frees exactly what it asks for, but colonist _centers_ its layers, so half the
+  freed space lands above the game and half below — asking for a 176px bottom
+  gutter leaves 88px at each end. Measuring the content and shifting it up so it
+  sits at the top inset moves the wasted top gap down to where the gutter
+  actually is, and is exact in one pass. The shift is cleared before each
+  measurement rather than compensated for, so repeated calls land identically.
 - Debounce during a rail drag; fire once on release.
 - `releasePageFrame()` deletes the property overrides (restoring the native
   getters), removes the stylesheet, and dispatches a final `resize` so colonist
@@ -377,6 +410,7 @@ most invasive thing v2 does, and the reason `releasePageFrame()` has to be exact
 
 Two extension behaviors depend on colonist's DOM and must be re-verified after
 squeezing, because both are load-bearing:
+
 - the **chat virtual scroller** — the history sweep in `content.ts` reads
   `scrollTop`/`scrollHeight` live and re-sweeps, so a shorter viewport means more
   steps but should still converge;
@@ -394,7 +428,8 @@ router. The only edits elsewhere are three import paths.
 
 ```ts
 let mode: UiMode = 'v1';
-export function setUiMode(next: UiMode): void {  // teardown old, mount new
+export function setUiMode(next: UiMode): void {
+  // teardown old, mount new
   if (next === mode) return;
   mode === 'v1' ? v1.hideGameStateOverlay() : v2.unmount();
   mode = next;
@@ -474,7 +509,10 @@ breakpoint** at −290w/−176h. This is the mechanism `pageFrame.ts` will use, 
 the MAIN world (the transport hook already runs there).
 
 ```ts
-Object.defineProperty(window, 'innerWidth',  { configurable: true, get: () => real - inset });
+Object.defineProperty(window, 'innerWidth', {
+  configurable: true,
+  get: () => real - inset,
+});
 window.dispatchEvent(new Event('resize'));
 ```
 
@@ -486,20 +524,29 @@ owns `transform` (the `translateY(-50%)` above) and clobbering it breaks vertica
 centering. `translate` is unset and composes cleanly:
 
 ```css
-body > *:not(#catan-v2-root) { translate: 290px 0; }
+body > *:not(#catan-v2-root) {
+  translate: 290px 0;
+}
 ```
 
 Verified visually: a clean 290px left gutter, the whole UI intact and shifted,
 and colonist's own left ad rail lands just inside the game area rather than under
 the rail.
 
-**Finding 3 (correction to the plan) — the inset is NOT 1:1 with freed pixels.**
-Lying by −176px of height freed only ~89px at the bottom: colonist reserves its
-own chrome and doesn't pass the delta straight through. So `pageFrame` must
-**calibrate rather than assume** — apply an inset, measure the union bounding box
-of colonist's layers, and adjust until the free strip actually matches the gutter
-size (a couple of iterations, capped, with the last-known-good value cached per
-viewport size). Horizontal was 1:1; vertical was not.
+**Finding 3 — the vertical inset lands half above the game.** Lying by −176px
+of height appeared to free only ~89px at the bottom. Phase 8 measured this
+properly against a live game and found the cause: the inset frees exactly the
+space it asks for, but colonist **centers** its layers vertically, so the freed
+space is split evenly above and below (88/88 for a 176 request; 132/132 for 264;
+154/154 for 308 — always exactly half).
+
+The fix is not to ask for more, which converges only asymptotically, but to
+**pin the content to the top**: measure where the content sits and shift it up
+by that amount, moving the useless gap above the game down to where the gutter
+is. Exact in a single pass, verified live at two different gutter sizes and
+idempotent across repeated applications. Horizontal needs no such correction —
+colonist reserves its own ad rails, so the game is already narrower than the
+width it is given.
 
 **Finding 4 — the extension's DOM dependencies survive.**
 `[data-player-information-container]` stays present and visible (341×382), so
@@ -617,7 +664,7 @@ which for a game's worth of transactions is trivially fast and only happens on a
 explicit click.
 
 Tests: undo restores the exact pre-resolution distribution; resolve→undo→resolve
-differently ≡ resolving differently first; undo of an *auto*-resolved (certainty)
+differently ≡ resolving differently first; undo of an _auto_-resolved (certainty)
 transaction is refused, since that wasn't an operator decision.
 
 ### 6.2 Dev-card attribution
@@ -636,18 +683,18 @@ Victory points are never played, so VP is always `"N unseen"`.
 
 ## 7. Testing
 
-| Layer | How |
-|---|---|
-| `buildGameView` | Pure unit tests over fixture games; no DOM |
-| Sections | Mount into a detached host with a fixture view; assert DOM + emitted actions |
-| Layout engine | Place/move/collapse by config; assert hosts and sizes |
-| `pageFrame` | Assert insets applied, `resize` dispatched, and **exact** restore on release |
-| Undo | Equivalence tests (§6.1) |
-| v1 | Existing `overlay.test.ts` must keep passing untouched |
-| End-to-end | `.agents/skills/test-change` on a live bot game, in both modes |
+| Layer           | How                                                                          |
+| --------------- | ---------------------------------------------------------------------------- |
+| `buildGameView` | Pure unit tests over fixture games; no DOM                                   |
+| Sections        | Mount into a detached host with a fixture view; assert DOM + emitted actions |
+| Layout engine   | Place/move/collapse by config; assert hosts and sizes                        |
+| `pageFrame`     | Assert insets applied, `resize` dispatched, and **exact** restore on release |
+| Undo            | Equivalence tests (§6.1)                                                     |
+| v1              | Existing `overlay.test.ts` must keep passing untouched                       |
+| End-to-end      | `.agents/skills/test-change` on a live bot game, in both modes               |
 
-jsdom has no layout engine — it reports zero sizes. So assert *structure and
-declared styles* (which host an element is in, what CSS custom properties and
+jsdom has no layout engine — it reports zero sizes. So assert _structure and
+declared styles_ (which host an element is in, what CSS custom properties and
 inline sizes were set), never computed geometry. Anything geometric belongs to
 the Phase 0/8 live checks.
 
@@ -655,15 +702,15 @@ the Phase 0/8 live checks.
 
 ## 8. Risks
 
-| Risk | Mitigation |
-|---|---|
-| Colonist flips to a mobile-ish layout when squeezed | Phase 0 spike; `MIN_PAGE_WIDTH` floor with auto-collapse; documented `transform: scale` fallback |
-| Squeezing hides `[data-player-information-container]` | Explicitly verified in Phase 0 — it's what makes post-monopoly resolution exact |
-| Shorter chat viewport slows or breaks the history sweep | Sweep already reads live scroll position and re-sweeps up to 3×; re-verify in Phase 0 |
+| Risk                                                           | Mitigation                                                                                                                                 |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Colonist flips to a mobile-ish layout when squeezed            | Phase 0 spike; `MIN_PAGE_WIDTH` floor with auto-collapse; documented `transform: scale` fallback                                           |
+| Squeezing hides `[data-player-information-container]`          | Explicitly verified in Phase 0 — it's what makes post-monopoly resolution exact                                                            |
+| Shorter chat viewport slows or breaks the history sweep        | Sweep already reads live scroll position and re-sweeps up to 3×; re-verify in Phase 0                                                      |
 | Colonist ships a DOM change that breaks the page-root selector | Isolate the selector in `pageFrame.ts`; on failure, don't squeeze — render gutters as an overlay and warn, rather than corrupting the page |
-| Shadow DOM + `chrome.runtime.getURL` fonts blocked by CSP | Fonts are extension-origin web-accessible resources; verify in Phase 3 and fall back to the system stack |
-| Two UIs drift apart | Both consume the same `GameView`; new derived math lands in the view model, never in a renderer |
-| Scope creep into drag-and-drop | Explicitly out of scope; the Phase 4 config-move test is the substitute |
+| Shadow DOM + `chrome.runtime.getURL` fonts blocked by CSP      | Fonts are extension-origin web-accessible resources; verify in Phase 3 and fall back to the system stack                                   |
+| Two UIs drift apart                                            | Both consume the same `GameView`; new derived math lands in the view model, never in a renderer                                            |
+| Scope creep into drag-and-drop                                 | Explicitly out of scope; the Phase 4 config-move test is the substitute                                                                    |
 
 ---
 
@@ -681,4 +728,4 @@ v1 to the new architecture. v1 stays exactly as it is.
 Judgement calls made without you, recorded here for review. Each says what was
 chosen and what it costs, so any of them can be reversed cheaply.
 
-*(appended as the build proceeds)*
+_(appended as the build proceeds)_

@@ -3330,13 +3330,6 @@
 
     // shell/pageFrame.ts
     const STYLE_ID = 'catan-v2-page-frame';
-    /**
-     * Asking for N pixels of height does not free N pixels: colonist reserves its
-     * own chrome, so the first attempt comes up short. Correct by measurement.
-     */
-    const MAX_CALIBRATION_PASSES = 3;
-    /** Close enough — chasing the last pixel would oscillate. */
-    const CALIBRATION_TOLERANCE = 4;
     /** If the MAIN-world half never answers, stop waiting and carry on. */
     const REPORT_TIMEOUT_MS = 750;
     /** Below this the game is too cramped to be worth squeezing further. */
@@ -3352,8 +3345,6 @@
      */
     let bridgeResponsive = null;
     let reportTimeoutMs = REPORT_TIMEOUT_MS;
-    /** Extra height asked for beyond the gutter, learned from measurement. */
-    let heightCorrection = 0;
     Object.assign({}, ZERO_INSET);
     function post(type, inset) {
         const id = ++nonce;
@@ -3423,8 +3414,17 @@
     }
     /**
      * Squeeze the page so the given edges are free, then shift it clear of the
-     * left/top gutters. Iterates a couple of times because the vertical inset is
-     * not one-for-one with the space it frees.
+     * left and top gutters.
+     *
+     * The inset frees exactly the space it asks for — colonist sizes its layers to
+     * the viewport height it is told. But it also centers them, so half that space
+     * lands above the game and half below, and asking for a 176px bottom gutter
+     * leaves 88px at each end. Pinning the content to the top instead of trying to
+     * ask for more is what makes this exact: the gap that was above moves to the
+     * bottom, where the gutter is.
+     *
+     * The shift is cleared before measuring rather than compensated for, so each
+     * call re-derives the offset from scratch and repeated calls land identically.
      */
     function applyPageFrame(requested) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -3436,32 +3436,31 @@
                 applyShift(0, 0);
                 return { applied: false };
             }
-            for (let pass = 0; pass < MAX_CALIBRATION_PASSES; pass++) {
-                const asked = Object.assign(Object.assign({}, target), { bottom: Math.max(0, target.bottom + heightCorrection) });
-                const report = yield awaitReport(post('set-inset', asked));
-                // The MAIN-world half is missing (hook blocked, or an older build): the
-                // gutters still render, they just overlay the page instead of framing it.
-                if (!report) {
-                    bridgeResponsive = false;
-                    console.warn('🎛️ The page-viewport hook did not answer — v2 will overlay the page instead of shrinking it');
-                    return { applied: false };
-                }
-                bridgeResponsive = true;
-                applyShift(target.left, target.top);
-                if (!report.content)
-                    return { applied: true };
-                const freeBottom = report.real.height - report.content.bottom;
-                const drift = target.bottom - freeBottom;
-                if (Math.abs(drift) <= CALIBRATION_TOLERANCE) {
-                    return {
-                        applied: true,
-                        free: { left: report.content.left, bottom: freeBottom },
-                    };
-                }
-                // Learned for next time, so steady state costs one round trip.
-                heightCorrection = Math.max(0, heightCorrection + drift);
+            applyShift(0, 0);
+            const report = yield awaitReport(post('set-inset', target));
+            // The MAIN-world half is missing (hook blocked, or an older build): the
+            // gutters still render, they just overlay the page instead of framing it.
+            if (!report) {
+                bridgeResponsive = false;
+                console.warn('🎛️ The page-viewport hook did not answer — v2 will overlay the page instead of shrinking it');
+                return { applied: false };
             }
-            return { applied: true };
+            bridgeResponsive = true;
+            if (!report.content) {
+                // Colonist has not drawn the board yet; the horizontal shift is safe on its
+                // own, and the next call (or the next resize) will settle the vertical one.
+                applyShift(target.left, 0);
+                return { applied: true };
+            }
+            const shiftY = Math.round(target.top - report.content.top);
+            applyShift(target.left, shiftY);
+            return {
+                applied: true,
+                free: {
+                    left: report.content.left + target.left,
+                    bottom: report.real.height - (report.content.bottom + shiftY),
+                },
+            };
         });
     }
     /** Put the page back exactly as it was. */
