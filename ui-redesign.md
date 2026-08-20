@@ -796,6 +796,34 @@ So tests can use dynamic `import()` to reset the module registry between cases,
 which the router tests need because `overlay.ts` caches its node in a
 module-level variable. Rollup is unaffected.
 
+**10. The card ledger is recorded in gameActions, not derived.**
+RESOURCE_LOSS is emitted for a seven-discard, a dev-card purchase and all three
+building types alike, so the transaction history cannot say why cards left a
+hand. The ledger is therefore recorded where the chat message's meaning is still
+known, and kept on the game object rather than inside the variant tree — the
+first dice roll rebuilds that, which would take the whole game's history with
+it.
+
+**11. Both card-flow tables balance, and that is a tested invariant.**
+`GOT + DEV − ROBD − 7s − SPENT = HAND` per player, and the full ledger's
+`GAINED − LOST = HAND`. The design's full ledger did not balance — it had no
+build-spend column and folded traded-away cards into a total with no column of
+their own — so SPENT and TRDE were added to the LOST band.
+
+**12. A monopoly's per-victim split is the one approximate entry.**
+The chat states the haul but never who lost what. The caster's gain is exact;
+each victim is charged what the tracker believes they held.
+
+**13. Switched-off sections are an explicit list in the layout.**
+Not "everything not placed", because a section missing from a stored layout is
+ambiguous between hidden on purpose and added in a later version. With the list,
+a genuinely new section appears where it was designed to and a hidden one stays
+hidden. The list is optional so older stored layouts still parse.
+
+**14. Presets set placement only.**
+Picking one keeps your gutter sizes. The alternative — a preset as a complete
+saved look — would silently undo a rail you had sized to taste.
+
 ### Still open for you
 
 - **The end-to-end check needs you.** Everything else is verified — the sections
@@ -807,6 +835,8 @@ module-level variable. Rollup is unaffected.
 - **The rail header is bare.** Locked decision 5 dropped the
   `T14 · 88% CERTAIN` line. If you want it back, turn counting and a definition
   of "certain" are both small additions now that the view model exists.
+- **Save-your-own presets** were deliberately left out: the two built-ins set
+  placement, and naming, storing and deleting user presets is worth its own pass.
 - **`data-index` was missing from chat rows** in an early-game observation
   (recorded under Phase 0). Unrelated to this work, but it is what the whole
   capture pipeline keys on, so it deserves a look in a longer game.

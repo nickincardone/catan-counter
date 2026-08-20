@@ -11,12 +11,13 @@
         height: 100%;
         overflow: hidden;
       }
-      /* Stands in for the colonist page, so the gutters have something to
-         frame. The real thing is squeezed by pageViewport.ts, which needs a
-         page to squeeze — here the inset is faked with margins. */
+      /* Stands in for the colonist page, so the gutters have something to sit
+         against. It fills the window rather than guessing at insets: the real
+         page is squeezed by pageViewport.ts, which needs a real page to
+         squeeze, so here the gutters simply overlay it. */
       #fake-page {
         position: fixed;
-        inset: 0 0 210px 365px;
+        inset: 0;
         background: #2b80bd;
         background-image: repeating-linear-gradient(
           135deg,

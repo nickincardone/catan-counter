@@ -39,18 +39,46 @@ mid-game disconnects you and hands your seat to a bot).
   it restores the page exactly.
 
 The gutter interface is built from independent **sections** — Hands, Unknown
-steals, Blocked by robber, Dice, Dev deck, and an off-by-default Players section.
-Each renders only inside the box it is given and reads from a shared view model,
-so which gutter a section appears in is a single line of configuration
-(`DEFAULT_LAYOUT` in `src/ui/shell/layoutStore.ts`). Left and bottom are
-populated by default; all four edges are supported. Drag-and-drop rearrangement
-is not built yet — only the seams for it.
+steals, Card flow, Blocked by robber, Dice, Dev deck, plus an off-by-default
+Card flow full ledger and Players. Each renders only inside the box it is given
+and reads from a shared view model, so where a section appears is configuration
+rather than code.
+
+The **gear in the rail header** opens the settings menu, which is where that
+configuration is edited: put any section in the left, top, bottom or right
+gutter, reorder it within that gutter, switch it off, resize the gutters, or
+pick a preset. Changes apply live and persist. A zone a section cannot be read
+in is offered disabled, with the reason — the full ledger is fourteen columns
+wide and only fits a bar. With every section in the bottom bar there is no rail
+to hold the header, so the gear floats over the page instead. Drag-and-drop
+rearrangement is still not built; the settings menu is how sections move.
 
 In the gutter interface, unknown steals are resolved **inline**: click the
 resource you know was taken, and `UNDO` to take it back. Undo is exact — the
 tracker replays the whole game and re-applies the resolutions that remain, so
 resolving, undoing, and resolving differently lands in the same state as
 resolving differently the first time.
+
+### 🧾 **Card flow**
+
+A per-player ledger of every resource card picked up and lost, by source:
+production, trades, steals, dev-card effects, sevens, monopolies, and what was
+spent building or buying. It counts **cards rather than resource types**, which
+makes it exact where the hands table can only be probabilistic — a steal moves
+one card whether or not anyone knows which.
+
+Every gain lands in exactly one column and every loss in exactly one, so a row
+reads across as arithmetic that checks out:
+
+```
+GOT + DEV - ROBD - 7s - SPENT = HAND
+```
+
+The full ledger breaks the same totals down by source under a GAINED and a LOST
+band, and reconciles the same way. The one approximate entry anywhere in it is a
+monopoly's split across victims: the chat states the haul but never who lost
+what, so the caster's gain is exact and each victim is charged what the tracker
+believes they were holding.
 
 ### 🎯 **Smart Player Identification**
 
