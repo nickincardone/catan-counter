@@ -32,13 +32,15 @@ module.exports = {
     '!src/__tests__/**',
   ],
 
-  // Coverage thresholds (lowered initially, increase as you add more tests)
+  // A ratchet, not an aspiration: set just below where the suite actually sits,
+  // so coverage cannot silently regress. Raise these as tests are added rather
+  // than leaving a target nothing enforces.
   coverageThreshold: {
     global: {
-      branches: 0,
-      functions: 0,
-      lines: 0,
-      statements: 0,
+      branches: 60,
+      functions: 70,
+      lines: 70,
+      statements: 70,
     },
   },
 

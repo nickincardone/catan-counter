@@ -725,7 +725,80 @@ v1 to the new architecture. v1 stays exactly as it is.
 
 ## 10. Decisions taken while building
 
-Judgement calls made without you, recorded here for review. Each says what was
-chosen and what it costs, so any of them can be reversed cheaply.
+Judgement calls made without you, recorded for review. Each says what was chosen
+and what it costs, so any can be reversed cheaply. Nothing here is load-bearing
+enough that changing it would mean starting over.
 
-_(appended as the build proceeds)_
+**1. The viewport override rides the existing main-world hook.**
+Colonist's layout reads `window.innerWidth/innerHeight`, which the isolated
+world cannot change, so the override has to run in the page's own world. Rather
+than injecting a second script, `pageViewport.ts` is imported by the transport
+hook and takes commands over the bridge that already existed. One injection, one
+protocol. The cost: the transport hook now has a second responsibility, and the
+override is global — anything on the page reading `innerWidth` sees the smaller
+number, ad scripts included. That is inherent to the approach, and the reason
+`releasePageFrame()` restores the native getters exactly.
+
+**2. The tracker's undo works by replay, and transaction ids lost their clock.**
+Resolving a steal prunes branches, and pruned branches cannot be resurrected, so
+undo rebuilds the tree from the transaction history. That required transaction
+ids to stop embedding `Date.now()`, since a rebuild would otherwise mint new ids
+for the same steals. Ids are now `stealer_victim_counter`, still unique within a
+processor. Nothing persists these ids — they are not in the game logs — so the
+change is safe, but it is a change to a shared type's contract.
+
+**3. Hand-count pruning is deliberately not replayed.**
+It comes from reading colonist's player panel rather than from the chat, so
+immediately after an undo the tree holds only what the chat proves. The next
+message re-applies it. The alternative — recording panel readings and replaying
+them — would make undo depend on remembered observations of a live DOM, which
+seemed worse than a brief, self-correcting loss of precision.
+
+**4. Steals resolved by the tracker itself are retired from the list.**
+Only steals still open, or resolved by a person, are listed. Otherwise every
+steal ever taken would accumulate in the rail forever. It does mean there is no
+UI trace of an auto-resolution after the fact.
+
+**5. The gutters show a status instead of the tables in two situations.**
+During a history replay, and before the first dice roll. Both are moments when
+the numbers are about to be thrown away — the first roll deliberately rebuilds
+the variant tree — so showing them would be showing fiction. This mirrors what
+the overlay already does. Consequence: for the first minute of a game, v2 is a
+status line rather than a UI.
+
+**6. The seat-picker dialog is still v1's.**
+"Which player are you?" is a modal rather than a gutter, and the existing one
+works in either mode, so v2 delegates to it. It does not match the v2 palette.
+Worth a pass if it bothers you.
+
+**7. A development preview ships in the repo.**
+`dev-preview.html` plus a fourth rollup bundle render the real shell and sections
+against a seeded game, so the UI can be worked on without a live match. It is how
+most of this was checked. Nothing in `manifest.json` references it, but the built
+`dev-preview.js` does sit in the extension folder. Say the word and it can move
+behind a separate build script.
+
+**8. Coverage thresholds were raised from 0 to just under where the suite sits.**
+They were `0` across the board while the README claimed 80%. They are now a
+ratchet (70/60/70/70) so coverage cannot regress silently, and the README no
+longer claims a target nothing enforces.
+
+**9. `tsconfig` moved from `module: es6` to `es2020`.**
+So tests can use dynamic `import()` to reset the module registry between cases,
+which the router tests need because `overlay.ts` caches its node in a
+module-level variable. Rollup is unaffected.
+
+### Still open for you
+
+- **The end-to-end check needs you.** Everything else is verified — the sections
+  in the preview harness, the page-framing math against a live bot game, 172 unit
+  tests — but the final "load the built extension and switch to v2 in a real
+  game" step needs an extension reload at `chrome://extensions`, which the
+  browser tooling refuses to open. Reload the unpacked extension, open a game,
+  and pick **Gutters** in the popup.
+- **The rail header is bare.** Locked decision 5 dropped the
+  `T14 · 88% CERTAIN` line. If you want it back, turn counting and a definition
+  of "certain" are both small additions now that the view model exists.
+- **`data-index` was missing from chat rows** in an early-game observation
+  (recorded under Phase 0). Unrelated to this work, but it is what the whole
+  capture pipeline keys on, so it deserves a look in a longer game.

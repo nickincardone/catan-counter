@@ -23,6 +23,35 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - **Responsive Tables**: Color-coded resource tracking with remaining bank resources
 - **Interactive Charts**: Visual dice roll frequency with statistical bars
 
+### 🪟 **Two interfaces: Overlay and Gutters**
+
+The extension ships two user interfaces. Pick one from the toolbar popup; the
+change applies immediately to any open colonist.io tab, with no reload (reloading
+mid-game disconnects you and hands your seat to a bot).
+
+- **Overlay (v1, the default)** — the original floating panel described above.
+- **Gutters (v2)** — shrinks colonist into the top-right and fills the freed
+  edges with the counter. The board stays crisp at native resolution and every
+  click still lands where it looks, because the page is genuinely re-laid out
+  rather than scaled: a main-world hook reports a smaller viewport to colonist,
+  which recomputes its own layout, and the page is then pinned to the top-right
+  so the freed space ends up where the gutters are. Switching back to the overlay
+  restores the page exactly.
+
+The gutter interface is built from independent **sections** — Hands, Unknown
+steals, Blocked by robber, Dice, Dev deck, and an off-by-default Players section.
+Each renders only inside the box it is given and reads from a shared view model,
+so which gutter a section appears in is a single line of configuration
+(`DEFAULT_LAYOUT` in `src/ui/shell/layoutStore.ts`). Left and bottom are
+populated by default; all four edges are supported. Drag-and-drop rearrangement
+is not built yet — only the seams for it.
+
+In the gutter interface, unknown steals are resolved **inline**: click the
+resource you know was taken, and `UNDO` to take it back. Undo is exact — the
+tracker replays the whole game and re-applies the resolutions that remain, so
+resolving, undoing, and resolving differently lands in the same state as
+resolving differently the first time.
+
 ### 🎯 **Smart Player Identification**
 
 - **"You" Player Setup**: One-time dialog to identify your player for accurate tracking
@@ -259,6 +288,13 @@ Exported JSON shape:
 - **`npm run format:check`** - Check if files are properly formatted
 - **`npm run dev`** - Development mode: auto-format and bundle on file changes
 
+To work on the gutter interface without a live game, serve the repo and open
+`dev-preview.html` (for example `python3 -m http.server 8777`, then
+<http://127.0.0.1:8777/dev-preview.html>). It renders the real shell and real
+sections against a seeded game. Note that it rolls the dice before dealing any
+resources, because the first roll deliberately rebuilds the variant tree — that
+is when tracking properly begins, and anything dealt before it is discarded.
+
 #### Testing Scripts
 
 - **`npm test`** - Run all tests with Jest
@@ -316,7 +352,9 @@ Tests are organized with comprehensive coverage of game state management, chat p
 - Tests use TypeScript with Jest globals (`@jest/globals`)
 - DOM environment is mocked for browser extension testing
 - Game state functions are thoroughly tested including the variant tree system
-- Coverage targets: 80% for branches, functions, lines, and statements
+- Coverage thresholds are enforced by `jest.config.js` as a ratchet set just
+  below where the suite currently sits, so coverage cannot regress silently.
+  Raise them as tests are added
 - Helper functions like `expectMatchingVariantCombinations` for order-independent variant testing
 
 #### Variant System Testing
@@ -374,9 +412,11 @@ The overlay features an organized, visual layout with:
 ### Architecture
 
 - **Modular TypeScript**: Organized into separate modules for maintainability
-- **Rollup Bundling**: Produces an isolated extension bundle and a small main-page transport hook
+- **Rollup Bundling**: Produces an isolated extension bundle, a small main-page hook, the toolbar popup, and a development preview
 - **Content Script**: Runs in Chrome's isolated extension world for DOM parsing, storage, and UI
-- **Transport Hook POC**: Runs in the page's main world at `document_start`, wraps native WebSocket construction/sends, and bridges validated observations to the content script
+- **Main-world Hook**: Runs in the page's own world at `document_start`. Wraps native WebSocket construction/sends and bridges validated observations to the content script, and — for the gutter interface — reports a smaller viewport so colonist re-lays itself out
+- **Two interfaces behind one router**: `src/ui/index.ts` owns which interface is active; the rest of the codebase never learns there is more than one. `src/overlay.ts` is v1 unchanged
+- **Shadow DOM**: v2 renders inside a shadow root, so colonist's stylesheet cannot reach it and it uses ordinary class names rather than inlining every rule
 - **Chat Monitoring**: Uses MutationObserver to detect new messages
 - **Pattern Matching**: Analyzes chat messages and HTML structure
 - **Variant Tree Management**: Maintains probabilistic game states with automatic branch pruning
