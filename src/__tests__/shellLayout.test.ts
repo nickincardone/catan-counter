@@ -24,6 +24,7 @@ import type {
 import type { SectionRegistry } from '../ui/sections/registry';
 import type { GameView } from '../ui/view/types';
 import { buildGameView } from '../ui/view/gameView';
+import { rollDice } from '../gameActions';
 import { game, resetGameState } from '../gameState';
 
 interface Recorder {
@@ -85,6 +86,9 @@ describe('shell layout', () => {
     root()?.remove();
     resetGameState();
     game.youPlayerName = null;
+    // The shell shows a status instead of sections until tracking begins, so
+    // get past the first roll for the placement tests.
+    rollDice(6);
     _resetPageFrameForTesting(5);
     actions = [];
   });
@@ -253,6 +257,55 @@ describe('shell layout', () => {
     expect(root()).toBeNull();
     expect(hands.log.destroys).toBe(1);
     expect(document.getElementById('catan-v2-page-frame')).toBeNull();
+  });
+
+  it('waits rather than showing counts that are about to change', () => {
+    resetGameState(); // back to before the first roll
+    game.youPlayerName = null;
+    const hands = fakeSection('hands');
+    mountShell(layoutWith(['hands']), { hands: hands.definition });
+
+    expect(sectionHost(shell, 'hands')).toBeNull();
+    expect(hands.log.mounts).toBe(0);
+    expect(shadow(shell).querySelector('.rail-status')!.textContent).toContain(
+      'Waiting for the first dice roll'
+    );
+  });
+
+  it('mounts the sections once the first roll lands', () => {
+    resetGameState();
+    game.youPlayerName = null;
+    const hands = fakeSection('hands');
+    mountShell(layoutWith(['hands']), { hands: hands.definition });
+    expect(hands.log.mounts).toBe(0);
+
+    rollDice(8);
+    shell.update();
+
+    expect(sectionHost(shell, 'hands')).toBeTruthy();
+    expect(shadow(shell).querySelector('.rail-status')).toBeNull();
+  });
+
+  it('shows a spinner while history is being rebuilt, then puts it away', () => {
+    const hands = fakeSection('hands');
+    mountShell(layoutWith(['hands']), { hands: hands.definition });
+
+    shell.setHistoryLoading(true);
+    expect(shadow(shell).querySelector('.rail-spinner')).toBeTruthy();
+    expect(sectionHost(shell, 'hands')).toBeNull();
+
+    shell.setHistoryLoading(false);
+    expect(shadow(shell).querySelector('.rail-spinner')).toBeNull();
+    expect(sectionHost(shell, 'hands')).toBeTruthy();
+  });
+
+  it('keeps the header reachable while showing a status', () => {
+    shell = new Shell({ registry: {}, onAction: () => undefined });
+    shell.setLayout(layoutWith(['hands']));
+    shell.mount();
+    shell.setHistoryLoading(true);
+
+    expect(shadow(shell).querySelector('.rail-collapse')).toBeTruthy();
   });
 
   it('hands sections a view built from live game state', () => {

@@ -5750,6 +5750,11 @@
     font-size: 11px;
     line-height: 1.5;
   }
+  .rail-status-detail {
+    margin-top: 6px;
+    font-size: 10px;
+    color: var(--cc-label-dim);
+  }
   .rail-spinner {
     width: 22px; height: 22px;
     margin: 0 auto 10px;
@@ -5958,6 +5963,49 @@
             return path;
         }
     }
+    /**
+     * Whether the gutters should show a status instead of the sections. Both cases
+     * are moments when the tables would be actively misleading: during a history
+     * replay the counts are still being rebuilt, and before the first roll the
+     * tracker deliberately discards and rebuilds its variant tree.
+     */
+    function statusFor(view) {
+        if (view.isLoadingHistory) {
+            return {
+                text: 'Rebuilding game history',
+                detail: 'Reading the chat back from the start of the game.',
+                spinner: true,
+            };
+        }
+        if (!view.hasStarted) {
+            return {
+                text: 'Waiting for the first dice roll',
+                detail: 'Tracking begins with the first roll of the game.',
+                spinner: false,
+            };
+        }
+        return null;
+    }
+    function buildStatus(status, withDetail) {
+        const host = document.createElement('div');
+        host.className = 'rail-status';
+        if (status.spinner) {
+            const spinner = document.createElement('div');
+            spinner.className = 'rail-spinner';
+            host.appendChild(spinner);
+        }
+        const text = document.createElement('div');
+        text.textContent = status.text;
+        host.appendChild(text);
+        // Only the gutter carrying the header has room for the longer explanation.
+        if (withDetail) {
+            const detail = document.createElement('div');
+            detail.className = 'rail-status-detail';
+            detail.textContent = status.detail;
+            host.appendChild(detail);
+        }
+        return host;
+    }
     class Shell {
         constructor(options) {
             this.options = options;
@@ -5967,6 +6015,8 @@
             this.gutters = new Map();
             this.mounted = new Map();
             this.historyLoading = false;
+            /** Status text currently rendered, so update() can notice a transition. */
+            this.status = '';
             this.disposers = [];
             this.framePending = false;
         }
@@ -6019,9 +6069,17 @@
             this.render();
         }
         update() {
+            var _a, _b;
             if (!this.root)
                 return;
             const view = this.currentView();
+            // Crossing into or out of a status state swaps what the gutters hold, so it
+            // needs a full render rather than an update of sections that aren't mounted.
+            const status = (_b = (_a = statusFor(view)) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : '';
+            if (status !== this.status) {
+                this.render();
+                return;
+            }
             // A section that throws must not take the rest of the UI down with it.
             for (const [id, section] of this.mounted) {
                 try {
@@ -6037,6 +6095,7 @@
         }
         /** Rebuild the whole frame. Used on mount and whenever the layout changes. */
         render() {
+            var _a, _b;
             if (!this.shadow)
                 return;
             this.destroySections();
@@ -6044,6 +6103,7 @@
             this.gutters.clear();
             const view = this.currentView();
             const headerGutter = this.headerGutter();
+            this.status = (_b = (_a = statusFor(view)) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : '';
             for (const name of GUTTER_NAMES) {
                 const config = this.layout[name];
                 if (config.sections.length === 0)
@@ -6065,7 +6125,15 @@
                     const body = document.createElement('div');
                     body.className = 'gutter-body';
                     gutter.appendChild(body);
-                    this.fillGutter(body, name, view);
+                    const status = statusFor(view);
+                    // While the counts are being rebuilt, or before tracking has begun,
+                    // showing the tables would show numbers that are about to change.
+                    if (status) {
+                        body.appendChild(buildStatus(status, name === headerGutter));
+                    }
+                    else {
+                        this.fillGutter(body, name, view);
+                    }
                     gutter.appendChild(this.buildResizeHandle(name));
                 }
                 this.shadow.appendChild(gutter);

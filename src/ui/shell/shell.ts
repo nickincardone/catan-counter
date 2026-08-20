@@ -61,6 +61,57 @@ interface MountedSection {
   host: HTMLElement;
 }
 
+interface ShellStatus {
+  text: string;
+  detail: string;
+  spinner: boolean;
+}
+
+/**
+ * Whether the gutters should show a status instead of the sections. Both cases
+ * are moments when the tables would be actively misleading: during a history
+ * replay the counts are still being rebuilt, and before the first roll the
+ * tracker deliberately discards and rebuilds its variant tree.
+ */
+function statusFor(view: GameView): ShellStatus | null {
+  if (view.isLoadingHistory) {
+    return {
+      text: 'Rebuilding game history',
+      detail: 'Reading the chat back from the start of the game.',
+      spinner: true,
+    };
+  }
+  if (!view.hasStarted) {
+    return {
+      text: 'Waiting for the first dice roll',
+      detail: 'Tracking begins with the first roll of the game.',
+      spinner: false,
+    };
+  }
+  return null;
+}
+
+function buildStatus(status: ShellStatus, withDetail: boolean): HTMLElement {
+  const host = document.createElement('div');
+  host.className = 'rail-status';
+  if (status.spinner) {
+    const spinner = document.createElement('div');
+    spinner.className = 'rail-spinner';
+    host.appendChild(spinner);
+  }
+  const text = document.createElement('div');
+  text.textContent = status.text;
+  host.appendChild(text);
+  // Only the gutter carrying the header has room for the longer explanation.
+  if (withDetail) {
+    const detail = document.createElement('div');
+    detail.className = 'rail-status-detail';
+    detail.textContent = status.detail;
+    host.appendChild(detail);
+  }
+  return host;
+}
+
 export interface ShellOptions {
   onAction(action: SectionAction): void;
   registry?: SectionRegistry;
@@ -73,6 +124,8 @@ export class Shell {
   private gutters = new Map<GutterName, HTMLElement>();
   private mounted = new Map<string, MountedSection>();
   private historyLoading = false;
+  /** Status text currently rendered, so update() can notice a transition. */
+  private status = '';
   private disposers: Array<() => void> = [];
   private framePending = false;
 
@@ -133,6 +186,15 @@ export class Shell {
   update(): void {
     if (!this.root) return;
     const view = this.currentView();
+
+    // Crossing into or out of a status state swaps what the gutters hold, so it
+    // needs a full render rather than an update of sections that aren't mounted.
+    const status = statusFor(view)?.text ?? '';
+    if (status !== this.status) {
+      this.render();
+      return;
+    }
+
     // A section that throws must not take the rest of the UI down with it.
     for (const [id, section] of this.mounted) {
       try {
@@ -156,6 +218,7 @@ export class Shell {
 
     const view = this.currentView();
     const headerGutter = this.headerGutter();
+    this.status = statusFor(view)?.text ?? '';
 
     for (const name of GUTTER_NAMES) {
       const config = this.layout[name];
@@ -180,7 +243,14 @@ export class Shell {
         const body = document.createElement('div');
         body.className = 'gutter-body';
         gutter.appendChild(body);
-        this.fillGutter(body, name, view);
+        const status = statusFor(view);
+        // While the counts are being rebuilt, or before tracking has begun,
+        // showing the tables would show numbers that are about to change.
+        if (status) {
+          body.appendChild(buildStatus(status, name === headerGutter));
+        } else {
+          this.fillGutter(body, name, view);
+        }
         gutter.appendChild(this.buildResizeHandle(name));
       }
 

@@ -227,6 +227,11 @@ const FRAME = `
     font-size: 11px;
     line-height: 1.5;
   }
+  .rail-status-detail {
+    margin-top: 6px;
+    font-size: 10px;
+    color: var(--cc-label-dim);
+  }
   .rail-spinner {
     width: 22px; height: 22px;
     margin: 0 auto 10px;
