@@ -4044,7 +4044,7 @@
         snapshot.chatLog = normalizeChatLog(messages, [...knownPlayers.values()]);
         return snapshot;
     }
-    function storageAvailable$1() {
+    function storageAvailable$2() {
         var _a;
         return typeof chrome !== 'undefined' && !!((_a = chrome === null || chrome === void 0 ? void 0 : chrome.storage) === null || _a === void 0 ? void 0 : _a.local);
     }
@@ -4079,7 +4079,7 @@
             seenIndices.clear();
             seenTransportCaptureIds.clear();
             currentTransportCaptureDataLength = 0;
-            if (storageAvailable$1()) {
+            if (storageAvailable$2()) {
                 try {
                     const key = STORAGE_KEY_PREFIX + gameId;
                     const stored = yield chrome.storage.local.get(key);
@@ -4200,7 +4200,7 @@
         log.spatialCapture = withNormalizedChat(spatialGameTracker.snapshot(), log.messages, log.players);
     }
     function schedulePersist() {
-        if (!storageAvailable$1())
+        if (!storageAvailable$2())
             return;
         if (persistTimer !== null)
             clearTimeout(persistTimer);
@@ -4211,7 +4211,7 @@
     }
     function persistCurrentLog() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!currentLog || !storageAvailable$1())
+            if (!currentLog || !storageAvailable$2())
                 return;
             snapshotMetadata(currentLog);
             try {
@@ -4263,7 +4263,7 @@
      */
     function exportAllGameLogs() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!storageAvailable$1()) {
+            if (!storageAvailable$2()) {
                 console.warn('📼 chrome.storage is not available');
                 return [];
             }
@@ -5103,42 +5103,1190 @@
         showYouPlayerDialog: showYouPlayerDialog$1,
     };
 
-    // v2.ts
-    // The gutter interface. Placeholder shell for now — the layout engine and
-    // sections land in later phases; this proves mode switching mounts and unmounts
-    // cleanly against a live game.
-    const ROOT_ID = 'catan-v2-root';
-    let root = null;
-    function mount() {
-        if (root)
-            return;
-        root = document.createElement('div');
-        root.id = ROOT_ID;
-        root.style.cssText = [
-            'position: fixed',
-            'left: 0',
-            'top: 0',
-            'bottom: 0',
-            'width: 290px',
-            'background: #0f2c46',
-            'color: #dbe6ee',
-            'font: 12px/1.4 system-ui, sans-serif',
-            'padding: 12px',
-            'z-index: 2147483646',
-        ].join('; ');
-        root.textContent = 'Catan Counter v2 — gutter UI under construction';
-        document.documentElement.appendChild(root);
+    // view/types.ts
+    // The shape every section renders from. This is deliberately plain data: no
+    // DOM, no chrome APIs, no references back into the tracker. A section that only
+    // ever sees a GameView can be mounted in any gutter, rendered in a test, and
+    // later moved without touching its code.
+    /** Display order used everywhere in v2 (matches the mockup). */
+    const RESOURCE_ORDER = [
+        'tree',
+        'brick',
+        'sheep',
+        'wheat',
+        'ore',
+    ];
+
+    // view/gameView.ts
+    /** Cards of each resource in a standard game. */
+    const BANK_TOTAL = 19;
+    /** Ways to roll each total with two dice, out of 36. */
+    const DICE_ODDS = {
+        2: 1,
+        3: 2,
+        4: 3,
+        5: 4,
+        6: 5,
+        7: 6,
+        8: 5,
+        9: 4,
+        10: 3,
+        11: 2,
+        12: 1,
+    };
+    /** A roll this far above its expected rate is called out as running hot. */
+    const HOT_MULTIPLIER = 1.3;
+    const DEV_CARDS = [
+        { key: 'knights', name: 'Knight', icon: 'knight.svg', total: 14 },
+        { key: 'monopolies', name: 'Monopoly', icon: 'mono.svg', total: 2 },
+        { key: 'roadBuilders', name: 'Roads', icon: 'rb.svg', total: 2 },
+        { key: 'yearOfPlenties', name: 'Plenty', icon: 'yop.svg', total: 2 },
+        { key: 'victoryPoints', name: 'Vic. Pt', icon: 'vp.svg', total: 5 },
+    ];
+    const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+    const pct = (p) => `${Math.round(p * 100)}%`;
+    /**
+     * Players in reading order with you last, matching v1's ordering — your own
+     * hand is the one you already know, so it belongs at the bottom of the rail.
+     */
+    function orderPlayers(players, youPlayerName) {
+        if (!youPlayerName)
+            return players;
+        const index = players.findIndex(player => player.name === youPlayerName);
+        if (index === -1)
+            return players;
+        return [
+            ...players.slice(index + 1),
+            ...players.slice(0, index),
+            players[index],
+        ];
     }
-    function unmount() {
-        root === null || root === void 0 ? void 0 : root.remove();
-        root = null;
+    /** '6:35:45 PM' — wall-clock, because it is matched against the game's chat. */
+    function formatStealTime(timestamp) {
+        const date = new Date(timestamp);
+        const hours24 = date.getHours();
+        const hours = hours24 % 12 === 0 ? 12 : hours24 % 12;
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        return `${hours}:${minutes}:${seconds} ${hours24 < 12 ? 'AM' : 'PM'}`;
+    }
+    function buildPlayer(player, game, youPlayerName) {
+        const probabilities = game.probableGameState.getPlayerResourceProbabilities(player.name);
+        const cells = RESOURCE_ORDER.map(resource => {
+            var _a, _b;
+            const known = (_a = probabilities.minimumResources[resource]) !== null && _a !== void 0 ? _a : 0;
+            const probability = (_b = probabilities.additionalResourceProbabilities[resource]) !== null && _b !== void 0 ? _b : 0;
+            return {
+                resource,
+                known,
+                probability,
+                probabilityLabel: probability > 0 ? `+${pct(probability)}` : '',
+                hasAny: known > 0 || probability > 0,
+            };
+        });
+        return {
+            name: player.name,
+            color: player.color,
+            knownCards: cells.reduce((total, cell) => total + cell.known, 0),
+            cells,
+            victoryPoints: player.victoryPoints,
+            knights: player.knights,
+            settlements: player.settlements,
+            cities: player.cities,
+            roads: player.roads,
+            isYou: player.name === youPlayerName,
+        };
+    }
+    function buildBank(gameResources) {
+        return RESOURCE_ORDER.map(resource => ({
+            resource,
+            left: gameResources[resource],
+            total: BANK_TOTAL,
+        }));
+    }
+    function buildSteals(game) {
+        const colorOf = (name) => { var _a, _b; return (_b = (_a = game.players.find(player => player.name === name)) === null || _a === void 0 ? void 0 : _a.color) !== null && _b !== void 0 ? _b : '#ffffff'; };
+        // Steals the tracker resolved by itself have retired — showing them would
+        // grow the list forever. A person's own resolution stays visible so it can be
+        // undone.
+        const listed = game.probableGameState
+            .getAllUnknownTransactions()
+            .filter(transaction => !transaction.isResolved ||
+            game.probableGameState.isManuallyResolved(transaction.id));
+        return listed.map(transaction => {
+            var _a;
+            const resolvedResource = (_a = transaction.resolvedResource) !== null && _a !== void 0 ? _a : null;
+            let candidates;
+            if (transaction.isResolved && resolvedResource) {
+                candidates = [
+                    {
+                        resource: resolvedResource,
+                        probability: 1,
+                        label: `${resolvedResource} · confirmed`,
+                    },
+                ];
+            }
+            else {
+                const probabilities = game.probableGameState.getTransactionResourceProbabilities(transaction.id);
+                candidates = RESOURCE_ORDER.map(resource => {
+                    var _a;
+                    return ({
+                        resource,
+                        probability: (_a = probabilities === null || probabilities === void 0 ? void 0 : probabilities[resource]) !== null && _a !== void 0 ? _a : 0,
+                        label: '',
+                    });
+                })
+                    .filter(candidate => candidate.probability > 0)
+                    .sort((a, b) => b.probability - a.probability)
+                    .map(candidate => (Object.assign(Object.assign({}, candidate), { label: `${candidate.resource} ${pct(candidate.probability)}` })));
+            }
+            return {
+                id: transaction.id,
+                thief: transaction.thief,
+                thiefColor: colorOf(transaction.thief),
+                victim: transaction.victim,
+                victimColor: colorOf(transaction.victim),
+                time: formatStealTime(transaction.timestamp),
+                resolved: transaction.isResolved,
+                resolvedResource,
+                canUndo: game.probableGameState.isManuallyResolved(transaction.id),
+                candidates,
+            };
+        });
+    }
+    function buildBlocked(game) {
+        const blocked = [];
+        for (const [diceNumber, byResource] of Object.entries(game.blockedDiceRolls)) {
+            for (const [resource, count] of Object.entries(byResource)) {
+                if (count > 0) {
+                    blocked.push({
+                        diceNumber: Number(diceNumber),
+                        resource: resource,
+                        count,
+                    });
+                }
+            }
+        }
+        blocked.sort((a, b) => a.diceNumber - b.diceNumber ||
+            RESOURCE_ORDER.indexOf(a.resource) - RESOURCE_ORDER.indexOf(b.resource));
+        return {
+            blocked,
+            blockedTotal: blocked.reduce((total, entry) => total + entry.count, 0),
+        };
+    }
+    function buildDice(game) {
+        const counts = Object.entries(game.diceRolls).map(([n, count]) => ({
+            n: Number(n),
+            count,
+        }));
+        const totalRolls = counts.reduce((total, entry) => total + entry.count, 0);
+        // Guard the divisor: before the first roll every count is 0.
+        const tallest = Math.max(1, ...counts.map(entry => entry.count));
+        const bars = counts
+            .sort((a, b) => a.n - b.n)
+            .map(({ n, count }) => {
+            const expected = (totalRolls * DICE_ODDS[n]) / 36;
+            // A short floor so an unrolled number is still a visible baseline.
+            const heightPct = count === 0 ? 0 : Math.max(4, (count / tallest) * 100);
+            const expectedPct = clamp((expected / tallest) * 100, 0, 100);
+            const tone = n === 7
+                ? 'seven'
+                : count > expected * HOT_MULTIPLIER
+                    ? 'hot'
+                    : 'normal';
+            return {
+                n,
+                count,
+                heightPct,
+                // Positioned from the top of its own bar, so it reads as "this bar is
+                // above/below the rate you'd expect by now".
+                expectedTopPct: heightPct > 0
+                    ? clamp((1 - expectedPct / heightPct) * 100, 0, 100)
+                    : 100,
+                expected,
+                tone,
+            };
+        });
+        return { totalRolls, bars };
+    }
+    /**
+     * Attribution for a dev card type. The tracker already counts plays per player
+     * (gameActions increments discoveryCards on use), so this is a fold, not new
+     * parsing. Victory points are never played, so they always read as unseen.
+     */
+    function buildDevCaption(players, key, left) {
+        const playedBy = players
+            .map(player => ({ name: player.name, count: player.discoveryCards[key] }))
+            .filter(entry => entry.count > 0);
+        if (playedBy.length === 0)
+            return `${left} unseen`;
+        if (playedBy.length === 1) {
+            const [only] = playedBy;
+            return only.count > 1 ? `${only.name} ×${only.count}` : only.name;
+        }
+        const total = playedBy.reduce((sum, entry) => sum + entry.count, 0);
+        return `${total} played`;
+    }
+    function buildDevDeck(game) {
+        const cards = DEV_CARDS.map(card => {
+            // These counters decrement on play, not on draw, so `left` is "not yet
+            // played" — which is why an untouched deck reads 5/5 for victory points.
+            const left = game[card.key];
+            return {
+                key: card.key,
+                name: card.name,
+                icon: card.icon,
+                left,
+                total: card.total,
+                leftPct: clamp((left / card.total) * 100, 0, 100),
+                caption: buildDevCaption(game.players, card.key, left),
+                untouched: left >= card.total,
+            };
+        });
+        return {
+            remaining: cards.reduce((total, card) => total + card.left, 0),
+            cards,
+        };
+    }
+    function buildGameView(game, options = {}) {
+        var _a;
+        const { blocked, blockedTotal } = buildBlocked(game);
+        const steals = buildSteals(game);
+        return {
+            players: orderPlayers(game.players, game.youPlayerName).map(player => buildPlayer(player, game, game.youPlayerName)),
+            bank: buildBank(game.gameResources),
+            steals,
+            openStealCount: steals.filter(steal => !steal.resolved).length,
+            blocked,
+            blockedTotal,
+            dice: buildDice(game),
+            devDeck: buildDevDeck(game),
+            youPlayerName: game.youPlayerName,
+            hasStarted: game.hasRolledFirstDice,
+            isLoadingHistory: (_a = options.isLoadingHistory) !== null && _a !== void 0 ? _a : false,
+        };
+    }
+
+    // sections/registry.ts
+    // Maps a section id to its implementation. The shell resolves placements
+    // through this, so adding a section is a one-line registration and the layout
+    // is the only thing that decides where it goes.
+    const REGISTRY = {};
+    function getSection(id, registry = REGISTRY) {
+        return registry[id];
+    }
+    function registeredSections(registry = REGISTRY) {
+        return Object.values(registry).filter(Boolean);
+    }
+    /** Every registered section's CSS, for the shadow root's stylesheet. */
+    function registeredStyles(registry = REGISTRY) {
+        return registeredSections(registry)
+            .map(section => { var _a; return (_a = section.styles) !== null && _a !== void 0 ? _a : ''; })
+            .filter(Boolean);
+    }
+
+    // shell/layoutStore.ts
+    const GUTTER_NAMES = ['left', 'right', 'top', 'bottom'];
+    /** Width the rail collapses to — enough for the reopen chevron. */
+    const COLLAPSED_SIZE = 28;
+    const MIN_RAIL_WIDTH = 250;
+    const MAX_RAIL_WIDTH = 380;
+    const LAYOUT_STORAGE_KEY = 'catanUiLayout';
+    const DEFAULT_LAYOUT = {
+        version: 1,
+        left: {
+            size: 290,
+            collapsed: false,
+            sections: [
+                { id: 'hands' },
+                { id: 'unknown-steals' },
+                { id: 'blocked-robber' },
+            ],
+        },
+        bottom: {
+            size: 176,
+            collapsed: false,
+            sections: [
+                { id: 'dice', weight: 1.6 },
+                { id: 'dev-deck', weight: 1 },
+            ],
+        },
+        right: { size: 0, collapsed: true, sections: [] },
+        top: { size: 0, collapsed: true, sections: [] },
+    };
+    function cloneLayout(layout) {
+        return {
+            version: layout.version,
+            left: Object.assign(Object.assign({}, layout.left), { sections: layout.left.sections.map(s => (Object.assign({}, s))) }),
+            right: Object.assign(Object.assign({}, layout.right), { sections: layout.right.sections.map(s => (Object.assign({}, s))) }),
+            top: Object.assign(Object.assign({}, layout.top), { sections: layout.top.sections.map(s => (Object.assign({}, s))) }),
+            bottom: Object.assign(Object.assign({}, layout.bottom), { sections: layout.bottom.sections.map(s => (Object.assign({}, s))) }),
+        };
+    }
+    function isGutterConfig(value) {
+        const gutter = value;
+        return (!!gutter &&
+            typeof gutter.size === 'number' &&
+            Number.isFinite(gutter.size) &&
+            typeof gutter.collapsed === 'boolean' &&
+            Array.isArray(gutter.sections) &&
+            gutter.sections.every(placement => !!placement &&
+                typeof placement.id === 'string' &&
+                (placement.weight === undefined ||
+                    (typeof placement.weight === 'number' && placement.weight > 0))));
+    }
+    /**
+     * A stored layout is only honored if it is entirely well-formed. A partially
+     * valid layout is worse than none: it would leave sections silently unplaced.
+     */
+    function parseLayout(value) {
+        const layout = value;
+        if (!layout || layout.version !== DEFAULT_LAYOUT.version)
+            return null;
+        if (!GUTTER_NAMES.every(name => isGutterConfig(layout[name])))
+            return null;
+        return cloneLayout(layout);
+    }
+    function storageAvailable$1() {
+        var _a;
+        return typeof chrome !== 'undefined' && !!((_a = chrome === null || chrome === void 0 ? void 0 : chrome.storage) === null || _a === void 0 ? void 0 : _a.local);
+    }
+    function readLayout() {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            if (!storageAvailable$1())
+                return cloneLayout(DEFAULT_LAYOUT);
+            try {
+                const stored = yield chrome.storage.local.get(LAYOUT_STORAGE_KEY);
+                return ((_a = parseLayout(stored[LAYOUT_STORAGE_KEY])) !== null && _a !== void 0 ? _a : cloneLayout(DEFAULT_LAYOUT));
+            }
+            catch (error) {
+                console.warn('🎛️ Could not read the stored v2 layout:', error);
+                return cloneLayout(DEFAULT_LAYOUT);
+            }
+        });
+    }
+    function writeLayout(layout) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!storageAvailable$1())
+                return;
+            try {
+                yield chrome.storage.local.set({ [LAYOUT_STORAGE_KEY]: layout });
+            }
+            catch (error) {
+                console.warn('🎛️ Could not store the v2 layout:', error);
+            }
+        });
+    }
+    /** Effective thickness of a gutter, accounting for collapse and emptiness. */
+    function gutterThickness(gutter) {
+        if (gutter.sections.length === 0)
+            return 0;
+        return gutter.collapsed ? COLLAPSED_SIZE : gutter.size;
+    }
+
+    // shell/theme.ts
+    // Design tokens for v2, read out of the mockup rather than eyeballed. Sections
+    // reference these names, never raw hex, so the palette can move in one place.
+    const THEME = {
+        /** Rail and bottom-bar background. */
+        panel: '#0f2c46',
+        hairline: 'rgba(255,255,255,.09)',
+        /** Cards, player rows, dev tiles. */
+        surface: 'rgba(255,255,255,.05)',
+        /** A resource cell nobody can hold. */
+        surfaceEmpty: 'rgba(255,255,255,.02)',
+        accent: '#f4c542',
+        /** Probability fractions, dice running hot, a confirmed resolution. */
+        good: '#7fd4c1',
+        goodText: '#a8e8da',
+        goodTint: 'rgba(127,212,193,.09)',
+        goodBorder: 'rgba(127,212,193,.45)',
+        accentTint: 'rgba(244,197,66,.09)',
+        accentBorder: 'rgba(244,197,66,.32)',
+        danger: '#e35b5b',
+        bar: '#4d7ea3',
+        text: '#ffffff',
+        textBody: '#dbe6ee',
+        textMuted: '#9fb8cc',
+        /** Section labels. */
+        label: '#7fa8c9',
+        /** Right-hand hints, e.g. "bank left". */
+        labelDim: '#5b7f9c',
+        monoDim: '#6f93ae',
+        /** A zero that isn't really a holding. */
+        zero: '#3f566b',
+    };
+    const RESOURCE_STYLE = {
+        tree: { color: '#3f8f2f', tint: 'rgba(63,143,47,.22)', icon: 'tree.svg' },
+        brick: { color: '#cf5b32', tint: 'rgba(207,91,50,.22)', icon: 'brick.svg' },
+        sheep: { color: '#8dc63f', tint: 'rgba(141,198,63,.22)', icon: 'sheep.svg' },
+        wheat: { color: '#e8b23a', tint: 'rgba(232,178,58,.22)', icon: 'wheat.svg' },
+        ore: { color: '#9aa8ae', tint: 'rgba(154,168,174,.22)', icon: 'ore.svg' },
+    };
+    /**
+     * Nunito for names and headings, IBM Plex Mono for every number. Both are
+     * bundled as web-accessible resources rather than fetched from Google, so they
+     * do not depend on colonist's content security policy. The fallbacks matter:
+     * if the files are ever missing the UI degrades to the system stack instead of
+     * to a serif face.
+     */
+    const FONT_SANS = "'Nunito', system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif";
+    const FONT_MONO = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+
+    // shell/styles.ts
+    /** @font-face rules pointing at the bundled files. */
+    function fontFaces(assetUrl) {
+        return `
+    @font-face {
+      font-family: 'Nunito';
+      font-style: normal;
+      /* Variable font: one file covers the whole weight axis. */
+      font-weight: 400 900;
+      font-display: swap;
+      src: url('${assetUrl('assets/fonts/nunito-latin-var.woff2')}') format('woff2');
+    }
+    @font-face {
+      font-family: 'IBM Plex Mono';
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url('${assetUrl('assets/fonts/ibm-plex-mono-latin-400.woff2')}') format('woff2');
+    }
+    @font-face {
+      font-family: 'IBM Plex Mono';
+      font-style: normal;
+      font-weight: 600;
+      font-display: swap;
+      src: url('${assetUrl('assets/fonts/ibm-plex-mono-latin-600.woff2')}') format('woff2');
+    }
+  `;
+    }
+    function tokens() {
+        const resourceVars = Object.entries(RESOURCE_STYLE)
+            .map(([key, style]) => `--cc-${key}: ${style.color}; --cc-${key}-tint: ${style.tint};`)
+            .join('\n      ');
+        return `
+    :host {
+      --cc-panel: ${THEME.panel};
+      --cc-hairline: ${THEME.hairline};
+      --cc-surface: ${THEME.surface};
+      --cc-surface-empty: ${THEME.surfaceEmpty};
+      --cc-accent: ${THEME.accent};
+      --cc-accent-tint: ${THEME.accentTint};
+      --cc-accent-border: ${THEME.accentBorder};
+      --cc-good: ${THEME.good};
+      --cc-good-text: ${THEME.goodText};
+      --cc-good-tint: ${THEME.goodTint};
+      --cc-good-border: ${THEME.goodBorder};
+      --cc-danger: ${THEME.danger};
+      --cc-bar: ${THEME.bar};
+      --cc-text: ${THEME.text};
+      --cc-text-body: ${THEME.textBody};
+      --cc-text-muted: ${THEME.textMuted};
+      --cc-label: ${THEME.label};
+      --cc-label-dim: ${THEME.labelDim};
+      --cc-mono-dim: ${THEME.monoDim};
+      --cc-zero: ${THEME.zero};
+      --cc-font: ${FONT_SANS};
+      --cc-mono: ${FONT_MONO};
+      ${resourceVars}
+    }
+  `;
+    }
+    const FRAME = `
+  :host {
+    all: initial;
+    position: fixed;
+    inset: 0;
+    /* The frame itself must never eat clicks meant for the game. */
+    pointer-events: none;
+    z-index: 2147483646;
+    font-family: var(--cc-font);
+    color: var(--cc-text-body);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  .gutter {
+    position: fixed;
+    background: var(--cc-panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    pointer-events: auto;
+  }
+  .gutter--left   { left: 0; top: 0; bottom: 0; border-right: 1px solid var(--cc-hairline); }
+  .gutter--right  { right: 0; top: 0; bottom: 0; border-left: 1px solid var(--cc-hairline); }
+  .gutter--top    { top: 0; border-bottom: 1px solid var(--cc-hairline); }
+  .gutter--bottom { bottom: 0; border-top: 1px solid var(--cc-hairline); }
+
+  /* Body scrolls in a column gutter; a strip gutter lays sections side by side. */
+  .gutter-body {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+  }
+  .gutter--vertical .gutter-body {
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 18px;
+  }
+  .gutter--horizontal .gutter-body {
+    flex-direction: row;
+    overflow: hidden;
+  }
+  .gutter--horizontal .section + .section {
+    border-left: 1px solid var(--cc-hairline);
+  }
+  .gutter--horizontal .section {
+    min-width: 0;
+    overflow: hidden;
+    padding: 12px 18px 14px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .gutter--collapsed .gutter-body,
+  .gutter--collapsed .rail-brand { display: none; }
+
+  /* ---- rail header ---- */
+  .rail-header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--cc-hairline);
+  }
+  .gutter--collapsed .rail-header {
+    padding: 12px 0;
+    justify-content: center;
+    border-bottom: none;
+  }
+  .rail-brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .rail-logo {
+    width: 24px; height: 24px; flex: none;
+    border-radius: 6px;
+    background: var(--cc-accent);
+    color: var(--cc-panel);
+    font-weight: 900;
+    font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .rail-title {
+    font-weight: 800; font-size: 14px; color: var(--cc-text); line-height: 1.1;
+  }
+  .rail-subtitle {
+    font-family: var(--cc-mono);
+    font-size: 9px;
+    letter-spacing: .06em;
+    color: var(--cc-label);
+    white-space: nowrap;
+  }
+  .rail-collapse {
+    font-family: var(--cc-mono);
+    font-size: 14px;
+    line-height: 1;
+    color: var(--cc-label);
+    background: none;
+    border: 0;
+    padding: 4px;
+    cursor: pointer;
+  }
+  .rail-collapse:hover { color: var(--cc-text); }
+
+  /* ---- resize handle ---- */
+  .gutter-resize { position: absolute; z-index: 2; }
+  .gutter-resize:hover { background: var(--cc-accent-border); }
+  .gutter--left .gutter-resize   { top: 0; bottom: 0; right: -2px; width: 5px; cursor: ew-resize; }
+  .gutter--right .gutter-resize  { top: 0; bottom: 0; left: -2px; width: 5px; cursor: ew-resize; }
+  .gutter--bottom .gutter-resize { left: 0; right: 0; top: -2px; height: 5px; cursor: ns-resize; }
+  .gutter--top .gutter-resize    { left: 0; right: 0; bottom: -2px; height: 5px; cursor: ns-resize; }
+
+  /* ---- shared section primitives ---- */
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .gutter--vertical .section-head { padding: 14px 14px 8px; }
+  .gutter--horizontal .section-head { margin-bottom: 10px; }
+  .section-label {
+    font-family: var(--cc-mono);
+    font-size: 9px;
+    letter-spacing: .14em;
+    color: var(--cc-label);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .section-label--accent { color: var(--cc-accent); }
+  .section-hint {
+    font-family: var(--cc-mono);
+    font-size: 9px;
+    color: var(--cc-label-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .section-note {
+    padding: 16px 14px 0;
+    font-size: 10px;
+    color: var(--cc-label-dim);
+    line-height: 1.45;
+  }
+  .section-empty {
+    padding: 4px 14px 0;
+    font-size: 11px;
+    color: var(--cc-mono-dim);
+  }
+  .section-rows { padding: 0 10px; display: flex; flex-direction: column; gap: 6px; }
+
+  /* ---- loading + placeholder states ---- */
+  .rail-status {
+    padding: 22px 14px;
+    text-align: center;
+    color: var(--cc-label);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .rail-spinner {
+    width: 22px; height: 22px;
+    margin: 0 auto 10px;
+    border: 2px solid var(--cc-hairline);
+    border-top-color: var(--cc-accent);
+    border-radius: 50%;
+    animation: cc-spin 0.9s linear infinite;
+  }
+  @keyframes cc-spin { to { transform: rotate(360deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rail-spinner { animation-duration: 4s; }
+  }
+`;
+    function buildStyleSheet(assetUrl, sectionStyles) {
+        return [fontFaces(assetUrl), tokens(), FRAME, ...sectionStyles].join('\n');
+    }
+
+    /**
+     * MAIN-world viewport control for the v2 gutter UI.
+     *
+     * Colonist has no single page root to pad: it absolutely-positions its canvas
+     * layers and `#ui-game` on <body> and writes inline pixel sizes onto them,
+     * recomputed from `window.innerWidth`/`innerHeight` whenever a resize fires.
+     * The only way to make it lay out inside a smaller area — crisply, at native
+     * resolution, without touching its own transforms — is to make it read smaller
+     * numbers and tell it to re-measure.
+     *
+     * That has to happen in the page's own JavaScript world, so this module runs
+     * alongside the transport hook and takes its commands from the isolated content
+     * script over the same window.postMessage bridge.
+     */
+    const PAGE_VIEWPORT_SOURCE = 'catan-counter-page-viewport-v1';
+    const ZERO_INSET = {
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+    };
+
+    // shell/pageFrame.ts
+    const STYLE_ID = 'catan-v2-page-frame';
+    /**
+     * Asking for N pixels of height does not free N pixels: colonist reserves its
+     * own chrome, so the first attempt comes up short. Correct by measurement.
+     */
+    const MAX_CALIBRATION_PASSES = 3;
+    /** Close enough — chasing the last pixel would oscillate. */
+    const CALIBRATION_TOLERANCE = 4;
+    /** If the MAIN-world half never answers, stop waiting and carry on. */
+    const REPORT_TIMEOUT_MS = 750;
+    /** Below this the game is too cramped to be worth squeezing further. */
+    const MIN_PAGE_WIDTH = 900;
+    const MIN_PAGE_HEIGHT = 500;
+    let nonce = 0;
+    let installed = false;
+    /**
+     * Whether the MAIN-world half is answering. It is injected at document_start,
+     * well before any UI mounts, so if the first request goes unanswered it is not
+     * coming — and every later call should skip the wait instead of stalling the
+     * shell for a timeout each time.
+     */
+    let bridgeResponsive = null;
+    let reportTimeoutMs = REPORT_TIMEOUT_MS;
+    /** Extra height asked for beyond the gutter, learned from measurement. */
+    let heightCorrection = 0;
+    Object.assign({}, ZERO_INSET);
+    function post(type, inset) {
+        const id = ++nonce;
+        window.postMessage({ source: PAGE_VIEWPORT_SOURCE, type, inset, nonce: id }, window.location.origin);
+        return id;
+    }
+    /** Wait for the report matching this command, or give up. */
+    function awaitReport(id) {
+        return new Promise(resolve => {
+            const timer = window.setTimeout(() => {
+                window.removeEventListener('message', listener);
+                resolve(null);
+            }, reportTimeoutMs);
+            function listener(event) {
+                if (event.source !== window || event.origin !== window.location.origin)
+                    return;
+                const data = event.data;
+                if (!data ||
+                    data.source !== PAGE_VIEWPORT_SOURCE ||
+                    data.type !== 'report' ||
+                    data.nonce !== id)
+                    return;
+                window.clearTimeout(timer);
+                window.removeEventListener('message', listener);
+                resolve(data);
+            }
+            window.addEventListener('message', listener);
+        });
+    }
+    /**
+     * Shift colonist's own elements out from under the gutters.
+     *
+     * Uses the independent CSS `translate` property, never `transform`: colonist
+     * pairs `top: 50%` with `transform: translateY(-50%)` on its canvas, so writing
+     * transform here would drop the board half a screen. `translate` composes with
+     * it and colonist never sets it.
+     */
+    function applyShift(left, top) {
+        let style = document.getElementById(STYLE_ID);
+        if (!style) {
+            style = document.createElement('style');
+            style.id = STYLE_ID;
+            document.head.appendChild(style);
+        }
+        style.textContent =
+            left === 0 && top === 0
+                ? ''
+                : `body > *:not(#catan-v2-root):not(#${STYLE_ID}) { translate: ${left}px ${top}px; }`;
+    }
+    function removeShift() {
+        var _a;
+        (_a = document.getElementById(STYLE_ID)) === null || _a === void 0 ? void 0 : _a.remove();
+    }
+    /** Clamp so the game never gets squeezed into uselessness. */
+    function clampInset(inset) {
+        const maxHorizontal = Math.max(0, window.innerWidth - MIN_PAGE_WIDTH);
+        const maxVertical = Math.max(0, window.innerHeight - MIN_PAGE_HEIGHT);
+        const horizontal = inset.left + inset.right;
+        const vertical = inset.top + inset.bottom;
+        const scale = (value, total, max) => total <= max || total === 0 ? value : Math.floor((value * max) / total);
+        return {
+            left: scale(inset.left, horizontal, maxHorizontal),
+            right: scale(inset.right, horizontal, maxHorizontal),
+            top: scale(inset.top, vertical, maxVertical),
+            bottom: scale(inset.bottom, vertical, maxVertical),
+        };
+    }
+    /**
+     * Squeeze the page so the given edges are free, then shift it clear of the
+     * left/top gutters. Iterates a couple of times because the vertical inset is
+     * not one-for-one with the space it frees.
+     */
+    function applyPageFrame(requested) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const target = clampInset(requested);
+            installed = true;
+            // Without the MAIN-world half the page cannot be squeezed at all; the gutters
+            // still render, they just sit over the page instead of beside it.
+            if (bridgeResponsive === false) {
+                applyShift(0, 0);
+                return { applied: false };
+            }
+            for (let pass = 0; pass < MAX_CALIBRATION_PASSES; pass++) {
+                const asked = Object.assign(Object.assign({}, target), { bottom: Math.max(0, target.bottom + heightCorrection) });
+                const report = yield awaitReport(post('set-inset', asked));
+                // The MAIN-world half is missing (hook blocked, or an older build): the
+                // gutters still render, they just overlay the page instead of framing it.
+                if (!report) {
+                    bridgeResponsive = false;
+                    console.warn('🎛️ The page-viewport hook did not answer — v2 will overlay the page instead of shrinking it');
+                    return { applied: false };
+                }
+                bridgeResponsive = true;
+                applyShift(target.left, target.top);
+                if (!report.content)
+                    return { applied: true };
+                const freeBottom = report.real.height - report.content.bottom;
+                const drift = target.bottom - freeBottom;
+                if (Math.abs(drift) <= CALIBRATION_TOLERANCE) {
+                    return {
+                        applied: true,
+                        free: { left: report.content.left, bottom: freeBottom },
+                    };
+                }
+                // Learned for next time, so steady state costs one round trip.
+                heightCorrection = Math.max(0, heightCorrection + drift);
+            }
+            return { applied: true };
+        });
+    }
+    /** Put the page back exactly as it was. */
+    function releasePageFrame() {
+        return __awaiter(this, void 0, void 0, function* () {
+            removeShift();
+            if (!installed)
+                return;
+            installed = false;
+            Object.assign({}, ZERO_INSET);
+            if (bridgeResponsive === false)
+                return;
+            yield awaitReport(post('release'));
+        });
+    }
+
+    // shell/shell.ts
+    const ROOT_ID = 'catan-v2-root';
+    const AXIS = {
+        left: 'vertical',
+        right: 'vertical',
+        top: 'horizontal',
+        bottom: 'horizontal',
+    };
+    /** Extension assets need an absolute URL; tests run without the API. */
+    function assetUrl(path) {
+        var _a, _b, _c;
+        try {
+            return (_c = (_b = (_a = chrome === null || chrome === void 0 ? void 0 : chrome.runtime) === null || _a === void 0 ? void 0 : _a.getURL) === null || _b === void 0 ? void 0 : _b.call(_a, path)) !== null && _c !== void 0 ? _c : path;
+        }
+        catch (_d) {
+            return path;
+        }
+    }
+    class Shell {
+        constructor(options) {
+            this.options = options;
+            this.root = null;
+            this.shadow = null;
+            this.layout = cloneLayout(DEFAULT_LAYOUT);
+            this.gutters = new Map();
+            this.mounted = new Map();
+            this.historyLoading = false;
+            this.disposers = [];
+            this.framePending = false;
+        }
+        isMounted() {
+            return this.root !== null;
+        }
+        mount() {
+            if (this.root)
+                return;
+            this.root = document.createElement('div');
+            this.root.id = ROOT_ID;
+            // documentElement, not body: colonist's own children get shifted, and this
+            // must not be one of them.
+            document.documentElement.appendChild(this.root);
+            this.shadow = this.root.attachShadow({ mode: 'open' });
+            const style = document.createElement('style');
+            style.textContent = buildStyleSheet(assetUrl, registeredStyles());
+            this.shadow.appendChild(style);
+            this.render();
+            // Colonist re-lays out on window resize; so must the frame.
+            const onResize = () => void this.syncPageFrame();
+            window.addEventListener('resize', onResize);
+            this.disposers.push(() => window.removeEventListener('resize', onResize));
+            // Storage answers after the first paint; re-render if it differs.
+            void readLayout().then(stored => {
+                if (!this.root)
+                    return;
+                if (JSON.stringify(stored) === JSON.stringify(this.layout))
+                    return;
+                this.layout = stored;
+                this.render();
+            });
+        }
+        unmount() {
+            if (!this.root)
+                return;
+            this.destroySections();
+            this.disposers.forEach(dispose => dispose());
+            this.disposers = [];
+            this.gutters.clear();
+            this.root.remove();
+            this.root = null;
+            this.shadow = null;
+            void releasePageFrame();
+        }
+        setHistoryLoading(loading) {
+            if (this.historyLoading === loading)
+                return;
+            this.historyLoading = loading;
+            this.render();
+        }
+        update() {
+            if (!this.root)
+                return;
+            const view = this.currentView();
+            // A section that throws must not take the rest of the UI down with it.
+            for (const [id, section] of this.mounted) {
+                try {
+                    section.instance.update(view);
+                }
+                catch (error) {
+                    console.warn(`🎛️ Section "${id}" failed to update:`, error);
+                }
+            }
+        }
+        currentView() {
+            return buildGameView(game, { isLoadingHistory: this.historyLoading });
+        }
+        /** Rebuild the whole frame. Used on mount and whenever the layout changes. */
+        render() {
+            if (!this.shadow)
+                return;
+            this.destroySections();
+            this.gutters.forEach(gutter => gutter.remove());
+            this.gutters.clear();
+            const view = this.currentView();
+            const headerGutter = this.headerGutter();
+            for (const name of GUTTER_NAMES) {
+                const config = this.layout[name];
+                if (config.sections.length === 0)
+                    continue;
+                const gutter = document.createElement('div');
+                const collapsed = config.collapsed;
+                gutter.className = [
+                    'gutter',
+                    `gutter--${name}`,
+                    `gutter--${AXIS[name]}`,
+                    collapsed ? 'gutter--collapsed' : '',
+                ]
+                    .filter(Boolean)
+                    .join(' ');
+                this.sizeGutter(gutter, name);
+                if (name === headerGutter)
+                    gutter.appendChild(this.buildHeader(collapsed));
+                if (!collapsed) {
+                    const body = document.createElement('div');
+                    body.className = 'gutter-body';
+                    gutter.appendChild(body);
+                    this.fillGutter(body, name, view);
+                    gutter.appendChild(this.buildResizeHandle(name));
+                }
+                this.shadow.appendChild(gutter);
+                this.gutters.set(name, gutter);
+            }
+            void this.syncPageFrame();
+        }
+        /** The header lives in the first gutter that exists, preferring the rail. */
+        headerGutter() {
+            var _a;
+            return ((_a = GUTTER_NAMES.find(name => this.layout[name].sections.length > 0)) !== null && _a !== void 0 ? _a : null);
+        }
+        sizeGutter(gutter, name) {
+            const thickness = gutterThickness(this.layout[name]);
+            const inset = this.insets();
+            if (AXIS[name] === 'vertical') {
+                gutter.style.width = `${thickness}px`;
+            }
+            else {
+                gutter.style.height = `${thickness}px`;
+                // Horizontal gutters stop at the vertical ones, so the corners belong to
+                // the rail — matching the mockup, where the rail runs the full height.
+                gutter.style.left = `${inset.left}px`;
+                gutter.style.right = `${inset.right}px`;
+            }
+        }
+        insets() {
+            return {
+                left: gutterThickness(this.layout.left),
+                right: gutterThickness(this.layout.right),
+                top: gutterThickness(this.layout.top),
+                bottom: gutterThickness(this.layout.bottom),
+            };
+        }
+        buildHeader(collapsed) {
+            const header = document.createElement('div');
+            header.className = 'rail-header';
+            const brand = document.createElement('div');
+            brand.className = 'rail-brand';
+            const logo = document.createElement('div');
+            logo.className = 'rail-logo';
+            logo.textContent = 'CC';
+            const titles = document.createElement('div');
+            const title = document.createElement('div');
+            title.className = 'rail-title';
+            title.textContent = 'Counter';
+            titles.appendChild(title);
+            brand.append(logo, titles);
+            const toggle = document.createElement('button');
+            toggle.className = 'rail-collapse';
+            toggle.type = 'button';
+            toggle.textContent = collapsed ? '›' : '‹';
+            toggle.title = collapsed ? 'Expand the counter' : 'Collapse the counter';
+            toggle.setAttribute('aria-label', collapsed ? 'Expand the counter' : 'Collapse the counter');
+            toggle.addEventListener('click', () => this.toggleCollapse());
+            header.append(collapsed ? toggle : brand);
+            if (!collapsed)
+                header.appendChild(toggle);
+            return header;
+        }
+        toggleCollapse() {
+            const name = this.headerGutter();
+            if (!name)
+                return;
+            this.layout[name].collapsed = !this.layout[name].collapsed;
+            void writeLayout(this.layout);
+            this.render();
+        }
+        /** Mount each section the layout puts in this gutter. */
+        fillGutter(body, name, view) {
+            var _a;
+            const axis = AXIS[name];
+            const thickness = gutterThickness(this.layout[name]);
+            for (const placement of this.layout[name].sections) {
+                const definition = getSection(placement.id, this.options.registry);
+                if (!definition) {
+                    console.warn(`🎛️ No section registered as "${placement.id}"`);
+                    continue;
+                }
+                if (!definition.supports.includes(axis)) {
+                    console.warn(`🎛️ Section "${placement.id}" cannot render in a ${axis} gutter — skipping`);
+                    continue;
+                }
+                // Only the gutter's thickness is knowable here; its long axis is shared.
+                const available = axis === 'vertical' ? definition.min.width : definition.min.height;
+                const measured = axis === 'vertical' ? thickness : thickness;
+                if (measured < available) {
+                    console.warn(`🎛️ Section "${placement.id}" needs ${available}px but the ${name} gutter is ${measured}px — skipping`);
+                    continue;
+                }
+                const host = document.createElement('div');
+                host.className = 'section';
+                host.dataset.section = placement.id;
+                if (axis === 'horizontal') {
+                    host.style.flex = `${(_a = placement.weight) !== null && _a !== void 0 ? _a : 1} 1 0`;
+                }
+                body.appendChild(host);
+                try {
+                    const instance = definition.mount(host, view, {
+                        axis,
+                        assetUrl,
+                        emit: action => this.options.onAction(action),
+                    });
+                    this.mounted.set(placement.id, { instance, host });
+                }
+                catch (error) {
+                    console.warn(`🎛️ Section "${placement.id}" failed to mount:`, error);
+                    host.remove();
+                }
+            }
+        }
+        destroySections() {
+            for (const [id, section] of this.mounted) {
+                try {
+                    section.instance.destroy();
+                }
+                catch (error) {
+                    console.warn(`🎛️ Section "${id}" failed to unmount:`, error);
+                }
+            }
+            this.mounted.clear();
+        }
+        buildResizeHandle(name) {
+            const handle = document.createElement('div');
+            handle.className = 'gutter-resize';
+            handle.addEventListener('pointerdown', event => {
+                event.preventDefault();
+                const vertical = AXIS[name] === 'vertical';
+                const start = vertical ? event.clientX : event.clientY;
+                const startSize = this.layout[name].size;
+                handle.setPointerCapture(event.pointerId);
+                const onMove = (move) => {
+                    const delta = (vertical ? move.clientX : move.clientY) - start;
+                    // Left and top gutters grow with the pointer; right and bottom shrink.
+                    const signed = name === 'left' || name === 'top' ? delta : -delta;
+                    const next = Math.round(Math.min(MAX_RAIL_WIDTH, Math.max(MIN_RAIL_WIDTH, startSize + signed)));
+                    if (next === this.layout[name].size)
+                        return;
+                    this.layout[name].size = next;
+                    this.applySizes();
+                };
+                const onUp = () => {
+                    handle.removeEventListener('pointermove', onMove);
+                    handle.removeEventListener('pointerup', onUp);
+                    void writeLayout(this.layout);
+                    // One squeeze at the end rather than on every pointer move.
+                    void this.syncPageFrame();
+                };
+                handle.addEventListener('pointermove', onMove);
+                handle.addEventListener('pointerup', onUp);
+            });
+            return handle;
+        }
+        /** Cheap path used while dragging: resize boxes without remounting anything. */
+        applySizes() {
+            for (const [name, gutter] of this.gutters)
+                this.sizeGutter(gutter, name);
+        }
+        syncPageFrame() {
+            return __awaiter(this, void 0, void 0, function* () {
+                if (!this.root || this.framePending)
+                    return;
+                this.framePending = true;
+                try {
+                    yield applyPageFrame(this.insets());
+                }
+                finally {
+                    this.framePending = false;
+                }
+            });
+        }
+        /** Test seam: the layout the shell is currently rendering. */
+        getLayout() {
+            return cloneLayout(this.layout);
+        }
+        /** Replace the layout wholesale — the seam a future arrangement UI uses. */
+        setLayout(layout) {
+            this.layout = cloneLayout(layout);
+            void writeLayout(this.layout);
+            if (this.root)
+                this.render();
+        }
+        /** Test seam: the shadow root, so tests can assert on rendered structure. */
+        getShadowRoot() {
+            return this.shadow;
+        }
+    }
+
+    // v2.ts
+    const shell = new Shell({
+        onAction: handleAction,
+    });
+    function handleAction(action) {
+        switch (action.type) {
+            case 'resolve-steal':
+                game.probableGameState.resolveUnknownTransaction(action.id, action.resource);
+                break;
+            case 'undo-steal':
+                game.probableGameState.unresolveUnknownTransaction(action.id);
+                break;
+            default: {
+                const exhaustive = action;
+                console.warn('🎛️ Unhandled section action:', exhaustive);
+                return;
+            }
+        }
+        // The tracker's beliefs just changed; every section reads from the same view.
+        shell.update();
     }
     const v2Ui = {
-        mount,
-        unmount,
-        update: () => undefined,
-        setHistoryLoading: () => undefined,
-        showYouPlayerDialog: () => undefined,
+        mount: () => shell.mount(),
+        unmount: () => shell.unmount(),
+        update: () => shell.update(),
+        setHistoryLoading: loading => shell.setHistoryLoading(loading),
+        // The seat-picker is a modal rather than a gutter, and v1's works in either
+        // mode. Giving it a v2 treatment is deliberately left for later.
+        showYouPlayerDialog: showYouPlayerDialog$1,
     };
 
     // uiMode.ts

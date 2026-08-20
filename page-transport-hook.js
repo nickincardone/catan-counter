@@ -14,6 +14,141 @@
     const TRANSPORT_CAPTURE_VERSION = 1;
 
     /**
+     * MAIN-world viewport control for the v2 gutter UI.
+     *
+     * Colonist has no single page root to pad: it absolutely-positions its canvas
+     * layers and `#ui-game` on <body> and writes inline pixel sizes onto them,
+     * recomputed from `window.innerWidth`/`innerHeight` whenever a resize fires.
+     * The only way to make it lay out inside a smaller area — crisply, at native
+     * resolution, without touching its own transforms — is to make it read smaller
+     * numbers and tell it to re-measure.
+     *
+     * That has to happen in the page's own JavaScript world, so this module runs
+     * alongside the transport hook and takes its commands from the isolated content
+     * script over the same window.postMessage bridge.
+     */
+    const PAGE_VIEWPORT_SOURCE = 'catan-counter-page-viewport-v1';
+    /** Elements colonist positions itself; the union of these is "the game". */
+    const CONTENT_SELECTORS = ['#game-canvas', '#ui-game'];
+    const ZERO_INSET = {
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+    };
+    function isViewportCommand(value) {
+        const command = value;
+        return (!!command &&
+            command.source === PAGE_VIEWPORT_SOURCE &&
+            (command.type === 'set-inset' ||
+                command.type === 'release' ||
+                command.type === 'measure'));
+    }
+    function measureContent() {
+        let left = Infinity;
+        let top = Infinity;
+        let right = -Infinity;
+        let bottom = -Infinity;
+        let found = false;
+        for (const selector of CONTENT_SELECTORS) {
+            const element = document.querySelector(selector);
+            if (!element)
+                continue;
+            const rect = element.getBoundingClientRect();
+            if (rect.width === 0 && rect.height === 0)
+                continue;
+            found = true;
+            left = Math.min(left, rect.left);
+            top = Math.min(top, rect.top);
+            right = Math.max(right, rect.right);
+            bottom = Math.max(bottom, rect.bottom);
+        }
+        return found ? { left, top, right, bottom } : null;
+    }
+    /**
+     * Install the override. Safe to call more than once; only the first call wires
+     * anything up. Returns immediately — nothing changes until an inset arrives.
+     */
+    function installViewportControl() {
+        const flagged = window;
+        if (flagged.__catanCounterViewportInstalled)
+            return;
+        flagged.__catanCounterViewportInstalled = true;
+        // Captured before any override so release always restores the truth, even if
+        // something else on the page redefines them later.
+        const nativeWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth');
+        const nativeHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight');
+        const realWidth = () => (nativeWidth === null || nativeWidth === void 0 ? void 0 : nativeWidth.get) ? Number(nativeWidth.get.call(window)) : window.innerWidth;
+        const realHeight = () => (nativeHeight === null || nativeHeight === void 0 ? void 0 : nativeHeight.get)
+            ? Number(nativeHeight.get.call(window))
+            : window.innerHeight;
+        let inset = Object.assign({}, ZERO_INSET);
+        let overridden = false;
+        function applyOverride() {
+            if (overridden)
+                return;
+            overridden = true;
+            Object.defineProperty(window, 'innerWidth', {
+                configurable: true,
+                get: () => Math.max(0, realWidth() - inset.left - inset.right),
+            });
+            Object.defineProperty(window, 'innerHeight', {
+                configurable: true,
+                get: () => Math.max(0, realHeight() - inset.top - inset.bottom),
+            });
+        }
+        function removeOverride() {
+            if (!overridden)
+                return;
+            overridden = false;
+            if (nativeWidth)
+                Object.defineProperty(window, 'innerWidth', nativeWidth);
+            else
+                delete window.innerWidth;
+            if (nativeHeight)
+                Object.defineProperty(window, 'innerHeight', nativeHeight);
+            else
+                delete window.innerHeight;
+        }
+        function report(nonce) {
+            const message = {
+                source: PAGE_VIEWPORT_SOURCE,
+                type: 'report',
+                nonce,
+                real: { width: realWidth(), height: realHeight() },
+                reported: { width: window.innerWidth, height: window.innerHeight },
+                content: measureContent(),
+            };
+            window.postMessage(message, window.location.origin);
+        }
+        window.addEventListener('message', event => {
+            var _a;
+            if (event.source !== window || event.origin !== window.location.origin)
+                return;
+            if (!isViewportCommand(event.data))
+                return;
+            const command = event.data;
+            const nonce = typeof command.nonce === 'number' ? command.nonce : 0;
+            if (command.type === 'release') {
+                inset = Object.assign({}, ZERO_INSET);
+                removeOverride();
+                window.dispatchEvent(new Event('resize'));
+                // Let colonist finish laying out at full size before reporting back.
+                requestAnimationFrame(() => report(nonce));
+                return;
+            }
+            if (command.type === 'measure') {
+                report(nonce);
+                return;
+            }
+            inset = Object.assign(Object.assign({}, ZERO_INSET), ((_a = command.inset) !== null && _a !== void 0 ? _a : ZERO_INSET));
+            applyOverride();
+            window.dispatchEvent(new Event('resize'));
+            requestAnimationFrame(() => report(nonce));
+        });
+    }
+
+    /**
      * MAIN-world WebSocket capture POC.
      *
      * This entry point is intentionally independent of the extension APIs. It runs
@@ -189,5 +324,9 @@
         window.WebSocket = InstrumentedWebSocket;
     }
     installTransportHook();
+    // The v2 gutter UI needs colonist to lay out inside a smaller area, which only
+    // works from this world — see pageViewport.ts. It stays inert until the content
+    // script asks for an inset.
+    installViewportControl();
 
 })();
