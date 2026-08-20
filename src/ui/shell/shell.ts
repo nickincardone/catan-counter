@@ -26,7 +26,9 @@ import {
   MIN_RAIL_WIDTH,
   cloneLayout,
   gutterThickness,
+  headerGutterOf,
   readLayout,
+  repairLayout,
   withKnownSections,
   writeLayout,
   type GutterName,
@@ -328,11 +330,12 @@ export class Shell {
    * The header lives on a side rail, preferring the left. Bars are too short to
    * carry it, so when neither rail is in use there is no header at all and the
    * gear floats over the page instead.
+   *
+   * Shared with the layout repair, which relies on the same answer to decide
+   * which gutter may be left collapsed.
    */
   private headerGutter(): GutterName | null {
-    if (this.layout.left.sections.length > 0) return 'left';
-    if (this.layout.right.sections.length > 0) return 'right';
-    return null;
+    return headerGutterOf(this.layout);
   }
 
   private sizeGutter(gutter: HTMLElement, name: GutterName): void {
@@ -529,7 +532,7 @@ export class Shell {
 
   /** Apply a layout change from the settings menu, live. */
   private applyLayout(next: V2Layout): void {
-    this.layout = cloneLayout(next);
+    this.layout = repairLayout(next);
     void writeLayout(this.layout);
     this.render();
     // The dialog is rebuilt separately: render() only owns the gutters.
@@ -582,7 +585,7 @@ export class Shell {
 
   /** Replace the layout wholesale — the seam a future arrangement UI uses. */
   setLayout(layout: V2Layout): void {
-    this.layout = cloneLayout(layout);
+    this.layout = repairLayout(layout);
     void writeLayout(this.layout);
     if (this.root) this.render();
   }

@@ -49,6 +49,14 @@ export const ZONES: Zone[] = ['left', 'top', 'bottom', 'right', 'off'];
 
 /** Width the rail collapses to — enough for the reopen chevron. */
 export const COLLAPSED_SIZE = 28;
+
+/** Fallback thickness for a gutter stored without a usable one. */
+const DEFAULT_SIZE: Record<GutterName, number> = {
+  left: 365,
+  right: 365,
+  top: 210,
+  bottom: 210,
+};
 export const MIN_RAIL_WIDTH = 280;
 export const MAX_RAIL_WIDTH = 420;
 
@@ -74,8 +82,12 @@ export const DEFAULT_LAYOUT: V2Layout = {
       { id: 'dev-deck', weight: 1 },
     ],
   },
-  right: { size: 0, collapsed: true, sections: [] },
-  top: { size: 0, collapsed: true, sections: [] },
+  // Empty, but with a real size ready for the day something is put here.
+  // Emptiness is what makes a gutter take no room (see gutterThickness) —
+  // marking one collapsed instead would make it a 28px sliver the moment a
+  // section landed in it, with no chevron to open it.
+  right: { size: 365, collapsed: false, sections: [] },
+  top: { size: 210, collapsed: false, sections: [] },
   off: [{ id: 'card-flow-ledger' }, { id: 'players' }],
 };
 
@@ -185,7 +197,7 @@ export function parseLayout(value: unknown): V2Layout | null {
   ) {
     return null;
   }
-  return cloneLayout(layout);
+  return repairLayout(layout);
 }
 
 function storageAvailable(): boolean {
@@ -258,7 +270,8 @@ export function placeSection(
     if (index >= 0) list.splice(index, 1);
   }
   listFor(next, zone).push({ id });
-  return next;
+  // A gutter being switched on must be usable, or the section vanishes into it.
+  return repairLayout(next);
 }
 
 /** Move a section one step up or down within its own zone. */
@@ -318,4 +331,38 @@ export function listSections(
     }
   }
   return rows;
+}
+
+/** Which gutter carries the header — the only one with a collapse chevron. */
+export function headerGutterOf(layout: V2Layout): GutterName | null {
+  if (layout.left.sections.length > 0) return 'left';
+  if (layout.right.sections.length > 0) return 'right';
+  return null;
+}
+
+/**
+ * Make a layout renderable, whatever state it arrived in.
+ *
+ * Two ways a gutter can be unreachable, both of which stranded sections:
+ *
+ *  - a size of zero, so it renders as nothing however much is in it;
+ *  - collapsed, on a gutter with no header and therefore no chevron to undo
+ *    it. Only the header rail can be collapsed, because only it can be opened
+ *    again.
+ *
+ * Applied when a layout is read and after anything is placed, so a layout
+ * already stored in the broken shape repairs itself rather than needing a reset.
+ */
+export function repairLayout(layout: V2Layout): V2Layout {
+  const next = cloneLayout(layout);
+  const header = headerGutterOf(next);
+
+  for (const name of GUTTER_NAMES) {
+    const gutter = next[name];
+    if (!Number.isFinite(gutter.size) || gutter.size <= 0) {
+      gutter.size = DEFAULT_SIZE[name];
+    }
+    if (gutter.collapsed && name !== header) gutter.collapsed = false;
+  }
+  return next;
 }

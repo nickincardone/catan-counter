@@ -3100,6 +3100,13 @@
     const ZONES = ['left', 'top', 'bottom', 'right', 'off'];
     /** Width the rail collapses to — enough for the reopen chevron. */
     const COLLAPSED_SIZE = 28;
+    /** Fallback thickness for a gutter stored without a usable one. */
+    const DEFAULT_SIZE = {
+        left: 365,
+        right: 365,
+        top: 210,
+        bottom: 210,
+    };
     const MIN_RAIL_WIDTH = 280;
     const MAX_RAIL_WIDTH = 420;
     const LAYOUT_STORAGE_KEY = 'catanUiLayout';
@@ -3123,8 +3130,12 @@
                 { id: 'dev-deck', weight: 1 },
             ],
         },
-        right: { size: 0, collapsed: true, sections: [] },
-        top: { size: 0, collapsed: true, sections: [] },
+        // Empty, but with a real size ready for the day something is put here.
+        // Emptiness is what makes a gutter take no room (see gutterThickness) —
+        // marking one collapsed instead would make it a 28px sliver the moment a
+        // section landed in it, with no chevron to open it.
+        right: { size: 365, collapsed: false, sections: [] },
+        top: { size: 210, collapsed: false, sections: [] },
         off: [{ id: 'card-flow-ledger' }, { id: 'players' }],
     };
     /**
@@ -3195,7 +3206,7 @@
                 layout.off.some(placement => !placement || typeof placement.id !== 'string'))) {
             return null;
         }
-        return cloneLayout(layout);
+        return repairLayout(layout);
     }
     function storageAvailable() {
         var _a;
@@ -3270,7 +3281,8 @@
                 list.splice(index, 1);
         }
         listFor(next, zone).push({ id });
-        return next;
+        // A gutter being switched on must be usable, or the section vanishes into it.
+        return repairLayout(next);
     }
     /** Move a section one step up or down within its own zone. */
     function reorderSection(layout, id, direction) {
@@ -3318,6 +3330,40 @@
             }
         }
         return rows;
+    }
+    /** Which gutter carries the header — the only one with a collapse chevron. */
+    function headerGutterOf(layout) {
+        if (layout.left.sections.length > 0)
+            return 'left';
+        if (layout.right.sections.length > 0)
+            return 'right';
+        return null;
+    }
+    /**
+     * Make a layout renderable, whatever state it arrived in.
+     *
+     * Two ways a gutter can be unreachable, both of which stranded sections:
+     *
+     *  - a size of zero, so it renders as nothing however much is in it;
+     *  - collapsed, on a gutter with no header and therefore no chevron to undo
+     *    it. Only the header rail can be collapsed, because only it can be opened
+     *    again.
+     *
+     * Applied when a layout is read and after anything is placed, so a layout
+     * already stored in the broken shape repairs itself rather than needing a reset.
+     */
+    function repairLayout(layout) {
+        const next = cloneLayout(layout);
+        const header = headerGutterOf(next);
+        for (const name of GUTTER_NAMES) {
+            const gutter = next[name];
+            if (!Number.isFinite(gutter.size) || gutter.size <= 0) {
+                gutter.size = DEFAULT_SIZE[name];
+            }
+            if (gutter.collapsed && name !== header)
+                gutter.collapsed = false;
+        }
+        return next;
     }
 
     // shell/theme.ts
@@ -4521,13 +4567,12 @@
          * The header lives on a side rail, preferring the left. Bars are too short to
          * carry it, so when neither rail is in use there is no header at all and the
          * gear floats over the page instead.
+         *
+         * Shared with the layout repair, which relies on the same answer to decide
+         * which gutter may be left collapsed.
          */
         headerGutter() {
-            if (this.layout.left.sections.length > 0)
-                return 'left';
-            if (this.layout.right.sections.length > 0)
-                return 'right';
-            return null;
+            return headerGutterOf(this.layout);
         }
         sizeGutter(gutter, name) {
             const thickness = gutterThickness(this.layout[name]);
@@ -4702,7 +4747,7 @@
         }
         /** Apply a layout change from the settings menu, live. */
         applyLayout(next) {
-            this.layout = cloneLayout(next);
+            this.layout = repairLayout(next);
             void writeLayout(this.layout);
             this.render();
             // The dialog is rebuilt separately: render() only owns the gutters.
@@ -4751,7 +4796,7 @@
         }
         /** Replace the layout wholesale — the seam a future arrangement UI uses. */
         setLayout(layout) {
-            this.layout = cloneLayout(layout);
+            this.layout = repairLayout(layout);
             void writeLayout(this.layout);
             if (this.root)
                 this.render();

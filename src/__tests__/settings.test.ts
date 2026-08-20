@@ -3,10 +3,13 @@ import {
   DEFAULT_LAYOUT,
   PRESETS,
   cloneLayout,
+  gutterThickness,
+  headerGutterOf,
   listSections,
   placeSection,
   reorderSection,
   parseLayout,
+  repairLayout,
   withKnownSections,
   zoneOf,
 } from '../ui/shell/layoutStore';
@@ -221,5 +224,89 @@ describe('presets', () => {
         expect(zoneOf(layout, id)).not.toBeNull();
       }
     }
+  });
+});
+
+describe('a gutter being switched on', () => {
+  // The bug this guards: right and top were stored as collapsed with a size of
+  // zero, meaning "unused". gutterThickness reads collapsed as a 28px strip and
+  // the shell skips a collapsed gutter's body, so the first section moved there
+  // vanished into a sliver — with no chevron on a non-header rail to open it.
+  it('is usable the moment a section lands in it', () => {
+    for (const zone of ['right', 'top', 'bottom', 'left'] as const) {
+      const next = placeSection(cloneLayout(DEFAULT_LAYOUT), 'players', zone);
+      expect(next[zone].size).toBeGreaterThan(0);
+      expect(next[zone].collapsed).toBe(false);
+    }
+  });
+
+  it('takes no room while it is empty, but keeps a size ready', () => {
+    const layout = cloneLayout(DEFAULT_LAYOUT);
+    expect(gutterThickness(layout.right)).toBe(0);
+    expect(gutterThickness(layout.top)).toBe(0);
+    // Emptiness is what hides them — not a flag that means something else.
+    expect(layout.right.size).toBeGreaterThan(0);
+    expect(layout.right.collapsed).toBe(false);
+  });
+});
+
+describe('repairing a layout', () => {
+  it('gives a gutter with no usable size one', () => {
+    const broken = cloneLayout(DEFAULT_LAYOUT);
+    broken.right = { size: 0, collapsed: false, sections: [{ id: 'players' }] };
+
+    const fixed = repairLayout(broken);
+    expect(fixed.right.size).toBeGreaterThan(0);
+    expect(gutterThickness(fixed.right)).toBeGreaterThan(0);
+  });
+
+  it('uncollapses a gutter with no header, since nothing could reopen it', () => {
+    const broken = cloneLayout(DEFAULT_LAYOUT);
+    broken.right = {
+      size: 365,
+      collapsed: true,
+      sections: [{ id: 'players' }],
+    };
+
+    // The header is on the left here, so the right rail has no chevron.
+    expect(headerGutterOf(broken)).toBe('left');
+    expect(repairLayout(broken).right.collapsed).toBe(false);
+  });
+
+  it('leaves the header rail collapsed, because its chevron can undo it', () => {
+    const collapsed = cloneLayout(DEFAULT_LAYOUT);
+    collapsed.left.collapsed = true;
+
+    expect(headerGutterOf(collapsed)).toBe('left');
+    expect(repairLayout(collapsed).left.collapsed).toBe(true);
+  });
+
+  it('moves the header to the right rail when the left is empty', () => {
+    const layout = placeSection(cloneLayout(DEFAULT_LAYOUT), 'hands', 'right');
+    const emptyLeft = cloneLayout(layout);
+    for (const id of [
+      'unknown-steals',
+      'card-flow',
+      'blocked-robber',
+    ] as const) {
+      emptyLeft.left.sections = emptyLeft.left.sections.filter(
+        s => s.id !== id
+      );
+      emptyLeft.off = [...(emptyLeft.off ?? []), { id }];
+    }
+
+    expect(headerGutterOf(emptyLeft)).toBe('right');
+    // ...so the right rail may now hold a collapse.
+    emptyLeft.right.collapsed = true;
+    expect(repairLayout(emptyLeft).right.collapsed).toBe(true);
+  });
+
+  it('repairs a layout as it is read back from storage', () => {
+    const stored = cloneLayout(DEFAULT_LAYOUT) as any;
+    stored.right = { size: 0, collapsed: true, sections: [{ id: 'players' }] };
+
+    const parsed = parseLayout(stored)!;
+    expect(parsed.right.size).toBeGreaterThan(0);
+    expect(parsed.right.collapsed).toBe(false);
   });
 });

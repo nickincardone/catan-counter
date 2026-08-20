@@ -614,3 +614,97 @@ describe('the settings menu', () => {
     expect(document.querySelector('.settings-panel')).toBeNull();
   });
 });
+
+describe('every gutter actually renders', () => {
+  let shell: Shell;
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    root()?.remove();
+    resetGameState();
+    game.youPlayerName = null;
+    rollDice(6);
+    _resetPageFrameForTesting(5);
+  });
+
+  afterEach(() => shell?.unmount());
+
+  // The reported bug: a section moved to the right gutter disappeared. The
+  // gutter came out of the default layout marked collapsed with a size of zero
+  // as shorthand for "unused", so it rendered as an empty 28px sliver and the
+  // section never mounted at all.
+  it.each(['left', 'right', 'top', 'bottom'] as const)(
+    'shows a section placed in the %s gutter',
+    zone => {
+      const section = fakeSection('hands');
+      const layout = cloneLayout(DEFAULT_LAYOUT);
+      for (const name of ['left', 'right', 'top', 'bottom'] as const) {
+        layout[name].sections = [];
+      }
+      layout[zone].sections = [{ id: 'hands' }];
+      layout.off = [];
+
+      shell = new Shell({
+        registry: { hands: section.definition },
+        onAction: () => undefined,
+      });
+      shell.setLayout(layout);
+      shell.mount();
+
+      const gutter = shadow(shell).querySelector(`.gutter--${zone}`);
+      expect(gutter).toBeTruthy();
+      expect(gutter!.querySelector('[data-section="hands"]')).toBeTruthy();
+      expect(section.log.mounts).toBe(1);
+
+      const size =
+        zone === 'left' || zone === 'right'
+          ? (gutter as HTMLElement).style.width
+          : (gutter as HTMLElement).style.height;
+      expect(size).not.toBe('0px');
+      expect(size).not.toBe(`${COLLAPSED_SIZE}px`);
+    }
+  );
+
+  it('repairs a stored layout that would strand a section', () => {
+    const hands = fakeSection('hands');
+    const players = fakeSection('players');
+    const broken = cloneLayout(DEFAULT_LAYOUT);
+    // The left rail keeps the header, so the right one has no chevron: a
+    // collapse there could never be undone, which is what stranded the section.
+    broken.left.sections = [{ id: 'hands' }];
+    broken.right = { size: 0, collapsed: true, sections: [{ id: 'players' }] };
+    broken.bottom.sections = [];
+    broken.off = [];
+
+    shell = new Shell({
+      registry: { hands: hands.definition, players: players.definition },
+      onAction: () => undefined,
+    });
+    shell.setLayout(broken);
+    shell.mount();
+
+    expect(
+      shadow(shell).querySelector('.gutter--right [data-section="players"]')
+    ).toBeTruthy();
+    expect(players.log.mounts).toBe(1);
+  });
+
+  it('still lets the header rail be collapsed, since its chevron reopens it', () => {
+    const hands = fakeSection('hands');
+    const layout = cloneLayout(DEFAULT_LAYOUT);
+    layout.left = { size: 365, collapsed: true, sections: [{ id: 'hands' }] };
+    layout.bottom.sections = [];
+    layout.off = [];
+
+    shell = new Shell({
+      registry: { hands: hands.definition },
+      onAction: () => undefined,
+    });
+    shell.setLayout(layout);
+    shell.mount();
+
+    const rail = shadow(shell).querySelector('.gutter--left') as HTMLElement;
+    expect(rail.style.width).toBe(`${COLLAPSED_SIZE}px`);
+    expect(shadow(shell).querySelector('.rail-collapse')).toBeTruthy();
+  });
+});
