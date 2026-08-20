@@ -34,3 +34,7 @@ test-results/
 
 # Jest
 .jest/ 
+# Local-only working files (agent skills, planning docs)
+.agents/
+.claude/
+data-collection.md

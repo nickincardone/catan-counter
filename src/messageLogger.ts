@@ -11,6 +11,14 @@
 // current game as JSON; exportAllGameLogs() downloads every stored game.
 
 import { game } from './gameState.js';
+import { anonymizeGameLog } from './gameLogAnonymizer.js';
+import type { AnonymizedGameLog } from './gameLogAnonymizer.js';
+import { normalizeChatLog } from './normalizedChat.js';
+import type { KnownChatPlayer } from './normalizedChat.js';
+import { getPlayerColorName } from './playerColors.js';
+import { SpatialGameTracker } from './spatialGameState.js';
+import type { SpatialCaptureSnapshot } from './spatialGameState.js';
+import type { TransportCapture } from './transportCapture.js';
 
 // Minimal typing for the pieces of the extension API we use — the project
 // doesn't depend on @types/chrome, and `chrome` is undefined under Jest/jsdom.
@@ -39,7 +47,7 @@ export interface LoggedMessage {
 
 export interface GameLog {
   /** bump when the shape changes so pooled logs from many users stay parseable */
-  schemaVersion: 1;
+  schemaVersion: 5;
   gameId: string;
   url: string;
   startedAt: string;
@@ -48,14 +56,55 @@ export interface GameLog {
   youPlayerName: string | null;
   players: string[];
   messages: LoggedMessage[];
+  /** Raw, bounded WebSocket observations from the MAIN-world capture POC. */
+  transportCaptures: TransportCapture[];
+  /** Number of captures discarded after reaching the per-game safety cap. */
+  droppedTransportCaptures: number;
+  /** Decoded canonical board plus ordered spatial actions derived from captures. */
+  spatialCapture: SpatialCaptureSnapshot;
 }
 
 const STORAGE_KEY_PREFIX = 'catanGameLog:';
 const PERSIST_DEBOUNCE_MS = 1000;
+const MAX_TRANSPORT_CAPTURES_PER_GAME = 20_000;
+const MAX_TRANSPORT_CAPTURE_DATA_PER_GAME = 50_000_000;
+const MAX_PENDING_TRANSPORT_CAPTURES = 2_000;
+const MAX_PENDING_TRANSPORT_DATA = 10_000_000;
 
 let currentLog: GameLog | null = null;
 const seenIndices = new Set<number>();
+const seenTransportCaptureIds = new Set<string>();
+const pendingTransportCaptures: TransportCapture[] = [];
+let currentTransportCaptureDataLength = 0;
+let pendingTransportCaptureDataLength = 0;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
+const spatialGameTracker = new SpatialGameTracker();
+
+function withNormalizedChat(
+  snapshot: SpatialCaptureSnapshot,
+  messages: LoggedMessage[],
+  playerNames: string[]
+): SpatialCaptureSnapshot {
+  const knownPlayers = new Map<string, KnownChatPlayer>();
+  for (const player of snapshot.board?.players ?? []) {
+    knownPlayers.set(player.username, {
+      name: player.username,
+      color: player.color,
+      colorName: player.colorName,
+    });
+  }
+  for (const name of playerNames) {
+    if (!knownPlayers.has(name)) {
+      knownPlayers.set(name, {
+        name,
+        color: null,
+        colorName: getPlayerColorName(-1),
+      });
+    }
+  }
+  snapshot.chatLog = normalizeChatLog(messages, [...knownPlayers.values()]);
+  return snapshot;
+}
 
 function storageAvailable(): boolean {
   return typeof chrome !== 'undefined' && !!chrome?.storage?.local;
@@ -75,8 +124,9 @@ export async function initMessageLogger(): Promise<void> {
   const gameId = getGameIdFromUrl();
   const now = new Date().toISOString();
 
+  spatialGameTracker.reset();
   currentLog = {
-    schemaVersion: 1,
+    schemaVersion: 5,
     gameId,
     url: window.location.href,
     startedAt: now,
@@ -84,26 +134,68 @@ export async function initMessageLogger(): Promise<void> {
     youPlayerName: null,
     players: [],
     messages: [],
+    transportCaptures: [],
+    droppedTransportCaptures: 0,
+    spatialCapture: spatialGameTracker.snapshot(),
   };
   seenIndices.clear();
+  seenTransportCaptureIds.clear();
+  currentTransportCaptureDataLength = 0;
 
-  if (!storageAvailable()) return;
-
-  try {
-    const key = STORAGE_KEY_PREFIX + gameId;
-    const stored = await chrome!.storage!.local.get(key);
-    const existing = stored[key] as GameLog | undefined;
-    if (existing?.messages) {
-      currentLog = { ...existing, updatedAt: now };
-      for (const message of currentLog.messages) {
-        seenIndices.add(message.index);
+  if (storageAvailable()) {
+    try {
+      const key = STORAGE_KEY_PREFIX + gameId;
+      const stored = await chrome!.storage!.local.get(key);
+      const existing = stored[key] as Partial<GameLog> | undefined;
+      if (existing?.messages) {
+        // Older logs progressively added transport and spatial state. Upgrade
+        // them in memory without discarding any previously captured data.
+        currentLog = {
+          ...(existing as Omit<GameLog, 'schemaVersion'>),
+          schemaVersion: 5,
+          updatedAt: now,
+          transportCaptures: Array.isArray(existing.transportCaptures)
+            ? existing.transportCaptures
+            : [],
+          droppedTransportCaptures:
+            typeof existing.droppedTransportCaptures === 'number'
+              ? existing.droppedTransportCaptures
+              : 0,
+          spatialCapture: spatialGameTracker.snapshot(),
+        };
+        for (const message of currentLog.messages) {
+          seenIndices.add(message.index);
+        }
+        for (const capture of currentLog.transportCaptures) {
+          seenTransportCaptureIds.add(capture.id);
+          currentTransportCaptureDataLength += capture.data?.length ?? 0;
+          spatialGameTracker.ingest(capture);
+        }
+        currentLog.spatialCapture = withNormalizedChat(
+          spatialGameTracker.snapshot(),
+          currentLog.messages,
+          currentLog.players
+        );
+        console.log(
+          `📼 Resumed game log for "${gameId}" (${currentLog.messages.length} messages)`
+        );
       }
-      console.log(
-        `📼 Resumed game log for "${gameId}" (${currentLog.messages.length} messages)`
-      );
+    } catch (error) {
+      console.warn('📼 Could not load stored game log:', error);
     }
-  } catch (error) {
-    console.warn('📼 Could not load stored game log:', error);
+  }
+
+  // The transport hook starts at document_start, before the chat (and thus the
+  // game logger) exists. Merge that startup window after any stored log is
+  // loaded so the initial board snapshot is not lost.
+  const startupCaptures = pendingTransportCaptures.splice(0);
+  pendingTransportCaptureDataLength = 0;
+  for (const capture of startupCaptures) appendTransportCapture(capture);
+  if (startupCaptures.length > 0) {
+    console.log(
+      `📡 Attached ${startupCaptures.length} startup transport captures to game "${gameId}"`
+    );
+    schedulePersist();
   }
 }
 
@@ -129,12 +221,74 @@ export function logChatMessage(element: HTMLElement): void {
   schedulePersist();
 }
 
+function appendTransportCapture(capture: TransportCapture): void {
+  if (!currentLog || seenTransportCaptureIds.has(capture.id)) return;
+  seenTransportCaptureIds.add(capture.id);
+
+  const captureDataLength = capture.data?.length ?? 0;
+  if (
+    currentLog.transportCaptures.length >= MAX_TRANSPORT_CAPTURES_PER_GAME ||
+    currentTransportCaptureDataLength + captureDataLength >
+      MAX_TRANSPORT_CAPTURE_DATA_PER_GAME
+  ) {
+    currentLog.droppedTransportCaptures++;
+    return;
+  }
+  currentLog.transportCaptures.push(capture);
+  currentTransportCaptureDataLength += captureDataLength;
+  spatialGameTracker.ingest(capture);
+}
+
+/**
+ * Record one capture from the MAIN-world WebSocket hook. Captures that arrive
+ * before the chat initializes the per-game logger are held in a bounded memory
+ * queue, which is critical for preserving Colonist's initial game snapshot.
+ */
+export function logTransportCapture(capture: TransportCapture): void {
+  if (!currentLog) {
+    const captureDataLength = capture.data?.length ?? 0;
+    while (
+      pendingTransportCaptures.length > 0 &&
+      (pendingTransportCaptures.length >= MAX_PENDING_TRANSPORT_CAPTURES ||
+        pendingTransportCaptureDataLength + captureDataLength >
+          MAX_PENDING_TRANSPORT_DATA)
+    ) {
+      pendingTransportCaptureDataLength -=
+        pendingTransportCaptures.shift()?.data?.length ?? 0;
+    }
+    pendingTransportCaptures.push(capture);
+    pendingTransportCaptureDataLength += captureDataLength;
+    return;
+  }
+
+  const previousLength = currentLog.transportCaptures.length;
+  const previousDropped = currentLog.droppedTransportCaptures;
+  appendTransportCapture(capture);
+  if (
+    currentLog.transportCaptures.length !== previousLength ||
+    currentLog.droppedTransportCaptures !== previousDropped
+  ) {
+    schedulePersist();
+  }
+}
+
 /** Refresh the metadata snapshot from live game state and keep messages sorted. */
 function snapshotMetadata(log: GameLog): void {
   log.updatedAt = new Date().toISOString();
   log.youPlayerName = game.youPlayerName;
   log.players = game.players.map(p => p.name);
   log.messages.sort((a, b) => a.index - b.index);
+  log.transportCaptures.sort(
+    (a, b) =>
+      a.capturedAt.localeCompare(b.capturedAt) ||
+      a.pageSessionId.localeCompare(b.pageSessionId) ||
+      a.sequence - b.sequence
+  );
+  log.spatialCapture = withNormalizedChat(
+    spatialGameTracker.snapshot(),
+    log.messages,
+    log.players
+  );
 }
 
 function schedulePersist(): void {
@@ -180,17 +334,22 @@ function timestampSlug(): string {
  * Download the current game's log as a JSON file (wired to the overlay's 💾
  * button). Returns the exported log, or null when nothing has been captured.
  */
-export function downloadCurrentGameLog(): GameLog | null {
-  if (!currentLog || currentLog.messages.length === 0) {
-    console.warn('📼 No messages captured yet — nothing to download');
+export function downloadCurrentGameLog(): AnonymizedGameLog | null {
+  if (
+    !currentLog ||
+    (currentLog.messages.length === 0 &&
+      currentLog.transportCaptures.length === 0)
+  ) {
+    console.warn('📼 No game data captured yet — nothing to download');
     return null;
   }
   snapshotMetadata(currentLog);
+  const exportLog = anonymizeGameLog(currentLog);
   downloadJson(
-    currentLog,
+    exportLog,
     `catan-game-${currentLog.gameId}-${timestampSlug()}.json`
   );
-  return currentLog;
+  return exportLog;
 }
 
 /**
@@ -198,7 +357,7 @@ export function downloadCurrentGameLog(): GameLog | null {
  * the extension's content-script console context:
  *   __catanCounter.exportAllGameLogs()
  */
-export async function exportAllGameLogs(): Promise<GameLog[]> {
+export async function exportAllGameLogs(): Promise<AnonymizedGameLog[]> {
   if (!storageAvailable()) {
     console.warn('📼 chrome.storage is not available');
     return [];
@@ -206,21 +365,55 @@ export async function exportAllGameLogs(): Promise<GameLog[]> {
   const all = await chrome!.storage!.local.get(null);
   const logs = Object.entries(all)
     .filter(([key]) => key.startsWith(STORAGE_KEY_PREFIX))
-    .map(([, value]) => value as GameLog)
+    .map(([, value]) => {
+      const existing = value as Partial<GameLog>;
+      const messages = Array.isArray(existing.messages)
+        ? existing.messages
+        : [];
+      const players = Array.isArray(existing.players) ? existing.players : [];
+      const transportCaptures = Array.isArray(existing.transportCaptures)
+        ? existing.transportCaptures
+        : [];
+      const tracker = new SpatialGameTracker();
+      for (const capture of transportCaptures) tracker.ingest(capture);
+      const spatialCapture = withNormalizedChat(
+        tracker.snapshot(),
+        messages,
+        players
+      );
+      return {
+        ...existing,
+        schemaVersion: 5,
+        messages,
+        players,
+        transportCaptures,
+        droppedTransportCaptures:
+          typeof existing.droppedTransportCaptures === 'number'
+            ? existing.droppedTransportCaptures
+            : 0,
+        spatialCapture,
+      } as GameLog;
+    })
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
 
   if (logs.length === 0) {
     console.warn('📼 No stored game logs found');
     return [];
   }
-  downloadJson(logs, `catan-games-all-${timestampSlug()}.json`);
-  return logs;
+  const exportLogs = logs.map(anonymizeGameLog);
+  downloadJson(exportLogs, `catan-games-all-${timestampSlug()}.json`);
+  return exportLogs;
 }
 
 /** Test-only: clear module state between tests. */
 export function _resetMessageLoggerForTesting(): void {
   currentLog = null;
   seenIndices.clear();
+  seenTransportCaptureIds.clear();
+  pendingTransportCaptures.length = 0;
+  currentTransportCaptureDataLength = 0;
+  pendingTransportCaptureDataLength = 0;
+  spatialGameTracker.reset();
   if (persistTimer !== null) {
     clearTimeout(persistTimer);
     persistTimer = null;

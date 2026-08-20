@@ -13,9 +13,15 @@ import { resetGameState, autoDetectCurrentPlayer } from './gameState.js';
 import {
   initMessageLogger,
   logChatMessage,
+  logTransportCapture,
   exportAllGameLogs,
 } from './messageLogger.js';
 import { MessageOrderBuffer } from './messageOrderBuffer.js';
+import { startTransportCaptureBridge } from './transportCapture.js';
+
+// Start listening immediately so the MAIN-world hook can replay WebSocket
+// traffic captured before Colonist rendered the chat or board.
+startTransportCaptureBridge(logTransportCapture);
 
 // All chat rows flow through this buffer so the parser always sees them in
 // strict data-index order — the parser's dedup is a monotonic high-water mark,

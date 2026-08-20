@@ -4,7 +4,7 @@
   "description": "",
   "main": "content.js",
   "scripts": {
-    "build": "rollup -c",
+    "build": "node scripts/build.cjs",
     "watch": "rollup -c -w",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -35,5 +35,8 @@
     "ts-jest": "^29.4.0",
     "tslib": "^2.8.1",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@msgpack/msgpack": "^3.1.3"
   }
 }

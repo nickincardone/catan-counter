@@ -9,17 +9,40 @@ import {
 import {
   initMessageLogger,
   logChatMessage,
+  logTransportCapture,
   downloadCurrentGameLog,
   _resetMessageLoggerForTesting,
   _getCurrentLogForTesting,
 } from '../messageLogger';
 import { game, resetGameState, ensurePlayerExists } from '../gameState';
+import type { TransportCapture } from '../transportCapture';
 
 function makeMessageElement(index: number, text: string): HTMLElement {
   const element = document.createElement('div');
   element.setAttribute('data-index', String(index));
   element.innerHTML = `<span style="color:#CF6B2E">${text}</span>`;
   return element;
+}
+
+function makeTransportCapture(
+  sequence: number,
+  data = `packet-${sequence}`
+): TransportCapture {
+  return {
+    captureVersion: 1,
+    id: `page-session:${sequence}`,
+    pageSessionId: 'page-session',
+    sequence,
+    capturedAt: `2026-08-17T20:00:${String(sequence).padStart(2, '0')}.000Z`,
+    direction: 'incoming',
+    connectionId: 1,
+    connectionUrl: 'wss://example.colonist.io/socket',
+    event: 'message',
+    encoding: 'text',
+    data,
+    byteLength: data.length,
+    truncated: false,
+  };
 }
 
 describe('messageLogger', () => {
@@ -40,8 +63,16 @@ describe('messageLogger', () => {
       const log = _getCurrentLogForTesting();
       expect(log).not.toBeNull();
       expect(log!.gameId).toBe('testgame1');
-      expect(log!.schemaVersion).toBe(1);
+      expect(log!.schemaVersion).toBe(5);
       expect(log!.messages).toEqual([]);
+      expect(log!.transportCaptures).toEqual([]);
+      expect(log!.spatialCapture).toEqual({
+        board: null,
+        events: [],
+        chatLog: [],
+        decodedIncomingCaptures: 0,
+        decodeFailures: 0,
+      });
     });
 
     it('falls back to "unknown" when there is no URL hash', async () => {
@@ -86,6 +117,26 @@ describe('messageLogger', () => {
     });
   });
 
+  describe('logTransportCapture', () => {
+    it('records and dedupes transport captures by id', () => {
+      const capture = makeTransportCapture(1);
+      logTransportCapture(capture);
+      logTransportCapture(capture);
+
+      expect(_getCurrentLogForTesting()!.transportCaptures).toEqual([capture]);
+    });
+
+    it('keeps captures that arrive before the game logger initializes', async () => {
+      _resetMessageLoggerForTesting();
+      const capture = makeTransportCapture(0, 'initial game snapshot');
+      logTransportCapture(capture);
+
+      await initMessageLogger();
+
+      expect(_getCurrentLogForTesting()!.transportCaptures).toEqual([capture]);
+    });
+  });
+
   describe('downloadCurrentGameLog', () => {
     let clickSpy: ReturnType<typeof jest.spyOn>;
 
@@ -113,9 +164,23 @@ describe('messageLogger', () => {
 
       const exported = downloadCurrentGameLog();
       expect(exported).not.toBeNull();
+      expect(exported!.schemaVersion).toBe(6);
       expect(exported!.messages.map(m => m.index)).toEqual([2, 7]);
-      expect(exported!.youPlayerName).toBe('Camilo#6469');
-      expect(exported!.players).toEqual(['Aaren', 'Camilo#6469']);
+      expect(exported!.spatialCapture.chatLog.map(m => m.index)).toEqual([
+        2, 7,
+      ]);
+      expect(exported!.youPlayerName).toBe('Player 2');
+      expect(exported!.players).toEqual(['Player 1', 'Player 2']);
+      expect(exported!.anonymization.playerNames).toBe('placement-order');
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('exports transport captures even before chat messages exist', () => {
+      logTransportCapture(makeTransportCapture(2));
+
+      const exported = downloadCurrentGameLog();
+
+      expect(exported!.transportCaptures).toHaveLength(1);
       expect(clickSpy).toHaveBeenCalledTimes(1);
     });
   });

@@ -11,6 +11,7 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 - **Dice Rolls**: Records frequency of all dice roll results (2-12)
 - **Blocked Dice Tracking**: Monitors when robber blocks resource production by dice number and resource type
 - **Building Counts**: Tracks settlements, cities, and roads remaining for each player
+- **Spatial Board Capture (POC)**: Decodes the initial board (terrain, number tokens, ports, corners, edges, and robber) plus subsequent road, settlement, city, and robber updates directly from Colonist's game protocol
 - **Victory Points**: Monitors VP progress for all players
 
 ### 📊 **Enhanced User Interface**
@@ -41,29 +42,150 @@ A Chrome extension that automatically tracks game state for Settlers of Catan ga
 
 - **Automatic capture**: Every chat message is recorded (plain text + verbatim HTML, deduped by `data-index`) independently of the parser, so the log is complete even for messages the parser ignores
 - **Auto-saved per game**: Each game is persisted to `chrome.storage.local` under `catanGameLog:<gameId>` (the game id comes from the colonist URL hash) — no clicks needed, and logs survive refreshes, tab closes, and navigation
-- **One-click export**: The 💾 button in the overlay header downloads the current game as `catan-game-<gameId>-<timestamp>.json`
-- **Export everything**: From DevTools (select the extension's content-script context in the console dropdown), run `__catanCounter.exportAllGameLogs()` to download all stored games as a single JSON file
-- **Versioned schema** (`schemaVersion: 1`) with game metadata — game id, URL, players, which player captured the log (`youPlayerName`), timestamps — designed so logs collected from many users can later be pooled as training data for a Catan-playing bot
+- **One-click anonymous export**: The 💾 button downloads the current game as `catan-game-<gameId>-<timestamp>.json`, replacing names with `Player 1`, `Player 2`, etc. in first-settlement order
+- **Export everything**: From DevTools (select the extension's content-script context in the console dropdown), run `__catanCounter.exportAllGameLogs()` to download all stored games as one anonymized JSON file
+- **Game transport POC**: A separate main-page hook captures bounded copies of Colonist WebSocket messages before the canvas renders them. Captures are local-only, deduped across startup replay, and saved alongside chat.
+- **Normalized spatial state**: Incoming MessagePack snapshots/diffs are decoded into stable `hexes`, `corners`, `edges`, `ports`, `players`, `robberHexId`, and ordered building/robber events. Original numeric protocol codes are retained for debugging and future migrations.
+- **Conversation-aware state**: The normalized game state includes the complete ordered `chatLog`. It labels player chat, UI trade offers, game events, system messages, and separators; `richText` inserts resource/dice image labels so offers remain meaningful to a model. Friendly player colors and `colorMentions` resolve messages addressed to names such as “Black” back to the corresponding anonymized player.
+- **Versioned schemas**: resumable local logs use schema v5; downloaded, placement-order-anonymized files use schema v6. Older logs are upgraded in memory when loaded.
+
+The transport capture is intentionally a POC. Each payload is capped at 256 KiB;
+each game is capped at 20,000 captures or roughly 50 MB of encoded payload data;
+and WebSocket URL query strings/fragments are removed before persistence so
+connection tokens are not written to logs.
+Downloaded files replace known player names inside chat, HTML, spatial state,
+and decodable MessagePack. Opaque binary payloads are omitted. Other account
+metadata may still exist in decoded protocol data, so do not publish POC exports
+until the decoder includes a complete privacy scrub.
 
 Exported JSON shape:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 6,
   "gameId": "green9433",
   "url": "https://colonist.io/#green9433",
   "startedAt": "2026-08-17T20:29:09.000Z",
   "updatedAt": "2026-08-17T21:02:41.000Z",
-  "youPlayerName": "Camilo#6469",
-  "players": ["Aaren", "Camilo#6469", "Botzow", "Mathe"],
+  "youPlayerName": "Player 1",
+  "players": ["Player 1", "Player 2", "Player 3", "Player 4"],
   "messages": [
     {
       "index": 2,
-      "text": "Aaren placed a Settlement",
-      "html": "<div data-index=\"2\" ...>",
+      "text": "Player 1 placed a Settlement",
+      "html": "<div data-index=\"2\">Player 1 placed a Settlement</div>",
       "loggedAt": "..."
     }
-  ]
+  ],
+  "transportCaptures": [
+    {
+      "captureVersion": 1,
+      "id": "m123-session:4",
+      "pageSessionId": "m123-session",
+      "sequence": 4,
+      "capturedAt": "2026-08-17T20:29:08.000Z",
+      "direction": "incoming",
+      "connectionId": 1,
+      "connectionUrl": "wss://example.colonist.io/socket",
+      "event": "message",
+      "encoding": "text",
+      "data": "...raw protocol payload...",
+      "byteLength": 128,
+      "truncated": false
+    }
+  ],
+  "droppedTransportCaptures": 0,
+  "spatialCapture": {
+    "board": {
+      "source": "colonist-msgpack",
+      "capturedAt": "2026-08-17T20:29:08.000Z",
+      "protocolSequence": 3,
+      "capturingPlayerColor": 9,
+      "capturingPlayerColorName": "black",
+      "playOrder": [9, 3, 2, 1],
+      "players": [
+        {
+          "color": 9,
+          "colorName": "black",
+          "username": "Player 1",
+          "isBot": false
+        }
+      ],
+      "hexes": [
+        {
+          "id": 0,
+          "x": 0,
+          "y": -2,
+          "terrain": "ore",
+          "terrainCode": 5,
+          "diceNumber": 5
+        }
+      ],
+      "corners": [],
+      "edges": [],
+      "ports": [
+        {
+          "id": 0,
+          "x": 0,
+          "y": -2,
+          "z": 0,
+          "port": "lumber",
+          "portCode": 2
+        }
+      ],
+      "robberHexId": 7
+    },
+    "events": [
+      {
+        "kind": "settlement-placed",
+        "capturedAt": "2026-08-17T20:31:04.000Z",
+        "protocolSequence": 12,
+        "playerColor": 9,
+        "cornerId": 10,
+        "buildingCode": 1
+      }
+    ],
+    "chatLog": [
+      {
+        "index": 41,
+        "kind": "player-chat",
+        "speakerName": "Player 2",
+        "speakerColor": 3,
+        "speakerColorName": "orange",
+        "colorMentions": [
+          {
+            "colorName": "black",
+            "playerName": "Player 1",
+            "playerColor": 9
+          }
+        ],
+        "text": "Player 2: Black, ore for no block?",
+        "richText": "Player 2: Black, ore for no block?",
+        "message": "Black, ore for no block?",
+        "iconAlts": [],
+        "loggedAt": "2026-08-17T20:32:05.000Z"
+      },
+      {
+        "index": 42,
+        "kind": "trade-offer",
+        "speakerName": "Player 1",
+        "speakerColor": 9,
+        "speakerColorName": "black",
+        "colorMentions": [],
+        "text": "Player 1 wants to give for",
+        "richText": "Player 1 wants to give [Ore] for [Grain]",
+        "message": "wants to give [Ore] for [Grain]",
+        "iconAlts": ["Ore", "Grain"],
+        "loggedAt": "2026-08-17T20:32:10.000Z"
+      }
+    ],
+    "decodedIncomingCaptures": 72,
+    "decodeFailures": 0
+  },
+  "anonymization": {
+    "playerNames": "placement-order",
+    "opaqueTransportPayloadsRemoved": 65
+  }
 }
 ```
 
@@ -252,8 +374,9 @@ The overlay features an organized, visual layout with:
 ### Architecture
 
 - **Modular TypeScript**: Organized into separate modules for maintainability
-- **Rollup Bundling**: Multiple TypeScript files compiled into single JavaScript output
-- **Content Script**: Injected into colonist.io pages
+- **Rollup Bundling**: Produces an isolated extension bundle and a small main-page transport hook
+- **Content Script**: Runs in Chrome's isolated extension world for DOM parsing, storage, and UI
+- **Transport Hook POC**: Runs in the page's main world at `document_start`, wraps native WebSocket construction/sends, and bridges validated observations to the content script
 - **Chat Monitoring**: Uses MutationObserver to detect new messages
 - **Pattern Matching**: Analyzes chat messages and HTML structure
 - **Variant Tree Management**: Maintains probabilistic game states with automatic branch pruning
@@ -315,10 +438,13 @@ The codebase is organized into focused modules for better maintainability:
 - **`domUtils.ts`** - DOM element querying, resource parsing, and utility functions
 - **`overlay.ts`** - Draggable game state overlay UI with probabilistic resource display
 - **`chatParser.ts`** - Core chat message parsing logic handling 24+ game scenarios
-- **`messageLogger.ts`** - Records raw chat messages per game, persists them to `chrome.storage.local`, and exports them as JSON
+- **`pageTransportHook.ts`** - Early main-world WebSocket observation hook; never calls extension APIs
+- **`transportCapture.ts`** - Validated `window.postMessage` bridge between the page and isolated worlds
+- **`messageLogger.ts`** - Records raw chat and transport captures per game, persists them to `chrome.storage.local`, and exports them as JSON
 - **`content.ts`** - Main entry point, initialization, and mutation observer setup
 
-All modules are bundled into a single `content.js` file using Rollup for optimal browser performance.
+Rollup emits `page-transport-hook.js` for the main world and `content.js` for the
+isolated extension world.
 
 ### Browser Compatibility
 
