@@ -426,3 +426,65 @@ describe('page frame insets', () => {
     });
   });
 });
+
+describe('bundled fonts', () => {
+  // Chrome ignores @font-face inside a shadow root, so the faces have to be
+  // registered on the document. That failure is invisible on a machine where
+  // the fonts happen to be installed, which is how it got shipped once.
+  it('registers its typefaces on the document, not in the shadow root', async () => {
+    const added: unknown[] = [];
+    const fakeFontFace = class {
+      constructor(
+        public family: string,
+        public source: string,
+        public descriptors: Record<string, string>
+      ) {}
+      load() {
+        return Promise.resolve(this);
+      }
+    };
+    (globalThis as any).FontFace = fakeFontFace;
+    (document as any).fonts = {
+      add: (face: unknown) => added.push(face),
+      delete: () => true,
+    };
+
+    jest.resetModules();
+    const { loadFonts, unloadFonts } = await import('../ui/shell/fonts');
+    await loadFonts(path => `chrome-extension://abc/${path}`);
+
+    expect(added).toHaveLength(2);
+    const families = added.map(f => (f as { family: string }).family).sort();
+    expect(families).toEqual(['JetBrains Mono', 'Manrope']);
+    const sources = added.map(f => (f as { source: string }).source);
+    expect(sources.every(src => src.includes('chrome-extension://abc/'))).toBe(
+      true
+    );
+    expect(sources.every(src => src.endsWith(".woff2')"))).toBe(true);
+
+    unloadFonts();
+  });
+
+  it('carries on when a face will not load', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    (globalThis as any).FontFace = class {
+      load() {
+        return Promise.reject(new Error('404'));
+      }
+    };
+    (document as any).fonts = { add: () => undefined, delete: () => true };
+
+    jest.resetModules();
+    const { loadFonts } = await import('../ui/shell/fonts');
+
+    // The font stacks name a real fallback, so a missing file must not throw.
+    await expect(loadFonts(path => path)).resolves.toBeUndefined();
+    warn.mockRestore();
+  });
+
+  it('declares no @font-face in the shadow stylesheet, where it would be ignored', async () => {
+    jest.resetModules();
+    const { buildStyleSheet } = await import('../ui/shell/styles');
+    expect(buildStyleSheet([])).not.toContain('@font-face');
+  });
+});

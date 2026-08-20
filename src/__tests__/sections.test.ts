@@ -271,7 +271,7 @@ describe('unknown steals section', () => {
       'wheat 50%',
       'ore 50%',
     ]);
-    expect(text('.section-label--accent')).toBe('Unknown steals · 1');
+    expect(text('.section-label')).toBe('Unknown steals · 1');
   });
 
   it('emits the resolution when a chip is clicked', () => {

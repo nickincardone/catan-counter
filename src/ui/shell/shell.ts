@@ -30,6 +30,7 @@ import {
   type V2Layout,
 } from './layoutStore.js';
 import { buildStyleSheet } from './styles.js';
+import { loadFonts, unloadFonts } from './fonts.js';
 import {
   applyPageFrame,
   refreshPageFrame,
@@ -146,8 +147,13 @@ export class Shell {
     this.shadow = this.root.attachShadow({ mode: 'open' });
 
     const style = document.createElement('style');
-    style.textContent = buildStyleSheet(assetUrl, registeredStyles());
+    style.textContent = buildStyleSheet(registeredStyles());
     this.shadow.appendChild(style);
+
+    // Registered on the document rather than in the shadow root, which Chrome
+    // would ignore. Nothing waits on it: the stacks fall back to system faces
+    // until the files arrive.
+    void loadFonts(assetUrl);
 
     this.render();
 
@@ -174,6 +180,7 @@ export class Shell {
     this.root.remove();
     this.root = null;
     this.shadow = null;
+    unloadFonts();
     void releasePageFrame();
   }
 

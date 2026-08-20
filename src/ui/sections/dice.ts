@@ -19,7 +19,7 @@ const STYLES = `
   }
   .dice-count {
     font-family: var(--cc-mono);
-    font-size: 10px;
+    font-size: 12px;
     margin-bottom: 3px;
     color: var(--cc-mono-dim);
   }
@@ -44,7 +44,7 @@ const STYLES = `
     flex: 1;
     text-align: center;
     font-family: var(--cc-mono);
-    font-size: 10px;
+    font-size: 12px;
     color: var(--cc-mono-dim);
   }
 `;

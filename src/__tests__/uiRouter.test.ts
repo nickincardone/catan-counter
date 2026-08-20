@@ -14,6 +14,7 @@ async function freshUi(): Promise<Ui> {
   (globalThis as any).chrome = { runtime: { getURL: (p: string) => p } };
   const { resetGameState } = await import('../gameState');
   resetGameState();
+  // A fresh module registry starts at DEFAULT_UI_MODE, so no reset is needed.
   return import('../ui/index');
 }
 
@@ -30,55 +31,54 @@ describe('ui mode router', () => {
     ui = await freshUi();
   });
 
-  it('mounts v1 by default', () => {
+  it('mounts the gutter interface by default', () => {
     ui.showGameStateOverlay();
+    expect(v2Present()).toBe(true);
+    expect(v1Visible()).toBe(false);
+    expect(ui.getUiMode()).toBe('v2');
+  });
+
+  it('swaps to the overlay in place, leaving no v2 residue on the page', () => {
+    ui.showGameStateOverlay();
+    ui.setUiMode('v1');
+
     expect(v1Visible()).toBe(true);
     expect(v2Present()).toBe(false);
     expect(ui.getUiMode()).toBe('v1');
   });
 
-  it('swaps to v2 in place, taking v1 off screen first', () => {
+  it('swaps back to the gutters, taking the overlay off screen', () => {
     ui.showGameStateOverlay();
+    ui.setUiMode('v1');
     ui.setUiMode('v2');
 
-    expect(v1Visible()).toBe(false);
     expect(v2Present()).toBe(true);
-    expect(ui.getUiMode()).toBe('v2');
+    expect(v1Visible()).toBe(false);
   });
 
-  it('swaps back to v1, leaving no v2 residue on the page', () => {
-    ui.showGameStateOverlay();
-    ui.setUiMode('v2');
+  it('does not mount anything before the chat is found', () => {
     ui.setUiMode('v1');
+    expect(v1Visible()).toBe(false);
+    expect(v2Present()).toBe(false);
+  });
 
+  it('mounts the chosen mode when the chat is finally found', () => {
+    ui.setUiMode('v1');
+    ui.showGameStateOverlay();
     expect(v1Visible()).toBe(true);
     expect(v2Present()).toBe(false);
   });
 
-  it('does not mount anything before the chat is found', () => {
-    ui.setUiMode('v2');
-    expect(v1Visible()).toBe(false);
-    expect(v2Present()).toBe(false);
-  });
-
-  it('mounts the active mode when the chat is finally found', () => {
-    ui.setUiMode('v2');
-    ui.showGameStateOverlay();
-    expect(v2Present()).toBe(true);
-    expect(v1Visible()).toBe(false);
-  });
-
   it('ignores a switch to the mode already active', () => {
     ui.showGameStateOverlay();
-    const before = document.getElementById('catan-game-state-overlay');
-    ui.setUiMode('v1');
-    expect(document.getElementById('catan-game-state-overlay')).toBe(before);
+    const before = document.getElementById('catan-v2-root');
+    ui.setUiMode('v2');
+    expect(document.getElementById('catan-v2-root')).toBe(before);
   });
 
   it('carries the history-loading state across a mode switch', () => {
     ui.showGameStateOverlay();
     ui.setHistoryLoading(true);
-    ui.setUiMode('v2');
     ui.setUiMode('v1');
 
     // v1 renders the spinner whenever it is loading; the flag survived the trip.

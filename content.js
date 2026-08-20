@@ -5392,13 +5392,13 @@
     const GUTTER_NAMES = ['left', 'right', 'top', 'bottom'];
     /** Width the rail collapses to — enough for the reopen chevron. */
     const COLLAPSED_SIZE = 28;
-    const MIN_RAIL_WIDTH = 250;
-    const MAX_RAIL_WIDTH = 380;
+    const MIN_RAIL_WIDTH = 280;
+    const MAX_RAIL_WIDTH = 420;
     const LAYOUT_STORAGE_KEY = 'catanUiLayout';
     const DEFAULT_LAYOUT = {
         version: 1,
         left: {
-            size: 290,
+            size: 365,
             collapsed: false,
             sections: [
                 { id: 'hands' },
@@ -5407,10 +5407,10 @@
             ],
         },
         bottom: {
-            size: 176,
+            size: 210,
             collapsed: false,
             sections: [
-                { id: 'dice', weight: 1.6 },
+                { id: 'dice', weight: 1 },
                 { id: 'dev-deck', weight: 1 },
             ],
         },
@@ -5493,32 +5493,37 @@
     // reference these names, never raw hex, so the palette can move in one place.
     const THEME = {
         /** Rail and bottom-bar background. */
-        panel: '#0f2c46',
+        panel: '#16181c',
         hairline: 'rgba(255,255,255,.09)',
         /** Cards, player rows, dev tiles. */
         surface: 'rgba(255,255,255,.05)',
         /** A resource cell nobody can hold. */
         surfaceEmpty: 'rgba(255,255,255,.02)',
-        accent: '#f4c542',
-        /** Probability fractions, dice running hot, a confirmed resolution. */
-        good: '#7fd4c1',
-        goodText: '#a8e8da',
-        goodTint: 'rgba(127,212,193,.09)',
-        goodBorder: 'rgba(127,212,193,.45)',
-        accentTint: 'rgba(244,197,66,.09)',
-        accentBorder: 'rgba(244,197,66,.32)',
+        /** Every section label, the logo, and the robber's tally. */
+        accent: '#e8a33d',
+        accentTint: 'rgba(232,163,61,.09)',
+        accentBorder: 'rgba(232,163,61,.32)',
+        /** Dice running hot, an untouched dev pile, a confirmed resolution. */
+        good: '#5ec8a0',
+        goodText: '#8fe0c4',
+        goodTint: 'rgba(94,200,160,.09)',
+        goodBorder: 'rgba(94,200,160,.45)',
+        /** Probable holdings, which sit against a resource tint rather than a panel. */
+        probable: '#6fdcae',
         danger: '#e35b5b',
-        bar: '#4d7ea3',
+        bar: '#5b6775',
         text: '#ffffff',
-        textBody: '#dbe6ee',
-        textMuted: '#9fb8cc',
-        /** Section labels. */
-        label: '#7fa8c9',
+        textBody: '#eef1f4',
+        textMuted: '#c3ccd4',
         /** Right-hand hints, e.g. "bank left". */
-        labelDim: '#5b7f9c',
-        monoDim: '#6f93ae',
+        labelDim: '#8a939d',
+        monoDim: '#949da6',
         /** A zero that isn't really a holding. */
-        zero: '#3f566b',
+        zero: '#4b5158',
+        /** The circle behind a blocked dice number. */
+        well: '#24272d',
+        /** The collapse chevron. */
+        chevron: '#b9c2cc',
     };
     const RESOURCE_STYLE = {
         tree: { color: '#3f8f2f', tint: 'rgba(63,143,47,.22)', icon: 'tree.svg' },
@@ -5528,43 +5533,16 @@
         ore: { color: '#9aa8ae', tint: 'rgba(154,168,174,.22)', icon: 'ore.svg' },
     };
     /**
-     * Nunito for names and headings, IBM Plex Mono for every number. Both are
+     * Manrope for names and headings, JetBrains Mono for every number. Both are
      * bundled as web-accessible resources rather than fetched from Google, so they
      * do not depend on colonist's content security policy. The fallbacks matter:
      * if the files are ever missing the UI degrades to the system stack instead of
      * to a serif face.
      */
-    const FONT_SANS = "'Nunito', system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif";
-    const FONT_MONO = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    const FONT_SANS = "'Manrope', system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif";
+    const FONT_MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
     // shell/styles.ts
-    /** @font-face rules pointing at the bundled files. */
-    function fontFaces(assetUrl) {
-        return `
-    @font-face {
-      font-family: 'Nunito';
-      font-style: normal;
-      /* Variable font: one file covers the whole weight axis. */
-      font-weight: 400 900;
-      font-display: swap;
-      src: url('${assetUrl('assets/fonts/nunito-latin-var.woff2')}') format('woff2');
-    }
-    @font-face {
-      font-family: 'IBM Plex Mono';
-      font-style: normal;
-      font-weight: 400;
-      font-display: swap;
-      src: url('${assetUrl('assets/fonts/ibm-plex-mono-latin-400.woff2')}') format('woff2');
-    }
-    @font-face {
-      font-family: 'IBM Plex Mono';
-      font-style: normal;
-      font-weight: 600;
-      font-display: swap;
-      src: url('${assetUrl('assets/fonts/ibm-plex-mono-latin-600.woff2')}') format('woff2');
-    }
-  `;
-    }
     function tokens() {
         const resourceVars = Object.entries(RESOURCE_STYLE)
             .map(([key, style]) => `--cc-${key}: ${style.color}; --cc-${key}-tint: ${style.tint};`)
@@ -5582,15 +5560,17 @@
       --cc-good-text: ${THEME.goodText};
       --cc-good-tint: ${THEME.goodTint};
       --cc-good-border: ${THEME.goodBorder};
+      --cc-probable: ${THEME.probable};
       --cc-danger: ${THEME.danger};
       --cc-bar: ${THEME.bar};
       --cc-text: ${THEME.text};
       --cc-text-body: ${THEME.textBody};
       --cc-text-muted: ${THEME.textMuted};
-      --cc-label: ${THEME.label};
       --cc-label-dim: ${THEME.labelDim};
       --cc-mono-dim: ${THEME.monoDim};
       --cc-zero: ${THEME.zero};
+      --cc-well: ${THEME.well};
+      --cc-chevron: ${THEME.chevron};
       --cc-font: ${FONT_SANS};
       --cc-mono: ${FONT_MONO};
       ${resourceVars}
@@ -5676,18 +5656,18 @@
     border-radius: 6px;
     background: var(--cc-accent);
     color: var(--cc-panel);
-    font-weight: 900;
-    font-size: 12px;
+    font-weight: 800;
+    font-size: 14px;
     display: flex; align-items: center; justify-content: center;
   }
   .rail-title {
-    font-weight: 800; font-size: 14px; color: var(--cc-text); line-height: 1.1;
+    font-weight: 800; font-size: 18px; color: var(--cc-text); line-height: 1.1;
   }
   .rail-collapse {
     font-family: var(--cc-mono);
-    font-size: 14px;
+    font-size: 16px;
     line-height: 1;
-    color: var(--cc-label);
+    color: var(--cc-chevron);
     background: none;
     border: 0;
     padding: 4px;
@@ -5714,30 +5694,29 @@
   .gutter--horizontal .section-head { margin-bottom: 10px; }
   .section-label {
     font-family: var(--cc-mono);
-    font-size: 9px;
+    font-size: 11px;
     letter-spacing: .14em;
-    color: var(--cc-label);
+    color: var(--cc-accent);
     text-transform: uppercase;
     white-space: nowrap;
   }
-  .section-label--accent { color: var(--cc-accent); }
   .section-hint {
     font-family: var(--cc-mono);
-    font-size: 9px;
+    font-size: 11px;
     color: var(--cc-label-dim);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .section-note {
-    padding: 16px 14px 0;
-    font-size: 10px;
+    padding: 14px 14px 0;
+    font-size: 12px;
     color: var(--cc-label-dim);
     line-height: 1.45;
   }
   .section-empty {
     padding: 4px 14px 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--cc-mono-dim);
   }
   .section-rows { padding: 0 10px; display: flex; flex-direction: column; gap: 6px; }
@@ -5746,13 +5725,13 @@
   .rail-status {
     padding: 22px 14px;
     text-align: center;
-    color: var(--cc-label);
-    font-size: 11px;
+    color: var(--cc-text-muted);
+    font-size: 13px;
     line-height: 1.5;
   }
   .rail-status-detail {
     margin-top: 6px;
-    font-size: 10px;
+    font-size: 12px;
     color: var(--cc-label-dim);
   }
   .rail-spinner {
@@ -5769,8 +5748,63 @@
     .rail-spinner { animation-duration: 4s; }
   }
 `;
-    function buildStyleSheet(assetUrl, sectionStyles) {
-        return [fontFaces(assetUrl), tokens(), FRAME, ...sectionStyles].join('\n');
+    function buildStyleSheet(sectionStyles) {
+        // No @font-face here: Chrome ignores those inside a shadow root. The bundled
+        // faces are registered on the document by shell/fonts.ts instead.
+        return [tokens(), FRAME, ...sectionStyles].join('\n');
+    }
+
+    // shell/fonts.ts
+    const BUNDLED = [
+        {
+            family: 'Manrope',
+            file: 'assets/fonts/manrope-latin-var.woff2',
+            weight: '200 800',
+        },
+        {
+            family: 'JetBrains Mono',
+            file: 'assets/fonts/jetbrains-mono-latin-var.woff2',
+            weight: '100 800',
+        },
+    ];
+    let loaded = [];
+    let pending = null;
+    /**
+     * Load the typefaces onto the document. Safe to call repeatedly; the work
+     * happens once. Failures are swallowed — the font stacks in `theme.ts` name a
+     * real fallback, so the worst case is the system face rather than no interface.
+     */
+    function loadFonts(assetUrl) {
+        if (pending)
+            return pending;
+        if (typeof FontFace === 'undefined' || !document.fonts) {
+            return Promise.resolve();
+        }
+        pending = Promise.all(BUNDLED.map((font) => __awaiter(this, void 0, void 0, function* () {
+            try {
+                const face = new FontFace(font.family, `url('${assetUrl(font.file)}')`, { weight: font.weight, display: 'swap' });
+                yield face.load();
+                document.fonts.add(face);
+                loaded.push(face);
+            }
+            catch (error) {
+                console.warn(`🎛️ Could not load ${font.family}:`, error);
+            }
+        }))).then(() => undefined);
+        return pending;
+    }
+    /** Take them off the document again, so unmounting leaves nothing behind. */
+    function unloadFonts() {
+        for (const face of loaded) {
+            try {
+                document.fonts.delete(face);
+            }
+            catch (_a) {
+                // Already gone, or the document is being torn down.
+            }
+        }
+        loaded = [];
+        pending = null;
     }
 
     /**
@@ -6032,8 +6066,12 @@
             document.documentElement.appendChild(this.root);
             this.shadow = this.root.attachShadow({ mode: 'open' });
             const style = document.createElement('style');
-            style.textContent = buildStyleSheet(assetUrl, registeredStyles());
+            style.textContent = buildStyleSheet(registeredStyles());
             this.shadow.appendChild(style);
+            // Registered on the document rather than in the shadow root, which Chrome
+            // would ignore. Nothing waits on it: the stacks fall back to system faces
+            // until the files arrive.
+            void loadFonts(assetUrl);
             this.render();
             // Colonist re-lays out on window resize; so must the frame.
             const onResize = () => void this.syncPageFrame();
@@ -6059,6 +6097,7 @@
             this.root.remove();
             this.root = null;
             this.shadow = null;
+            unloadFonts();
             void releasePageFrame();
         }
         setHistoryLoading(loading) {
@@ -6333,9 +6372,9 @@
         return node;
     }
     /** A section header: label on the left, hint on the right. */
-    function sectionHead(label, hint = '', accent = false) {
+    function sectionHead(label, hint = '') {
         const head = el('div', 'section-head');
-        const labelNode = el('span', accent ? 'section-label section-label--accent' : 'section-label', label);
+        const labelNode = el('span', 'section-label', label);
         const hintNode = el('span', 'section-hint', hint);
         head.append(labelNode, hintNode);
         return { head, labelNode, hintNode };
@@ -6364,19 +6403,19 @@
     height: 20px;
     flex: none;
     border-radius: 50%;
-    background: #1b3e5c;
+    background: var(--cc-well);
     border: 1px solid rgba(255,255,255,.16);
     display: flex;
     align-items: center;
     justify-content: center;
     font-family: var(--cc-mono);
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--cc-text-body);
   }
   .blocked-row img { width: 12px; height: 17px; border-radius: 1px; display: block; flex: none; }
   .blocked-spacer { flex: 1; }
-  .blocked-count { font-family: var(--cc-mono); font-size: 11px; color: var(--cc-accent); }
+  .blocked-count { font-family: var(--cc-mono); font-size: 13px; color: var(--cc-accent); }
 `;
     const blockedRobberSection = {
         id: 'blocked-robber',
@@ -6424,13 +6463,13 @@
     min-width: 0;
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 5px;
+    gap: 4px;
   }
   .dev-tile {
     min-width: 0;
     background: var(--cc-surface);
     border-radius: 7px;
-    padding: 7px 2px;
+    padding: 6px 2px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -6438,22 +6477,27 @@
     text-align: center;
     overflow: hidden;
   }
-  .dev-tile img { width: 26px; height: 36px; flex: none; border-radius: 2px; display: block; }
+  .dev-tile img { width: 26px; height: 35px; flex: none; border-radius: 2px; display: block; }
   .dev-ratio {
     font-family: var(--cc-mono);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--cc-text);
     line-height: 1;
     white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .dev-name {
     max-width: 100%;
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 700;
     color: var(--cc-text-muted);
     line-height: 1.15;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .dev-bar {
     width: 100%;
@@ -6467,7 +6511,7 @@
   .dev-caption {
     max-width: 100%;
     font-family: var(--cc-mono);
-    font-size: 8px;
+    font-size: 10px;
     color: var(--cc-mono-dim);
     line-height: 1.2;
     white-space: nowrap;
@@ -6533,7 +6577,7 @@
   }
   .dice-count {
     font-family: var(--cc-mono);
-    font-size: 10px;
+    font-size: 12px;
     margin-bottom: 3px;
     color: var(--cc-mono-dim);
   }
@@ -6558,7 +6602,7 @@
     flex: 1;
     text-align: center;
     font-family: var(--cc-mono);
-    font-size: 10px;
+    font-size: 12px;
     color: var(--cc-mono-dim);
   }
 `;
@@ -6629,12 +6673,12 @@
     gap: 3px;
   }
   .bank-cell img { width: 22px; height: 31px; border-radius: 2px; display: block; }
-  .bank-count { font-family: var(--cc-mono); font-size: 8px; color: var(--cc-label-dim); }
+  .bank-count { font-family: var(--cc-mono); font-size: 10px; color: var(--cc-label-dim); }
 
   .player-row {
     margin-top: 6px;
     background: var(--cc-surface);
-    border-left: 3px solid var(--cc-label);
+    border-left: 3px solid var(--cc-mono-dim);
     border-radius: 6px;
     padding: 7px 8px;
   }
@@ -6646,7 +6690,7 @@
     margin-bottom: 6px;
   }
   .player-name {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -6654,7 +6698,7 @@
   }
   .player-summary {
     font-family: var(--cc-mono);
-    font-size: 10px;
+    font-size: 12px;
     color: var(--cc-text-muted);
     white-space: nowrap;
   }
@@ -6667,7 +6711,7 @@
   }
   .cell-count {
     font-family: var(--cc-mono);
-    font-size: 13px;
+    font-size: 16px;
     font-weight: 600;
     line-height: 1.1;
     color: var(--cc-text);
@@ -6676,10 +6720,10 @@
   .cell--zero .cell-count { color: var(--cc-zero); }
   .cell-probability {
     font-family: var(--cc-mono);
-    font-size: 9px;
+    font-size: 11px;
     line-height: 1.2;
-    min-height: 11px;
-    color: var(--cc-good);
+    min-height: 13px;
+    color: var(--cc-probable);
   }
 `;
     const NOTE = 'Solid numbers are guaranteed. Green fractions are probable holdings from unresolved steals.';
@@ -6787,7 +6831,7 @@
     const STYLES$1 = `
   .players-row {
     background: var(--cc-surface);
-    border-left: 3px solid var(--cc-label);
+    border-left: 3px solid var(--cc-mono-dim);
     border-radius: 6px;
     padding: 7px 9px;
   }
@@ -6798,19 +6842,19 @@
     gap: 8px;
   }
   .players-name {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .players-vp { font-family: var(--cc-mono); font-size: 10px; color: var(--cc-text-muted); }
+  .players-vp { font-family: var(--cc-mono); font-size: 12px; color: var(--cc-text-muted); }
   .players-stats {
     display: flex;
     gap: 10px;
     margin-top: 5px;
     font-family: var(--cc-mono);
-    font-size: 10px;
+    font-size: 12px;
     color: var(--cc-mono-dim);
   }
   .players-stat strong { color: var(--cc-text-body); font-weight: 600; }
@@ -6900,11 +6944,11 @@
     justify-content: space-between;
     gap: 6px;
   }
-  .steal-who { font-size: 11px; color: var(--cc-text-body); line-height: 1.35; }
+  .steal-who { font-size: 13px; color: var(--cc-text-body); line-height: 1.35; }
   .steal-who strong { font-weight: 800; }
   .steal-time {
     font-family: var(--cc-mono);
-    font-size: 9px;
+    font-size: 11px;
     color: var(--cc-mono-dim);
     white-space: nowrap;
   }
@@ -6931,19 +6975,19 @@
   .chip img { width: 12px; height: 17px; border-radius: 1px; display: block; flex: none; }
   .chip-label {
     font-family: var(--cc-mono);
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--cc-text-body);
   }
   .chip--confirmed {
-    background: rgba(127,212,193,.16);
-    border-color: rgba(127,212,193,.5);
+    background: rgba(94,200,160,.16);
+    border-color: rgba(94,200,160,.5);
     cursor: default;
   }
   .chip--confirmed .chip-label { color: var(--cc-good-text); }
   .chip-undo {
     font-family: var(--cc-mono);
-    font-size: 9px;
+    font-size: 11px;
     color: var(--cc-mono-dim);
     background: none;
     border: 0;
@@ -7002,7 +7046,7 @@
         min: { width: 220, height: 0 },
         styles: STYLES,
         mount(host, view, ctx) {
-            const { head, labelNode, hintNode } = sectionHead('Unknown steals', 'click to resolve', true);
+            const { head, labelNode, hintNode } = sectionHead('Unknown steals', 'click to resolve');
             const rows = el('div', 'section-rows');
             const empty = el('div', 'section-empty', 'Nothing unaccounted for right now.');
             host.append(head, rows, empty);
@@ -7088,7 +7132,11 @@
     };
 
     // uiMode.ts
-    const DEFAULT_UI_MODE = 'v1';
+    /**
+     * The gutter interface is what the extension shows unless someone has chosen
+     * otherwise. The overlay stays available from the popup.
+     */
+    const DEFAULT_UI_MODE = 'v2';
     const UI_MODE_STORAGE_KEY = 'catanUiMode';
     function isUiMode(value) {
         return value === 'v1' || value === 'v2';

@@ -34,8 +34,8 @@ downstream, so they're recorded here rather than buried in a phase.
 | 5   | Rail header "T14 · 88% CERTAIN"                                  | **Dropped for now.** Turn count isn't tracked and the certainty number needs a definition first. Header is logo + title + collapse chevron. |
 | 6   | Dev deck caption                                                 | **Who played it / how many played** — attribution from `player.discoveryCards`, `"N unseen"` for never-revealed types.                      |
 | 7   | Unknown-steal resolution                                         | **Inline chips + UNDO.** Replaces v1's modal in v2. Undo needs a new tracker capability (§6.1).                                             |
-| 8   | Fonts                                                            | **Bundle Nunito + IBM Plex Mono woff2** as web-accessible resources. No dependence on colonist's CSP.                                       |
-| 9   | Collapse / resize                                                | Chevron collapses the rail to a **~28px strip** (page reclaims the space); inner edge is a **drag handle** to resize, 250–380px, persisted. |
+| 8   | Fonts                                                            | **Bundle Manrope + JetBrains Mono woff2** as web-accessible resources. No dependence on colonist's CSP.                                     |
+| 9   | Collapse / resize                                                | Chevron collapses the rail to a **~28px strip** (page reclaims the space); inner edge is a **drag handle** to resize, 280–420px, persisted. |
 
 ---
 
@@ -108,42 +108,49 @@ over data the tracker already produces.
 │          │                                              │
 │  LEFT    │            colonist.io page                  │
 │  RAIL    │      (squeezed, still fully interactive)      │
-│  290px   │                                              │
+│  365px   │                                              │
 │          │                                              │
 │ hands    │                                              │
 │ steals   │                                              │
 │ blocked  │                                              │
 │          ├───────────────────────┬──────────────────────┤
-│          │  dice (1.6fr)         │  dev deck (1fr)      │  176px
+│          │  dice (1fr)           │  dev deck (1fr)      │  210px
 └──────────┴───────────────────────┴──────────────────────┘
 ```
 
-- Left rail: `290px` default, resizable `250–380`, collapses to `28px`.
-- Bottom bar: `176px`, CSS grid `minmax(0,1.6fr) minmax(0,1fr)`.
+- Left rail: `365px` default, resizable `280–420`, collapses to `28px`.
+- Bottom bar: `210px`, split into two equal halves.
 - Right and top gutters: supported by the engine, `0px` and empty by default.
 - Rail body scrolls (`overflow-y: auto`); the header is pinned.
 
 ### 2.1 Design tokens (extracted from the mockup)
 
+The palette was revised after the first build (second mockup): the navy panel
+became a neutral dark, the accent moved from yellow to amber, **every** section
+label is now the accent colour rather than only Unknown steals, and the type is
+a couple of steps larger throughout.
+
 ```ts
 // src/ui/shell/theme.ts
 export const THEME = {
-  panel: '#0f2c46', // rail + bottom bar background
+  panel: '#16181c', // rail + bottom bar background
   hairline: 'rgba(255,255,255,.09)',
   surface: 'rgba(255,255,255,.05)', // cards, rows, dev tiles
   surfaceEmpty: 'rgba(255,255,255,.02)', // a zero resource cell
-  accent: '#f4c542', // logo, UNKNOWN STEALS label, ×N counts
-  good: '#7fd4c1', // probability fractions, hot dice, confirmed
-  goodText: '#a8e8da',
+  accent: '#e8a33d', // logo, every section label, ×N counts
+  good: '#5ec8a0', // hot dice, untouched dev pile, confirmed
+  goodText: '#8fe0c4',
+  probable: '#6fdcae', // fractions, which sit on a resource tint
   danger: '#e35b5b', // the 7 bar
-  bar: '#4d7ea3', // normal dice bar
+  bar: '#5b6775', // normal dice bar
   text: '#ffffff',
-  textBody: '#dbe6ee',
-  textMuted: '#9fb8cc',
-  label: '#7fa8c9', // section labels
-  labelDim: '#5b7f9c', // right-hand hints ("bank left")
-  monoDim: '#6f93ae',
-  zero: '#3f566b', // a 0 that isn't real
+  textBody: '#eef1f4',
+  textMuted: '#c3ccd4',
+  labelDim: '#8a939d', // right-hand hints ("bank left")
+  monoDim: '#949da6',
+  zero: '#4b5158', // a 0 that isn't real
+  well: '#24272d', // circle behind a blocked dice number
+  chevron: '#b9c2cc',
 } as const;
 
 export const RESOURCE_STYLE = {
@@ -155,10 +162,10 @@ export const RESOURCE_STYLE = {
 } as const;
 ```
 
-Typography: **Nunito** 800/900 for names and titles; **IBM Plex Mono** for every
-number, label and timestamp. Section labels are `9px`, `letter-spacing: .14em`,
+Typography: **Manrope** 800 for names and titles; **JetBrains Mono** for every
+number, label and timestamp. Section labels are `11px`, `letter-spacing: .14em`,
 uppercase. Resource card images render `22×31` in the bank row, `12×17` in steal
-chips, dev cards `26×36`.
+chips, dev cards `26×35`.
 
 ### 2.2 Section-by-section spec
 
@@ -180,7 +187,8 @@ Order in the rail is top-to-bottom as listed.
 
 **`unknown-steals`** (left rail)
 
-- Header: `UNKNOWN STEALS · N` (accent) / `click to resolve`.
+- Header: `UNKNOWN STEALS · N` / `click to resolve`. (Every section label is
+  the accent colour now, so this one is no longer distinguished.)
 - Per steal: `<thief> stole from <victim>` with both names in player colors, a
   timestamp on the right, then candidate chips sorted by descending probability:
   resource icon + `wheat 50%`.
@@ -192,7 +200,7 @@ Order in the rail is top-to-bottom as listed.
 - Header: `BLOCKED BY ROBBER` / `N DENIED`.
 - Rows: dice number in a circle, resource icon, `×N` in accent.
 
-**`dice`** (bottom, weight 1.6)
+**`dice`** (bottom, half the bar)
 
 - Header: `DICE · N ROLLS` / `white tick = expected rate`.
 - Bars scaled to the max count; a 1px white line at the expected rate
@@ -200,7 +208,7 @@ Order in the rail is top-to-bottom as listed.
 - Bar color: `danger` for 7, `good` when `count > expected × 1.3`, else `bar`.
 - Number labels below.
 
-**`dev-deck`** (bottom, weight 1)
+**`dev-deck`** (bottom, half the bar)
 
 - Header: `DEV DECK · N LEFT` / `left / total`.
 - 5 equal tiles: card image, `left/total`, name, a progress bar, and the

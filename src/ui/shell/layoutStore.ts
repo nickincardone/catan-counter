@@ -35,15 +35,15 @@ export const GUTTER_NAMES: GutterName[] = ['left', 'right', 'top', 'bottom'];
 
 /** Width the rail collapses to — enough for the reopen chevron. */
 export const COLLAPSED_SIZE = 28;
-export const MIN_RAIL_WIDTH = 250;
-export const MAX_RAIL_WIDTH = 380;
+export const MIN_RAIL_WIDTH = 280;
+export const MAX_RAIL_WIDTH = 420;
 
 export const LAYOUT_STORAGE_KEY = 'catanUiLayout';
 
 export const DEFAULT_LAYOUT: V2Layout = {
   version: 1,
   left: {
-    size: 290,
+    size: 365,
     collapsed: false,
     sections: [
       { id: 'hands' },
@@ -52,10 +52,10 @@ export const DEFAULT_LAYOUT: V2Layout = {
     ],
   },
   bottom: {
-    size: 176,
+    size: 210,
     collapsed: false,
     sections: [
-      { id: 'dice', weight: 1.6 },
+      { id: 'dice', weight: 1 },
       { id: 'dev-deck', weight: 1 },
     ],
   },

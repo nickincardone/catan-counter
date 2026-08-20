@@ -21,19 +21,19 @@ const STYLES = `
     height: 20px;
     flex: none;
     border-radius: 50%;
-    background: #1b3e5c;
+    background: var(--cc-well);
     border: 1px solid rgba(255,255,255,.16);
     display: flex;
     align-items: center;
     justify-content: center;
     font-family: var(--cc-mono);
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--cc-text-body);
   }
   .blocked-row img { width: 12px; height: 17px; border-radius: 1px; display: block; flex: none; }
   .blocked-spacer { flex: 1; }
-  .blocked-count { font-family: var(--cc-mono); font-size: 11px; color: var(--cc-accent); }
+  .blocked-count { font-family: var(--cc-mono); font-size: 13px; color: var(--cc-accent); }
 `;
 
 export const blockedRobberSection: SectionDefinition = {

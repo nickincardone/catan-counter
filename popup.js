@@ -32,7 +32,11 @@
     };
 
     // uiMode.ts
-    const DEFAULT_UI_MODE = 'v1';
+    /**
+     * The gutter interface is what the extension shows unless someone has chosen
+     * otherwise. The overlay stays available from the popup.
+     */
+    const DEFAULT_UI_MODE = 'v2';
     const UI_MODE_STORAGE_KEY = 'catanUiMode';
     function isUiMode(value) {
         return value === 'v1' || value === 'v2';

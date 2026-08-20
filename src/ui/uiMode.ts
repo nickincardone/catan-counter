@@ -5,7 +5,11 @@
 
 export type UiMode = 'v1' | 'v2';
 
-export const DEFAULT_UI_MODE: UiMode = 'v1';
+/**
+ * The gutter interface is what the extension shows unless someone has chosen
+ * otherwise. The overlay stays available from the popup.
+ */
+export const DEFAULT_UI_MODE: UiMode = 'v2';
 export const UI_MODE_STORAGE_KEY = 'catanUiMode';
 
 // Minimal typing for the pieces of the extension API we use — the project

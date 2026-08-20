@@ -29,14 +29,14 @@ The extension ships two user interfaces. Pick one from the toolbar popup; the
 change applies immediately to any open colonist.io tab, with no reload (reloading
 mid-game disconnects you and hands your seat to a bot).
 
-- **Overlay (v1, the default)** — the original floating panel described above.
-- **Gutters (v2)** — shrinks colonist into the top-right and fills the freed
+- **Gutters (v2, the default)** — shrinks colonist into the top-right and fills the freed
   edges with the counter. The board stays crisp at native resolution and every
   click still lands where it looks, because the page is genuinely re-laid out
   rather than scaled: a main-world hook reports a smaller viewport to colonist,
   which recomputes its own layout, and the page is then pinned to the top-right
-  so the freed space ends up where the gutters are. Switching back to the overlay
-  restores the page exactly.
+  so the freed space ends up where the gutters are.
+- **Overlay (v1)** — the original floating panel described above. Switching to
+  it restores the page exactly.
 
 The gutter interface is built from independent **sections** — Hands, Unknown
 steals, Blocked by robber, Dice, Dev deck, and an off-by-default Players section.

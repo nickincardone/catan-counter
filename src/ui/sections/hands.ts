@@ -23,12 +23,12 @@ const STYLES = `
     gap: 3px;
   }
   .bank-cell img { width: 22px; height: 31px; border-radius: 2px; display: block; }
-  .bank-count { font-family: var(--cc-mono); font-size: 8px; color: var(--cc-label-dim); }
+  .bank-count { font-family: var(--cc-mono); font-size: 10px; color: var(--cc-label-dim); }
 
   .player-row {
     margin-top: 6px;
     background: var(--cc-surface);
-    border-left: 3px solid var(--cc-label);
+    border-left: 3px solid var(--cc-mono-dim);
     border-radius: 6px;
     padding: 7px 8px;
   }
@@ -40,7 +40,7 @@ const STYLES = `
     margin-bottom: 6px;
   }
   .player-name {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -48,7 +48,7 @@ const STYLES = `
   }
   .player-summary {
     font-family: var(--cc-mono);
-    font-size: 10px;
+    font-size: 12px;
     color: var(--cc-text-muted);
     white-space: nowrap;
   }
@@ -61,7 +61,7 @@ const STYLES = `
   }
   .cell-count {
     font-family: var(--cc-mono);
-    font-size: 13px;
+    font-size: 16px;
     font-weight: 600;
     line-height: 1.1;
     color: var(--cc-text);
@@ -70,10 +70,10 @@ const STYLES = `
   .cell--zero .cell-count { color: var(--cc-zero); }
   .cell-probability {
     font-family: var(--cc-mono);
-    font-size: 9px;
+    font-size: 11px;
     line-height: 1.2;
-    min-height: 11px;
-    color: var(--cc-good);
+    min-height: 13px;
+    color: var(--cc-probable);
   }
 `;
 

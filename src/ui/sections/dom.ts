@@ -16,15 +16,10 @@ export function el<K extends keyof HTMLElementTagNameMap>(
 /** A section header: label on the left, hint on the right. */
 export function sectionHead(
   label: string,
-  hint = '',
-  accent = false
+  hint = ''
 ): { head: HTMLElement; labelNode: HTMLElement; hintNode: HTMLElement } {
   const head = el('div', 'section-head');
-  const labelNode = el(
-    'span',
-    accent ? 'section-label section-label--accent' : 'section-label',
-    label
-  );
+  const labelNode = el('span', 'section-label', label);
   const hintNode = el('span', 'section-hint', hint);
   head.append(labelNode, hintNode);
   return { head, labelNode, hintNode };

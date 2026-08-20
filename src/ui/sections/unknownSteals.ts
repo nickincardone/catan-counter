@@ -32,11 +32,11 @@ const STYLES = `
     justify-content: space-between;
     gap: 6px;
   }
-  .steal-who { font-size: 11px; color: var(--cc-text-body); line-height: 1.35; }
+  .steal-who { font-size: 13px; color: var(--cc-text-body); line-height: 1.35; }
   .steal-who strong { font-weight: 800; }
   .steal-time {
     font-family: var(--cc-mono);
-    font-size: 9px;
+    font-size: 11px;
     color: var(--cc-mono-dim);
     white-space: nowrap;
   }
@@ -63,19 +63,19 @@ const STYLES = `
   .chip img { width: 12px; height: 17px; border-radius: 1px; display: block; flex: none; }
   .chip-label {
     font-family: var(--cc-mono);
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--cc-text-body);
   }
   .chip--confirmed {
-    background: rgba(127,212,193,.16);
-    border-color: rgba(127,212,193,.5);
+    background: rgba(94,200,160,.16);
+    border-color: rgba(94,200,160,.5);
     cursor: default;
   }
   .chip--confirmed .chip-label { color: var(--cc-good-text); }
   .chip-undo {
     font-family: var(--cc-mono);
-    font-size: 9px;
+    font-size: 11px;
     color: var(--cc-mono-dim);
     background: none;
     border: 0;
@@ -155,8 +155,7 @@ export const unknownStealsSection: SectionDefinition = {
   mount(host: HTMLElement, view: GameView, ctx: SectionContext) {
     const { head, labelNode, hintNode } = sectionHead(
       'Unknown steals',
-      'click to resolve',
-      true
+      'click to resolve'
     );
     const rows = el('div', 'section-rows');
     const empty = el(

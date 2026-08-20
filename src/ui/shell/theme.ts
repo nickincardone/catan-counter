@@ -4,32 +4,37 @@
 
 export const THEME = {
   /** Rail and bottom-bar background. */
-  panel: '#0f2c46',
+  panel: '#16181c',
   hairline: 'rgba(255,255,255,.09)',
   /** Cards, player rows, dev tiles. */
   surface: 'rgba(255,255,255,.05)',
   /** A resource cell nobody can hold. */
   surfaceEmpty: 'rgba(255,255,255,.02)',
-  accent: '#f4c542',
-  /** Probability fractions, dice running hot, a confirmed resolution. */
-  good: '#7fd4c1',
-  goodText: '#a8e8da',
-  goodTint: 'rgba(127,212,193,.09)',
-  goodBorder: 'rgba(127,212,193,.45)',
-  accentTint: 'rgba(244,197,66,.09)',
-  accentBorder: 'rgba(244,197,66,.32)',
+  /** Every section label, the logo, and the robber's tally. */
+  accent: '#e8a33d',
+  accentTint: 'rgba(232,163,61,.09)',
+  accentBorder: 'rgba(232,163,61,.32)',
+  /** Dice running hot, an untouched dev pile, a confirmed resolution. */
+  good: '#5ec8a0',
+  goodText: '#8fe0c4',
+  goodTint: 'rgba(94,200,160,.09)',
+  goodBorder: 'rgba(94,200,160,.45)',
+  /** Probable holdings, which sit against a resource tint rather than a panel. */
+  probable: '#6fdcae',
   danger: '#e35b5b',
-  bar: '#4d7ea3',
+  bar: '#5b6775',
   text: '#ffffff',
-  textBody: '#dbe6ee',
-  textMuted: '#9fb8cc',
-  /** Section labels. */
-  label: '#7fa8c9',
+  textBody: '#eef1f4',
+  textMuted: '#c3ccd4',
   /** Right-hand hints, e.g. "bank left". */
-  labelDim: '#5b7f9c',
-  monoDim: '#6f93ae',
+  labelDim: '#8a939d',
+  monoDim: '#949da6',
   /** A zero that isn't really a holding. */
-  zero: '#3f566b',
+  zero: '#4b5158',
+  /** The circle behind a blocked dice number. */
+  well: '#24272d',
+  /** The collapse chevron. */
+  chevron: '#b9c2cc',
 } as const;
 
 export const RESOURCE_STYLE = {
@@ -41,13 +46,13 @@ export const RESOURCE_STYLE = {
 } as const;
 
 /**
- * Nunito for names and headings, IBM Plex Mono for every number. Both are
+ * Manrope for names and headings, JetBrains Mono for every number. Both are
  * bundled as web-accessible resources rather than fetched from Google, so they
  * do not depend on colonist's content security policy. The fallbacks matter:
  * if the files are ever missing the UI degrades to the system stack instead of
  * to a serif face.
  */
 export const FONT_SANS =
-  "'Nunito', system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif";
+  "'Manrope', system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif";
 export const FONT_MONO =
-  "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";

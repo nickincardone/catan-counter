@@ -11,8 +11,8 @@
         margin: 0;
         width: 260px;
         padding: 14px;
-        background: #0f2c46;
-        color: #dbe6ee;
+        background: #16181c;
+        color: #eef1f4;
         font:
           13px/1.4 system-ui,
           -apple-system,
@@ -27,7 +27,7 @@
       p.sub {
         margin: 0 0 14px;
         font-size: 11px;
-        color: #7fa8c9;
+        color: #8a939d;
       }
       fieldset {
         border: 0;
@@ -48,15 +48,15 @@
         cursor: pointer;
       }
       label:hover {
-        border-color: #7fa8c9;
+        border-color: #8a939d;
       }
       label.selected {
-        border-color: #f4c542;
-        background: rgba(244, 197, 66, 0.1);
+        border-color: #e8a33d;
+        background: rgba(232, 163, 61, 0.1);
       }
       input {
         margin: 2px 0 0;
-        accent-color: #f4c542;
+        accent-color: #e8a33d;
       }
       .name {
         font-weight: 700;
@@ -64,12 +64,12 @@
       }
       .desc {
         font-size: 11px;
-        color: #9fb8cc;
+        color: #c3ccd4;
       }
       #status {
         margin: 12px 0 0;
         font-size: 11px;
-        color: #7fa8c9;
+        color: #8a939d;
         min-height: 14px;
       }
     </style>
@@ -78,18 +78,18 @@
     <h1>Catan Counter</h1>
     <p class="sub">Choose how the counter is displayed.</p>
     <fieldset id="modes">
-      <label data-mode="v1">
-        <input type="radio" name="ui-mode" value="v1" />
-        <span>
-          <span class="name">Overlay</span><br />
-          <span class="desc">Floating panel on top of the game.</span>
-        </span>
-      </label>
       <label data-mode="v2">
         <input type="radio" name="ui-mode" value="v2" />
         <span>
           <span class="name">Gutters</span><br />
           <span class="desc">Shrinks the game and fills the edges.</span>
+        </span>
+      </label>
+      <label data-mode="v1">
+        <input type="radio" name="ui-mode" value="v1" />
+        <span>
+          <span class="name">Overlay</span><br />
+          <span class="desc">Floating panel on top of the game.</span>
         </span>
       </label>
     </fieldset>

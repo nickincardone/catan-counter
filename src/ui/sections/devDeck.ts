@@ -15,13 +15,13 @@ const STYLES = `
     min-width: 0;
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 5px;
+    gap: 4px;
   }
   .dev-tile {
     min-width: 0;
     background: var(--cc-surface);
     border-radius: 7px;
-    padding: 7px 2px;
+    padding: 6px 2px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -29,22 +29,27 @@ const STYLES = `
     text-align: center;
     overflow: hidden;
   }
-  .dev-tile img { width: 26px; height: 36px; flex: none; border-radius: 2px; display: block; }
+  .dev-tile img { width: 26px; height: 35px; flex: none; border-radius: 2px; display: block; }
   .dev-ratio {
     font-family: var(--cc-mono);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--cc-text);
     line-height: 1;
     white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .dev-name {
     max-width: 100%;
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 700;
     color: var(--cc-text-muted);
     line-height: 1.15;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .dev-bar {
     width: 100%;
@@ -58,7 +63,7 @@ const STYLES = `
   .dev-caption {
     max-width: 100%;
     font-family: var(--cc-mono);
-    font-size: 8px;
+    font-size: 10px;
     color: var(--cc-mono-dim);
     line-height: 1.2;
     white-space: nowrap;

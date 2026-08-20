@@ -13,7 +13,7 @@ import type { SectionDefinition } from './types.js';
 const STYLES = `
   .players-row {
     background: var(--cc-surface);
-    border-left: 3px solid var(--cc-label);
+    border-left: 3px solid var(--cc-mono-dim);
     border-radius: 6px;
     padding: 7px 9px;
   }
@@ -24,19 +24,19 @@ const STYLES = `
     gap: 8px;
   }
   .players-name {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .players-vp { font-family: var(--cc-mono); font-size: 10px; color: var(--cc-text-muted); }
+  .players-vp { font-family: var(--cc-mono); font-size: 12px; color: var(--cc-text-muted); }
   .players-stats {
     display: flex;
     gap: 10px;
     margin-top: 5px;
     font-family: var(--cc-mono);
-    font-size: 10px;
+    font-size: 12px;
     color: var(--cc-mono-dim);
   }
   .players-stat strong { color: var(--cc-text-body); font-weight: 600; }

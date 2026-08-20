@@ -9,34 +9,6 @@
 
 import { FONT_MONO, FONT_SANS, RESOURCE_STYLE, THEME } from './theme.js';
 
-/** @font-face rules pointing at the bundled files. */
-function fontFaces(assetUrl: (path: string) => string): string {
-  return `
-    @font-face {
-      font-family: 'Nunito';
-      font-style: normal;
-      /* Variable font: one file covers the whole weight axis. */
-      font-weight: 400 900;
-      font-display: swap;
-      src: url('${assetUrl('assets/fonts/nunito-latin-var.woff2')}') format('woff2');
-    }
-    @font-face {
-      font-family: 'IBM Plex Mono';
-      font-style: normal;
-      font-weight: 400;
-      font-display: swap;
-      src: url('${assetUrl('assets/fonts/ibm-plex-mono-latin-400.woff2')}') format('woff2');
-    }
-    @font-face {
-      font-family: 'IBM Plex Mono';
-      font-style: normal;
-      font-weight: 600;
-      font-display: swap;
-      src: url('${assetUrl('assets/fonts/ibm-plex-mono-latin-600.woff2')}') format('woff2');
-    }
-  `;
-}
-
 function tokens(): string {
   const resourceVars = Object.entries(RESOURCE_STYLE)
     .map(
@@ -58,15 +30,17 @@ function tokens(): string {
       --cc-good-text: ${THEME.goodText};
       --cc-good-tint: ${THEME.goodTint};
       --cc-good-border: ${THEME.goodBorder};
+      --cc-probable: ${THEME.probable};
       --cc-danger: ${THEME.danger};
       --cc-bar: ${THEME.bar};
       --cc-text: ${THEME.text};
       --cc-text-body: ${THEME.textBody};
       --cc-text-muted: ${THEME.textMuted};
-      --cc-label: ${THEME.label};
       --cc-label-dim: ${THEME.labelDim};
       --cc-mono-dim: ${THEME.monoDim};
       --cc-zero: ${THEME.zero};
+      --cc-well: ${THEME.well};
+      --cc-chevron: ${THEME.chevron};
       --cc-font: ${FONT_SANS};
       --cc-mono: ${FONT_MONO};
       ${resourceVars}
@@ -153,18 +127,18 @@ const FRAME = `
     border-radius: 6px;
     background: var(--cc-accent);
     color: var(--cc-panel);
-    font-weight: 900;
-    font-size: 12px;
+    font-weight: 800;
+    font-size: 14px;
     display: flex; align-items: center; justify-content: center;
   }
   .rail-title {
-    font-weight: 800; font-size: 14px; color: var(--cc-text); line-height: 1.1;
+    font-weight: 800; font-size: 18px; color: var(--cc-text); line-height: 1.1;
   }
   .rail-collapse {
     font-family: var(--cc-mono);
-    font-size: 14px;
+    font-size: 16px;
     line-height: 1;
-    color: var(--cc-label);
+    color: var(--cc-chevron);
     background: none;
     border: 0;
     padding: 4px;
@@ -191,30 +165,29 @@ const FRAME = `
   .gutter--horizontal .section-head { margin-bottom: 10px; }
   .section-label {
     font-family: var(--cc-mono);
-    font-size: 9px;
+    font-size: 11px;
     letter-spacing: .14em;
-    color: var(--cc-label);
+    color: var(--cc-accent);
     text-transform: uppercase;
     white-space: nowrap;
   }
-  .section-label--accent { color: var(--cc-accent); }
   .section-hint {
     font-family: var(--cc-mono);
-    font-size: 9px;
+    font-size: 11px;
     color: var(--cc-label-dim);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .section-note {
-    padding: 16px 14px 0;
-    font-size: 10px;
+    padding: 14px 14px 0;
+    font-size: 12px;
     color: var(--cc-label-dim);
     line-height: 1.45;
   }
   .section-empty {
     padding: 4px 14px 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--cc-mono-dim);
   }
   .section-rows { padding: 0 10px; display: flex; flex-direction: column; gap: 6px; }
@@ -223,13 +196,13 @@ const FRAME = `
   .rail-status {
     padding: 22px 14px;
     text-align: center;
-    color: var(--cc-label);
-    font-size: 11px;
+    color: var(--cc-text-muted);
+    font-size: 13px;
     line-height: 1.5;
   }
   .rail-status-detail {
     margin-top: 6px;
-    font-size: 10px;
+    font-size: 12px;
     color: var(--cc-label-dim);
   }
   .rail-spinner {
@@ -247,9 +220,8 @@ const FRAME = `
   }
 `;
 
-export function buildStyleSheet(
-  assetUrl: (path: string) => string,
-  sectionStyles: string[]
-): string {
-  return [fontFaces(assetUrl), tokens(), FRAME, ...sectionStyles].join('\n');
+export function buildStyleSheet(sectionStyles: string[]): string {
+  // No @font-face here: Chrome ignores those inside a shadow root. The bundled
+  // faces are registered on the document by shell/fonts.ts instead.
+  return [tokens(), FRAME, ...sectionStyles].join('\n');
 }
