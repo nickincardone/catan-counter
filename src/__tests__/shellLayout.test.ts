@@ -7,7 +7,11 @@ import {
   jest,
 } from '@jest/globals';
 import { Shell } from '../ui/shell/shell';
-import { _resetPageFrameForTesting, clampInset } from '../ui/shell/pageFrame';
+import {
+  _lastRequestedInsetForTesting,
+  _resetPageFrameForTesting,
+  clampInset,
+} from '../ui/shell/pageFrame';
 import {
   DEFAULT_LAYOUT,
   cloneLayout,
@@ -706,5 +710,113 @@ describe('every gutter actually renders', () => {
     const rail = shadow(shell).querySelector('.gutter--left') as HTMLElement;
     expect(rail.style.width).toBe(`${COLLAPSED_SIZE}px`);
     expect(shadow(shell).querySelector('.rail-collapse')).toBeTruthy();
+  });
+});
+
+describe('keeping the page squeezed to the gutters', () => {
+  let shell: Shell;
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    root()?.remove();
+    resetGameState();
+    game.youPlayerName = null;
+    rollDice(6);
+    _resetPageFrameForTesting(5);
+    // An earlier suite shrinks the jsdom viewport to prove the clamp works,
+    // and that leaks across describes — on an 800px window every inset
+    // correctly clamps to zero and these assertions become meaningless.
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 2056,
+    });
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 1038,
+    });
+  });
+
+  afterEach(() => shell?.unmount());
+
+  /** Let the frame's round trip (and its coalesced re-run) settle. */
+  const settle = async () => {
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+    await new Promise(resolve => setTimeout(resolve, 30));
+  };
+
+  it('squeezes for the gutters that are actually on screen', async () => {
+    const hands = fakeSection('hands');
+    const layout = cloneLayout(DEFAULT_LAYOUT);
+    layout.left.sections = [];
+    layout.bottom.sections = [];
+    layout.right.sections = [{ id: 'hands' }];
+    layout.off = [];
+
+    shell = new Shell({
+      registry: { hands: hands.definition },
+      onAction: () => undefined,
+    });
+    shell.setLayout(layout);
+    shell.mount();
+    await settle();
+
+    const inset = _lastRequestedInsetForTesting();
+    expect(inset.right).toBeGreaterThan(0);
+    expect(inset.left).toBe(0);
+  });
+
+  // The bug this guards: a squeeze requested while one was in flight used to be
+  // dropped. Mount squeezes for the default layout and awaits a round trip to
+  // the page world; when storage answered with a different layout moments later
+  // that request was thrown away, so the gutters moved and the page did not.
+  it('coalesces a change made while a squeeze is still running', async () => {
+    const hands = fakeSection('hands');
+    const dice = fakeSection('dice', ['horizontal']);
+    const registry = { hands: hands.definition, dice: dice.definition };
+
+    shell = new Shell({ registry, onAction: () => undefined });
+    shell.setLayout(layoutWith(['hands'], ['dice']));
+    shell.mount();
+
+    // Immediately, without waiting: exactly the race that dropped it.
+    const moved = cloneLayout(DEFAULT_LAYOUT);
+    moved.left.sections = [];
+    moved.bottom.sections = [];
+    moved.right.sections = [{ id: 'hands' }];
+    moved.top.sections = [{ id: 'dice' }];
+    moved.off = [];
+    shell.setLayout(moved);
+    await settle();
+
+    const inset = _lastRequestedInsetForTesting();
+    expect(inset.left).toBe(0);
+    expect(inset.right).toBeGreaterThan(0);
+    expect(inset.top).toBeGreaterThan(0);
+    expect(inset.bottom).toBe(0);
+  });
+
+  it('ends up matching the gutters after a burst of changes', async () => {
+    const hands = fakeSection('hands');
+    shell = new Shell({
+      registry: { hands: hands.definition },
+      onAction: () => undefined,
+    });
+    shell.setLayout(layoutWith(['hands']));
+    shell.mount();
+
+    for (const zone of ['right', 'left', 'right'] as const) {
+      const next = cloneLayout(DEFAULT_LAYOUT);
+      next.left.sections = zone === 'left' ? [{ id: 'hands' }] : [];
+      next.right.sections = zone === 'right' ? [{ id: 'hands' }] : [];
+      next.bottom.sections = [];
+      next.off = [];
+      shell.setLayout(next);
+    }
+    await settle();
+
+    // Whatever the ordering, the last word belongs to the layout on screen.
+    const inset = _lastRequestedInsetForTesting();
+    expect(inset.right).toBeGreaterThan(0);
+    expect(inset.left).toBe(0);
   });
 });

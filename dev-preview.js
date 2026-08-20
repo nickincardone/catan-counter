@@ -4416,6 +4416,14 @@
             this.status = '';
             this.disposers = [];
             this.framePending = false;
+            /** A squeeze asked for while one was already running. */
+            this.frameQueued = false;
+            /**
+             * Whether the layout in hand came from a deliberate choice rather than the
+             * defaults. Storage answers after the first paint, and must not stomp a
+             * change made in the meantime.
+             */
+            this.layoutChosen = false;
             this.settings = new SettingsDialog({
                 layout: () => this.layout,
                 sections: () => registeredSections(this.options.registry),
@@ -4455,6 +4463,9 @@
             // Storage answers after the first paint; re-render if it differs.
             void readLayout().then(stored => {
                 if (!this.root)
+                    return;
+                // Someone already chose a layout while this was in flight — theirs wins.
+                if (this.layoutChosen)
                     return;
                 const merged = withKnownSections(stored, registeredSections(this.options.registry).map(section => section.id));
                 if (JSON.stringify(merged) === JSON.stringify(this.layout))
@@ -4732,21 +4743,42 @@
             for (const [name, gutter] of this.gutters)
                 this.sizeGutter(gutter, name);
         }
+        /**
+         * Squeeze the page to the current gutters.
+         *
+         * Requests that arrive while one is in flight are COALESCED, never dropped.
+         * Dropping them was a race with a visible cost: mount squeezes for the
+         * default layout and then awaits a round trip to the page world, and when
+         * storage answers with a different layout moments later that second request
+         * was thrown away — leaving the gutters drawn at their new sizes while the
+         * page stayed squeezed for the old ones, so colonist ran on underneath them.
+         */
         syncPageFrame() {
             return __awaiter(this, void 0, void 0, function* () {
-                if (!this.root || this.framePending)
+                if (!this.root)
                     return;
+                if (this.framePending) {
+                    this.frameQueued = true;
+                    return;
+                }
                 this.framePending = true;
                 try {
-                    yield applyPageFrame(this.insets());
+                    do {
+                        this.frameQueued = false;
+                        yield applyPageFrame(this.insets());
+                        // Anything requested during that round trip re-runs with the insets as
+                        // they stand now, not as they were when it was requested.
+                    } while (this.frameQueued && this.root);
                 }
                 finally {
                     this.framePending = false;
+                    this.frameQueued = false;
                 }
             });
         }
         /** Apply a layout change from the settings menu, live. */
         applyLayout(next) {
+            this.layoutChosen = true;
             this.layout = repairLayout(next);
             void writeLayout(this.layout);
             this.render();
@@ -4796,6 +4828,7 @@
         }
         /** Replace the layout wholesale — the seam a future arrangement UI uses. */
         setLayout(layout) {
+            this.layoutChosen = true;
             this.layout = repairLayout(layout);
             void writeLayout(this.layout);
             if (this.root)

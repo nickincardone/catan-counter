@@ -204,6 +204,11 @@ export async function refreshPageFrame(): Promise<PageFrameResult> {
   return applyPageFrame(lastRequested);
 }
 
+/** Test seam: the insets most recently asked for. */
+export function _lastRequestedInsetForTesting(): ViewportInset {
+  return { ...lastRequested };
+}
+
 /** Test seam: forget what calibration learned. */
 export function _resetPageFrameForTesting(timeoutMs = REPORT_TIMEOUT_MS): void {
   nonce = 0;
