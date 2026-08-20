@@ -6,6 +6,13 @@ dist/
 build/
 *.js.map
 
+# Rollup bundles, generated at the repo root by `npm run build`. The dev script
+# formats before it builds, so these are never formatted anyway.
+content.js
+page-transport-hook.js
+popup.js
+dev-preview.js
+
 src/__tests__/scenarios/
 
 # Logs
