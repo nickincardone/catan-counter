@@ -140,23 +140,47 @@ function buildSteals(game: GameType): StealView[] {
   const colorOf = (name: string): string =>
     game.players.find(player => player.name === name)?.color ?? '#ffffff';
 
-  return game.probableGameState.getUnknownTransactions().map(transaction => {
-    const probabilities =
-      game.probableGameState.getTransactionResourceProbabilities(
-        transaction.id
-      );
+  // Steals the tracker resolved by itself have retired — showing them would
+  // grow the list forever. A person's own resolution stays visible so it can be
+  // undone.
+  const listed = game.probableGameState
+    .getAllUnknownTransactions()
+    .filter(
+      transaction =>
+        !transaction.isResolved ||
+        game.probableGameState.isManuallyResolved(transaction.id)
+    );
 
-    const candidates: StealCandidateView[] = RESOURCE_ORDER.map(resource => ({
-      resource,
-      probability: probabilities?.[resource] ?? 0,
-      label: '',
-    }))
-      .filter(candidate => candidate.probability > 0)
-      .sort((a, b) => b.probability - a.probability)
-      .map(candidate => ({
-        ...candidate,
-        label: `${candidate.resource} ${pct(candidate.probability)}`,
-      }));
+  return listed.map(transaction => {
+    const resolvedResource =
+      (transaction.resolvedResource as ResourceKey | undefined) ?? null;
+
+    let candidates: StealCandidateView[];
+    if (transaction.isResolved && resolvedResource) {
+      candidates = [
+        {
+          resource: resolvedResource,
+          probability: 1,
+          label: `${resolvedResource} · confirmed`,
+        },
+      ];
+    } else {
+      const probabilities =
+        game.probableGameState.getTransactionResourceProbabilities(
+          transaction.id
+        );
+      candidates = RESOURCE_ORDER.map(resource => ({
+        resource,
+        probability: probabilities?.[resource] ?? 0,
+        label: '',
+      }))
+        .filter(candidate => candidate.probability > 0)
+        .sort((a, b) => b.probability - a.probability)
+        .map(candidate => ({
+          ...candidate,
+          label: `${candidate.resource} ${pct(candidate.probability)}`,
+        }));
+    }
 
     return {
       id: transaction.id,
@@ -165,8 +189,9 @@ function buildSteals(game: GameType): StealView[] {
       victim: transaction.victim,
       victimColor: colorOf(transaction.victim),
       time: formatStealTime(transaction.timestamp),
-      resolved: false,
-      resolvedResource: null,
+      resolved: transaction.isResolved,
+      resolvedResource,
+      canUndo: game.probableGameState.isManuallyResolved(transaction.id),
       candidates,
     };
   });
@@ -297,13 +322,15 @@ export function buildGameView(
   options: { isLoadingHistory?: boolean } = {}
 ): GameView {
   const { blocked, blockedTotal } = buildBlocked(game);
+  const steals = buildSteals(game);
 
   return {
     players: orderPlayers(game.players, game.youPlayerName).map(player =>
       buildPlayer(player, game, game.youPlayerName)
     ),
     bank: buildBank(game.gameResources),
-    steals: buildSteals(game),
+    steals,
+    openStealCount: steals.filter(steal => !steal.resolved).length,
     blocked,
     blockedTotal,
     dice: buildDice(game),

@@ -14,7 +14,12 @@ export class VariantTransactionProcessor {
 
   processUnknownSteal(stealerName: string, victimName: string): void {
     const currentNodes = this.variantTree.getCurrentVariantNodes();
-    const transactionId = `${stealerName}_${victimName}_${Date.now()}_${++this.transactionCounter}`;
+    // Deliberately free of wall-clock time: rebuilding the tree by replaying
+    // history must mint the same id for the same steal, or manual resolutions
+    // could not be re-applied and the UI's ids would change under it. The
+    // counter alone is unique within a processor. Observation time lives on the
+    // transaction's `timestamp`.
+    const transactionId = `${stealerName}_${victimName}_${++this.transactionCounter}`;
     let shouldCreateTransaction = false;
 
     // The chat is ground truth: a steal happened, so the victim had at least
@@ -365,6 +370,26 @@ export class VariantTransactionProcessor {
    */
   getUnresolvedTransactions(): UnknownTransaction[] {
     return this.unknownTransactions.filter(t => !t.isResolved);
+  }
+
+  /**
+   * Every steal ever branched on, resolved or not. The UI needs the resolved
+   * ones so a manual resolution can be shown as confirmed and undone.
+   */
+  getAllTransactions(): UnknownTransaction[] {
+    return [...this.unknownTransactions];
+  }
+
+  /**
+   * Restore original observation times after a rebuild. Replay re-creates each
+   * transaction with the current clock, which would otherwise stamp a whole
+   * game's steals with the moment someone pressed undo.
+   */
+  restoreTransactionTimestamps(timestamps: Map<string, number>): void {
+    for (const transaction of this.unknownTransactions) {
+      const original = timestamps.get(transaction.id);
+      if (original !== undefined) transaction.timestamp = original;
+    }
   }
 
   /**

@@ -596,7 +596,12 @@
         }
         processUnknownSteal(stealerName, victimName) {
             const currentNodes = this.variantTree.getCurrentVariantNodes();
-            const transactionId = `${stealerName}_${victimName}_${Date.now()}_${++this.transactionCounter}`;
+            // Deliberately free of wall-clock time: rebuilding the tree by replaying
+            // history must mint the same id for the same steal, or manual resolutions
+            // could not be re-applied and the UI's ids would change under it. The
+            // counter alone is unique within a processor. Observation time lives on the
+            // transaction's `timestamp`.
+            const transactionId = `${stealerName}_${victimName}_${++this.transactionCounter}`;
             let shouldCreateTransaction = false;
             // The chat is ground truth: a steal happened, so the victim had at least
             // one card. If every variant says they had none, our tracking is wrong
@@ -841,6 +846,25 @@
             return this.unknownTransactions.filter(t => !t.isResolved);
         }
         /**
+         * Every steal ever branched on, resolved or not. The UI needs the resolved
+         * ones so a manual resolution can be shown as confirmed and undone.
+         */
+        getAllTransactions() {
+            return [...this.unknownTransactions];
+        }
+        /**
+         * Restore original observation times after a rebuild. Replay re-creates each
+         * transaction with the current clock, which would otherwise stamp a whole
+         * game's steals with the moment someone pressed undo.
+         */
+        restoreTransactionTimestamps(timestamps) {
+            for (const transaction of this.unknownTransactions) {
+                const original = timestamps.get(transaction.id);
+                if (original !== undefined)
+                    transaction.timestamp = original;
+            }
+        }
+        /**
          * Get unknown transaction by ID
          */
         getUnknownTransaction(id) {
@@ -1020,6 +1044,13 @@
     }
     class PropbableGameState {
         constructor(initialPlayers) {
+            /**
+             * Operator decisions, in the order they were made. Auto-resolutions are not
+             * recorded here: they are re-derived by replay, and are not undoable.
+             */
+            this.manualResolutions = [];
+            /** Observation times, so a rebuild doesn't restamp every steal. */
+            this.stealTimestamps = new Map();
             // Initialize game state with players and their known starting resources
             const initialGameState = {};
             this.transactionHistory = [];
@@ -1034,6 +1065,7 @@
                     resources: Object.assign({}, player.resources),
                 });
             }
+            this.initialPlayerNames = initialPlayers.map(player => player.name);
             this.variantTree = new VariantTree(initialGameState);
             this.transactionProcessor = new VariantTransactionProcessor(this.variantTree);
         }
@@ -1053,7 +1085,76 @@
          * Resolve unknown transaction by specifying what resource was stolen
          */
         resolveUnknownTransaction(id, resolvedResource) {
-            return this.transactionProcessor.resolveUnknownTransaction(id, resolvedResource);
+            const resolved = this.transactionProcessor.resolveUnknownTransaction(id, resolvedResource);
+            if (resolved) {
+                this.manualResolutions.push({ id, resource: resolvedResource });
+            }
+            return resolved;
+        }
+        /**
+         * Every steal ever branched on, resolved or not — what the UI lists.
+         */
+        getAllUnknownTransactions() {
+            return this.transactionProcessor.getAllTransactions();
+        }
+        /** Whether this resolution was a person's call, and so can be taken back. */
+        isManuallyResolved(id) {
+            return this.manualResolutions.some(resolution => resolution.id === id);
+        }
+        /**
+         * Take back a manual resolution.
+         *
+         * Resolving prunes branches from the variant tree, and pruned branches cannot
+         * be resurrected in place — so undo rebuilds: a fresh tree replays the whole
+         * transaction history and then re-applies the manual resolutions that remain,
+         * in their original order. That makes undo exact rather than approximate, and
+         * it composes with everything else, because the rebuilt tree is derived from
+         * the same evidence as the original.
+         *
+         * Hand-count pruning is not part of the rebuild — it comes from reading
+         * colonist's panel, not from the chat — so immediately after an undo the tree
+         * holds only what the chat proves. The next message re-applies it.
+         *
+         * Returns false for an id that was never manually resolved, which includes
+         * anything the tracker resolved by itself: that was not a decision to undo.
+         */
+        unresolveUnknownTransaction(id) {
+            const index = this.manualResolutions.findIndex(resolution => resolution.id === id);
+            if (index === -1)
+                return false;
+            this.manualResolutions.splice(index, 1);
+            this.rebuild();
+            return true;
+        }
+        /** Rebuild the variant tree from history plus the surviving resolutions. */
+        rebuild() {
+            const history = this.transactionHistory;
+            const resolutions = this.manualResolutions;
+            const initialGameState = {};
+            for (const name of this.initialPlayerNames) {
+                const resources = {};
+                for (const resourceType of RESOURCE_TYPES)
+                    resources[resourceType] = 0;
+                initialGameState[name] = { resources };
+            }
+            this.variantTree = new VariantTree(initialGameState);
+            this.transactionProcessor = new VariantTransactionProcessor(this.variantTree);
+            this.manualResolutions = [];
+            for (const transaction of history)
+                this.applyTransaction(transaction);
+            this.transactionProcessor.restoreTransactionTimestamps(this.stealTimestamps);
+            // Re-applying through the public method re-records them in order.
+            for (const resolution of resolutions) {
+                this.resolveUnknownTransaction(resolution.id, resolution.resource);
+            }
+        }
+        /** Remember when each steal was first seen, so rebuilds can restore it. */
+        rememberStealTimestamps() {
+            for (const transaction of this.transactionProcessor.getAllTransactions()) {
+                if (!this.stealTimestamps.has(transaction.id)) {
+                    this.stealTimestamps.set(transaction.id, transaction.timestamp);
+                }
+            }
         }
         /**
          * Resolve all unknown transactions by looking at possible variants
@@ -1170,8 +1271,15 @@
          * Process a transaction
          */
         processTransaction(transaction) {
-            // Add transaction to history for debugging
             this.transactionHistory.push(transaction);
+            this.applyTransaction(transaction);
+            this.rememberStealTimestamps();
+        }
+        /**
+         * Apply a transaction to the tree without recording it. Replay uses this so
+         * rebuilding does not append the history it is replaying back onto itself.
+         */
+        applyTransaction(transaction) {
             switch (transaction.type) {
                 case TransactionTypeEnum.ROBBER_STEAL: {
                     if (transaction.stolenResource) {

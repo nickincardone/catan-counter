@@ -113,12 +113,50 @@ describe('buildGameView', () => {
       expect(steal.thief).toBe('Alice');
       expect(steal.victim).toBe('Bob');
       expect(steal.resolved).toBe(false);
+      expect(steal.canUndo).toBe(false);
 
       const probabilities = steal.candidates.map(c => c.probability);
       expect([...probabilities].sort((a, b) => b - a)).toEqual(probabilities);
       expect(steal.candidates[0].resource).toBe('brick'); // Bob holds two
       expect(steal.candidates[0].label).toBe('brick 50%');
       expect(steal.candidates.every(c => c.probability > 0)).toBe(true);
+    });
+
+    it('keeps a hand-resolved steal listed, as confirmed and undoable', () => {
+      playerGetResources('Bob', { wheat: 1, ore: 1 });
+      unknownSteal('Alice', 'Bob');
+      const [open] = game.probableGameState.getUnknownTransactions();
+      game.probableGameState.resolveUnknownTransaction(open.id, 'ore');
+
+      const view = buildGameView(game);
+      expect(view.steals).toHaveLength(1);
+      expect(view.openStealCount).toBe(0); // the header counts open ones only
+
+      const [steal] = view.steals;
+      expect(steal.resolved).toBe(true);
+      expect(steal.resolvedResource).toBe('ore');
+      expect(steal.canUndo).toBe(true);
+      expect(steal.candidates).toEqual([
+        { resource: 'ore', probability: 1, label: 'ore · confirmed' },
+      ]);
+    });
+
+    it('retires a steal the tracker resolved by itself', () => {
+      playerGetResources('Bob', { wheat: 1 }); // only one type to take
+      unknownSteal('Alice', 'Bob');
+
+      const view = buildGameView(game);
+      expect(view.steals).toHaveLength(0);
+      expect(view.openStealCount).toBe(0);
+    });
+
+    it('counts only open steals in the header', () => {
+      playerGetResources('Bob', { wheat: 1, ore: 1 });
+      playerGetResources('Charlie', { sheep: 1, tree: 1 });
+      unknownSteal('Alice', 'Bob');
+      unknownSteal('Diana', 'Charlie');
+
+      expect(buildGameView(game).openStealCount).toBe(2);
     });
 
     it('is empty when a steal was deducible without branching', () => {

@@ -73,6 +73,8 @@ export interface StealView {
   time: string;
   resolved: boolean;
   resolvedResource: ResourceKey | null;
+  /** Only a person's own resolution can be taken back. */
+  canUndo: boolean;
   /** Sorted by descending probability; a single entry once resolved. */
   candidates: StealCandidateView[];
 }
@@ -126,7 +128,10 @@ export interface DevDeckView {
 export interface GameView {
   players: PlayerView[];
   bank: BankView[];
+  /** Open steals, plus any a person resolved by hand so they can undo it. */
   steals: StealView[];
+  /** How many are still open — what the section header counts. */
+  openStealCount: number;
   blocked: BlockedView[];
   blockedTotal: number;
   dice: DiceView;
