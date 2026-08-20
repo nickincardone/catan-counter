@@ -40,7 +40,7 @@ import {
   blockedDiceRoll,
 } from './gameActions.js';
 import { game, isWaitingForYouPlayerSelection } from './gameState.js';
-import { updateGameStateDisplay } from './overlay.js';
+import { updateGameStateDisplay } from './ui/index.js';
 import { ResourceObjectType } from './types.js';
 
 /**

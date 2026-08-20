@@ -4,7 +4,7 @@ import {
   game,
   updateResources,
 } from './gameState.js';
-import { showYouPlayerDialog } from './overlay.js';
+import { showYouPlayerDialog } from './ui/index.js';
 import { PropbableGameState } from './probableGameState.js';
 import {
   DiceRollsType,

@@ -8,7 +8,7 @@ import {
   showGameStateOverlay,
   setHistoryLoading,
   updateGameStateDisplay,
-} from './overlay.js';
+} from './ui/index.js';
 import { resetGameState, autoDetectCurrentPlayer } from './gameState.js';
 import {
   initMessageLogger,

@@ -3936,7 +3936,7 @@
         snapshot.chatLog = normalizeChatLog(messages, [...knownPlayers.values()]);
         return snapshot;
     }
-    function storageAvailable() {
+    function storageAvailable$1() {
         var _a;
         return typeof chrome !== 'undefined' && !!((_a = chrome === null || chrome === void 0 ? void 0 : chrome.storage) === null || _a === void 0 ? void 0 : _a.local);
     }
@@ -3971,7 +3971,7 @@
             seenIndices.clear();
             seenTransportCaptureIds.clear();
             currentTransportCaptureDataLength = 0;
-            if (storageAvailable()) {
+            if (storageAvailable$1()) {
                 try {
                     const key = STORAGE_KEY_PREFIX + gameId;
                     const stored = yield chrome.storage.local.get(key);
@@ -4092,7 +4092,7 @@
         log.spatialCapture = withNormalizedChat(spatialGameTracker.snapshot(), log.messages, log.players);
     }
     function schedulePersist() {
-        if (!storageAvailable())
+        if (!storageAvailable$1())
             return;
         if (persistTimer !== null)
             clearTimeout(persistTimer);
@@ -4103,7 +4103,7 @@
     }
     function persistCurrentLog() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!currentLog || !storageAvailable())
+            if (!currentLog || !storageAvailable$1())
                 return;
             snapshotMetadata(currentLog);
             try {
@@ -4155,7 +4155,7 @@
      */
     function exportAllGameLogs() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!storageAvailable()) {
+            if (!storageAvailable$1()) {
                 console.warn('📼 chrome.storage is not available');
                 return [];
             }
@@ -4720,7 +4720,7 @@
         if (success) {
             console.log(`✅ Manually resolved transaction ${transactionId} with resource: ${resource}`);
             // Update the display to reflect the resolution
-            updateGameStateDisplay();
+            updateGameStateDisplay$1();
         }
         else {
             console.error(`❌ Failed to resolve transaction ${transactionId} with resource: ${resource}`);
@@ -4873,7 +4873,7 @@
             updateOverlayContent(gameStateOverlay);
         }
     }
-    function showGameStateOverlay() {
+    function showGameStateOverlay$1() {
         if (!gameStateOverlay) {
             gameStateOverlay = createGameStateOverlay();
             document.body.appendChild(gameStateOverlay);
@@ -4883,7 +4883,12 @@
             gameStateOverlay.style.display = 'block';
         }
     }
-    function updateGameStateDisplay() {
+    function hideGameStateOverlay() {
+        if (gameStateOverlay) {
+            gameStateOverlay.style.display = 'none';
+        }
+    }
+    function updateGameStateDisplay$1() {
         if (gameStateOverlay && gameStateOverlay.style.display !== 'none') {
             updateOverlayContent(gameStateOverlay);
             // Reapply the current scale after updating content
@@ -4895,13 +4900,13 @@
      * spinner instead of the resource tables, since the counts are still being
      * rebuilt by scrolling the chat (see content.ts loadChatHistory).
      */
-    function setHistoryLoading(loading) {
+    function setHistoryLoading$1(loading) {
         isLoadingHistory = loading;
         if (gameStateOverlay) {
             updateOverlayContent(gameStateOverlay);
         }
     }
-    function showYouPlayerDialog() {
+    function showYouPlayerDialog$1() {
         if (game.players.length === 0)
             return;
         // Mark that we've asked to prevent multiple dialogs
@@ -4979,6 +4984,151 @@
                 document.body.removeChild(backdrop);
             }
         });
+    }
+
+    // v1Adapter.ts
+    const v1Ui = {
+        mount: showGameStateOverlay$1,
+        unmount: hideGameStateOverlay,
+        update: updateGameStateDisplay$1,
+        setHistoryLoading: setHistoryLoading$1,
+        showYouPlayerDialog: showYouPlayerDialog$1,
+    };
+
+    // v2.ts
+    // The gutter interface. Placeholder shell for now — the layout engine and
+    // sections land in later phases; this proves mode switching mounts and unmounts
+    // cleanly against a live game.
+    const ROOT_ID = 'catan-v2-root';
+    let root = null;
+    function mount() {
+        if (root)
+            return;
+        root = document.createElement('div');
+        root.id = ROOT_ID;
+        root.style.cssText = [
+            'position: fixed',
+            'left: 0',
+            'top: 0',
+            'bottom: 0',
+            'width: 290px',
+            'background: #0f2c46',
+            'color: #dbe6ee',
+            'font: 12px/1.4 system-ui, sans-serif',
+            'padding: 12px',
+            'z-index: 2147483646',
+        ].join('; ');
+        root.textContent = 'Catan Counter v2 — gutter UI under construction';
+        document.documentElement.appendChild(root);
+    }
+    function unmount() {
+        root === null || root === void 0 ? void 0 : root.remove();
+        root = null;
+    }
+    const v2Ui = {
+        mount,
+        unmount,
+        update: () => undefined,
+        setHistoryLoading: () => undefined,
+        showYouPlayerDialog: () => undefined,
+    };
+
+    // uiMode.ts
+    const DEFAULT_UI_MODE = 'v1';
+    const UI_MODE_STORAGE_KEY = 'catanUiMode';
+    function isUiMode(value) {
+        return value === 'v1' || value === 'v2';
+    }
+    function storageAvailable() {
+        var _a;
+        return typeof chrome !== 'undefined' && !!((_a = chrome === null || chrome === void 0 ? void 0 : chrome.storage) === null || _a === void 0 ? void 0 : _a.local);
+    }
+    /** Read the stored mode, falling back to the default on anything unexpected. */
+    function readUiMode() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!storageAvailable())
+                return DEFAULT_UI_MODE;
+            try {
+                const stored = yield chrome.storage.local.get(UI_MODE_STORAGE_KEY);
+                const value = stored[UI_MODE_STORAGE_KEY];
+                return isUiMode(value) ? value : DEFAULT_UI_MODE;
+            }
+            catch (error) {
+                console.warn('🎛️ Could not read the stored UI mode:', error);
+                return DEFAULT_UI_MODE;
+            }
+        });
+    }
+    /**
+     * Watch for mode changes made elsewhere (the popup). Returns an unsubscribe
+     * function. Colonist hands your seat to a bot if the page reloads mid-game, so
+     * the switch has to apply live rather than asking for a refresh.
+     */
+    function subscribeUiMode(onChange) {
+        var _a;
+        const listener = (changes) => {
+            const change = changes[UI_MODE_STORAGE_KEY];
+            if (change && isUiMode(change.newValue))
+                onChange(change.newValue);
+        };
+        if (typeof chrome === 'undefined' || !((_a = chrome === null || chrome === void 0 ? void 0 : chrome.storage) === null || _a === void 0 ? void 0 : _a.onChanged)) {
+            return () => undefined;
+        }
+        chrome.storage.onChanged.addListener(listener);
+        return () => chrome.storage.onChanged.removeListener(listener);
+    }
+
+    // ui/index.ts
+    const IMPLS = { v1: v1Ui, v2: v2Ui };
+    let mode = DEFAULT_UI_MODE;
+    let mounted = false;
+    /** Remembered so a mode switch mid-replay doesn't drop the loading state. */
+    let historyLoading = false;
+    function active() {
+        return IMPLS[mode];
+    }
+    /**
+     * Swap interfaces in place. The outgoing one unmounts first so it can undo its
+     * page changes (v2 squeezes colonist's layout) before the next one starts.
+     */
+    function setUiMode(next) {
+        if (next === mode)
+            return;
+        if (mounted)
+            active().unmount();
+        mode = next;
+        if (mounted) {
+            active().mount();
+            active().setHistoryLoading(historyLoading);
+            active().update();
+        }
+    }
+    /**
+     * Show the interface. Mounts the stored mode as soon as storage answers — the
+     * default mounts immediately so there is never a window with no UI at all.
+     */
+    function showGameStateOverlay() {
+        if (mounted)
+            return;
+        mounted = true;
+        active().mount();
+        void readUiMode().then(stored => {
+            if (stored !== mode)
+                setUiMode(stored);
+        });
+        subscribeUiMode(setUiMode);
+    }
+    function updateGameStateDisplay() {
+        if (mounted)
+            active().update();
+    }
+    function setHistoryLoading(loading) {
+        historyLoading = loading;
+        if (mounted)
+            active().setHistoryLoading(loading);
+    }
+    function showYouPlayerDialog() {
+        active().showYouPlayerDialog();
     }
 
     /**

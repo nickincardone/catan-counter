@@ -37,4 +37,5 @@ export default [
     'CatanTransportHook'
   ),
   config('src/content.ts', 'content.js', 'CatanCounter'),
+  config('src/popup/popup.ts', 'popup.js', 'CatanCounterPopup'),
 ];
