@@ -3,7 +3,7 @@
     "rootDir": "./src",
     "target": "es6",
     "lib": ["dom", "es6"],
-    "module": "es6",
+    "module": "es2020",
     "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
