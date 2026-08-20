@@ -160,13 +160,6 @@ const FRAME = `
   .rail-title {
     font-weight: 800; font-size: 14px; color: var(--cc-text); line-height: 1.1;
   }
-  .rail-subtitle {
-    font-family: var(--cc-mono);
-    font-size: 9px;
-    letter-spacing: .06em;
-    color: var(--cc-label);
-    white-space: nowrap;
-  }
   .rail-collapse {
     font-family: var(--cc-mono);
     font-size: 14px;

@@ -38,4 +38,8 @@ export default [
   ),
   config('src/content.ts', 'content.js', 'CatanCounter'),
   config('src/popup/popup.ts', 'popup.js', 'CatanCounterPopup'),
+  // Development-only: dev-preview.html renders the v2 UI against a seeded game
+  // so it can be worked on without a live colonist match. Nothing in
+  // manifest.json references it.
+  config('src/dev/preview.ts', 'dev-preview.js', 'CatanCounterPreview'),
 ];

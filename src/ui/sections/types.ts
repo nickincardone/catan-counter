@@ -13,6 +13,10 @@
 
 import type { GameView, ResourceKey } from '../view/types.js';
 
+/** Re-exported so a section can narrow a data attribute without reaching into
+ * the view model's module for a type. */
+export type ResourceKeyLike = ResourceKey;
+
 export type SectionId =
   | 'hands'
   | 'unknown-steals'

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Catan Counter — v2 preview</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      /* Stands in for the colonist page, so the gutters have something to
+         frame. The real thing is squeezed by pageViewport.ts, which needs a
+         page to squeeze — here the inset is faked with margins. */
+      #fake-page {
+        position: fixed;
+        inset: 0 0 176px 290px;
+        background: #2b80bd;
+        background-image: repeating-linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.05) 0 10px,
+          transparent 10px 20px
+        );
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font:
+          12px/1 ui-monospace,
+          monospace;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.6);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="fake-page">colonist.io page</div>
+    <script src="dev-preview.js"></script>
+  </body>
+</html>
