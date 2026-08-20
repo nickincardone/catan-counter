@@ -10,7 +10,9 @@ import { Shell } from '../ui/shell/shell';
 import {
   _lastRequestedInsetForTesting,
   _resetPageFrameForTesting,
+  applyPageFrame,
   clampInset,
+  releasePageFrame,
 } from '../ui/shell/pageFrame';
 import {
   DEFAULT_LAYOUT,
@@ -818,5 +820,80 @@ describe('keeping the page squeezed to the gutters', () => {
     const inset = _lastRequestedInsetForTesting();
     expect(inset.right).toBeGreaterThan(0);
     expect(inset.left).toBe(0);
+  });
+});
+
+describe('how the page is framed', () => {
+  const boxCss = () =>
+    document.getElementById('catan-v2-page-frame')?.textContent ?? '';
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    _resetPageFrameForTesting(5);
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 2000,
+    });
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 1000,
+    });
+  });
+
+  // Colonist's layers are absolutely positioned on <body>, so shrinking body's
+  // box is what makes them lay out inside the gutters. Translating them instead
+  // dragged colonist's own popups along, pushing a menu anchored near the top of
+  // the game off the top of the screen.
+  it('never translates the page', async () => {
+    await applyPageFrame({ left: 290, right: 0, top: 0, bottom: 210 });
+    expect(boxCss()).not.toContain('translate');
+    expect(boxCss()).not.toContain('transform');
+  });
+
+  it('leaves nothing behind when released', async () => {
+    await applyPageFrame({ left: 290, right: 0, top: 0, bottom: 210 });
+    await releasePageFrame();
+    expect(document.getElementById('catan-v2-page-frame')).toBeNull();
+  });
+});
+
+describe('the order the page frame is applied in', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    _resetPageFrameForTesting(5);
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 2000,
+    });
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 1000,
+    });
+  });
+
+  // Colonist recalculates where it puts its layers only when a resize fires,
+  // and that resize is fired by the set-inset command. A box applied after it
+  // would not be read until something else happened to resize the window, so
+  // the page kept the placement it had before the gutters moved.
+  it('shrinks the box before asking the page to re-measure', async () => {
+    const order: string[] = [];
+    const observer = new MutationObserver(() => order.push('box'));
+    observer.observe(document.head, { childList: true, subtree: true });
+    window.addEventListener('message', event => {
+      const data = event.data as { type?: string } | null;
+      if (data?.type === 'set-inset') order.push('set-inset');
+    });
+
+    await applyPageFrame({ left: 290, right: 0, top: 0, bottom: 210 });
+    observer.disconnect();
+
+    expect(order[0]).toBe('box');
+  });
+
+  it('leaves the page unshrunken when the page world never answers', async () => {
+    await applyPageFrame({ left: 290, right: 0, top: 0, bottom: 210 });
+    // The hook does not answer in jsdom, so a box must not be left behind —
+    // a shrunken body with no viewport lie is worse than not framing at all.
+    expect(document.getElementById('catan-v2-page-frame')).toBeNull();
   });
 });

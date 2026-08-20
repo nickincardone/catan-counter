@@ -85,27 +85,47 @@ function awaitReport(id: number): Promise<ViewportReport | null> {
 }
 
 /**
- * Shift colonist's own elements out from under the gutters.
+ * Put colonist's layout inside the space the gutters leave, by shrinking the
+ * box its own positioning is measured against.
  *
- * Uses the independent CSS `translate` property, never `transform`: colonist
- * pairs `top: 50%` with `transform: translateY(-50%)` on its canvas, so writing
- * transform here would drop the board half a screen. `translate` composes with
- * it and colonist never sets it.
+ * Colonist absolutely-positions its layers on <body>, which is normally
+ * `position: static` — so their offsets resolve against the viewport. Give body
+ * a position and a smaller box and those same offsets resolve against IT: the
+ * canvas's `top: 50%` centres the board in the reduced area instead of the
+ * window, and its `left` starts from body's edge. Colonist puts itself in the
+ * right place; nothing has to be moved afterwards.
+ *
+ * This replaced translating everything, which worked but dragged colonist's own
+ * popups along with it — a menu anchored near the top of the game was pushed off
+ * the top of the screen by the same offset that made room at the bottom.
+ *
+ * `html > body` outranks colonist's own `html, body` rule without !important.
  */
-function applyShift(left: number, top: number): void {
+function applyPageBox(
+  inset: ViewportInset,
+  real: { width: number; height: number }
+): void {
   let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
   if (!style) {
     style = document.createElement('style');
     style.id = STYLE_ID;
     document.head.appendChild(style);
   }
-  style.textContent =
-    left === 0 && top === 0
-      ? ''
-      : `body > *:not(#catan-v2-root):not(#${STYLE_ID}) { translate: ${left}px ${top}px; }`;
+
+  const width = Math.max(0, real.width - inset.left - inset.right);
+  const height = Math.max(0, real.height - inset.top - inset.bottom);
+
+  style.textContent = `html > body {
+    position: relative;
+    box-sizing: border-box;
+    margin-left: ${inset.left}px;
+    margin-top: ${inset.top}px;
+    width: ${width}px;
+    height: ${height}px;
+  }`;
 }
 
-function removeShift(): void {
+function removePageBox(): void {
   document.getElementById(STYLE_ID)?.remove();
 }
 
@@ -128,18 +148,12 @@ export function clampInset(inset: ViewportInset): ViewportInset {
 }
 
 /**
- * Squeeze the page so the given edges are free, then shift it clear of the
- * left and top gutters.
+ * Squeeze the page into the space the gutters leave.
  *
- * The inset frees exactly the space it asks for — colonist sizes its layers to
- * the viewport height it is told. But it also centers them, so half that space
- * lands above the game and half below, and asking for a 176px bottom gutter
- * leaves 88px at each end. Pinning the content to the top instead of trying to
- * ask for more is what makes this exact: the gap that was above moves to the
- * bottom, where the gutter is.
- *
- * The shift is cleared before measuring rather than compensated for, so each
- * call re-derives the offset from scratch and repeated calls land identically.
+ * Two halves, and both are needed. The viewport lie makes colonist SIZE itself
+ * to the free area; the page box makes it POSITION itself there. Sizing alone
+ * left the board centred in the whole window, with the freed space split above
+ * and below rather than where the gutter is.
  */
 export async function applyPageFrame(
   requested: ViewportInset
@@ -151,17 +165,30 @@ export async function applyPageFrame(
   // Without the MAIN-world half the page cannot be squeezed at all; the gutters
   // still render, they just sit over the page instead of beside it.
   if (bridgeResponsive === false) {
-    applyShift(0, 0);
+    removePageBox();
     return { applied: false };
   }
 
-  applyShift(0, 0);
+  // The box goes on FIRST, and the order matters. Colonist only recomputes the
+  // offsets it positions its layers with when a resize fires, and the resize is
+  // fired by set-inset below — so a box applied afterwards would not be read
+  // until something else happened to resize the window.
+  //
+  // The real viewport is safe to read here: the override lives in the page's
+  // world, and this code runs in the extension's, where it never took effect.
+  applyPageBox(target, {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+
   const report = await awaitReport(post('set-inset', target));
 
-  // The MAIN-world half is missing (hook blocked, or an older build): the
-  // gutters still render, they just overlay the page instead of framing it.
+  // The MAIN-world half is missing (hook blocked, or an older build): without
+  // the viewport lie the page must not be left in a shrunken box either, so the
+  // gutters simply overlay the page.
   if (!report) {
     bridgeResponsive = false;
+    removePageBox();
     console.warn(
       '🎛️ The page-viewport hook did not answer — v2 will overlay the page instead of shrinking it'
     );
@@ -169,28 +196,15 @@ export async function applyPageFrame(
   }
   bridgeResponsive = true;
 
-  if (!report.content) {
-    // Colonist has not drawn the board yet; the horizontal shift is safe on its
-    // own, and the next call (or the next resize) will settle the vertical one.
-    applyShift(target.left, 0);
-    return { applied: true };
-  }
-
-  const shiftY = Math.round(target.top - report.content.top);
-  applyShift(target.left, shiftY);
-
   return {
     applied: true,
-    free: {
-      left: report.content.left + target.left,
-      bottom: report.real.height - (report.content.bottom + shiftY),
-    },
+    free: { left: target.left, bottom: target.bottom },
   };
 }
 
 /** Put the page back exactly as it was. */
 export async function releasePageFrame(): Promise<void> {
-  removeShift();
+  removePageBox();
   if (!installed) return;
   installed = false;
   lastRequested = { ...ZERO_INSET };
@@ -216,5 +230,5 @@ export function _resetPageFrameForTesting(timeoutMs = REPORT_TIMEOUT_MS): void {
   bridgeResponsive = null;
   reportTimeoutMs = timeoutMs;
   lastRequested = { ...ZERO_INSET };
-  removeShift();
+  removePageBox();
 }
