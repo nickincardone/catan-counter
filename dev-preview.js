@@ -1075,75 +1075,91 @@
         /**
          * Process definite resource loss
          */
-        processResourceLoss(playerName, resources) {
+        /**
+         * Apply a change the player may not be able to afford, pruning the variants
+         * where they cannot.
+         *
+         * The chat is ground truth: if it says someone built a road, they built it.
+         * When NO variant can afford the cost our tracking is wrong — messages were
+         * missed after a refresh, say — and pruning every variant cascades into
+         * removing the tree's root, which throws mid-prune and takes the parser down
+         * with it. So in that case keep every variant and force-apply with clamping,
+         * exactly as trades and monopolies already do.
+         */
+        applyAffordableChange(playerName, description, requires, mutate) {
             const currentNodes = this.variantTree.getCurrentVariantNodes();
-            for (const node of currentNodes) {
-                const gameState = node.gameState;
-                const playerState = gameState[playerName];
-                if (playerState) {
-                    let canAfford = true;
-                    // Check if player can afford this loss in this variant
-                    for (const [resourceType, amount] of Object.entries(resources)) {
-                        if (typeof amount === 'number' &&
-                            isValidResourceType(resourceType) &&
-                            getResourceAmount(playerState.resources, resourceType) < amount) {
-                            canAfford = false;
-                            break;
-                        }
+            const canAfford = (node) => {
+                const state = node.gameState[playerName];
+                if (!state)
+                    return false;
+                for (const [resourceType, amount] of Object.entries(requires)) {
+                    if (typeof amount !== 'number' || !isValidResourceType(resourceType)) {
+                        continue;
                     }
-                    if (canAfford) {
-                        // Execute the loss
-                        for (const [resourceType, amount] of Object.entries(resources)) {
-                            if (typeof amount === 'number' &&
-                                isValidResourceType(resourceType)) {
-                                updateResourceAmount(playerState.resources, resourceType, -amount);
-                            }
-                        }
-                    }
-                    else {
-                        // This variant is invalid - player can't afford the loss
-                        this.variantTree.removeVariantNode(node);
+                    if (getResourceAmount(state.resources, resourceType) < amount) {
+                        return false;
                     }
                 }
+                return true;
+            };
+            const anyValid = currentNodes.some(canAfford);
+            if (!anyValid) {
+                console.warn(`⚠️ ${description} is impossible in every variant — force-applying (messages may have been missed)`);
+            }
+            for (const node of currentNodes) {
+                const state = node.gameState[playerName];
+                if (!state)
+                    continue;
+                if (anyValid && !canAfford(node)) {
+                    this.variantTree.removeVariantNode(node);
+                    continue;
+                }
+                mutate(state, !anyValid);
             }
             this.variantTree.pruneInvalidNodes();
+        }
+        processResourceLoss(playerName, resources) {
+            this.applyAffordableChange(playerName, `${playerName} losing cards`, resources, (state, clamp) => {
+                for (const [resourceType, amount] of Object.entries(resources)) {
+                    if (typeof amount !== 'number' ||
+                        !isValidResourceType(resourceType)) {
+                        continue;
+                    }
+                    // Clamped so a force-applied loss can never go negative.
+                    const held = getResourceAmount(state.resources, resourceType);
+                    const taken = clamp ? Math.min(held, amount) : amount;
+                    updateResourceAmount(state.resources, resourceType, -taken);
+                }
+            });
         }
         /**
          * Process bank trade (player trades resources with the bank)
          */
         processBankTrade(playerName, resourceChanges) {
-            const currentNodes = this.variantTree.getCurrentVariantNodes();
-            for (const node of currentNodes) {
-                const gameState = node.gameState;
-                const playerState = gameState[playerName];
-                if (playerState) {
-                    let canAfford = true;
-                    // Check if player can afford the resources they're giving up
-                    for (const [resourceType, amount] of Object.entries(resourceChanges)) {
-                        if (amount < 0 && // Negative amounts are resources being given up
-                            isValidResourceType(resourceType) &&
-                            getResourceAmount(playerState.resources, resourceType) <
-                                Math.abs(amount)) {
-                            canAfford = false;
-                            break;
-                        }
-                    }
-                    if (canAfford) {
-                        // Execute the bank trade (both losses and gains)
-                        for (const [resourceType, amount] of Object.entries(resourceChanges)) {
-                            if (typeof amount === 'number' &&
-                                isValidResourceType(resourceType)) {
-                                updateResourceAmount(playerState.resources, resourceType, amount);
-                            }
-                        }
-                    }
-                    else {
-                        // This variant is invalid - player can't afford the trade
-                        this.variantTree.removeVariantNode(node);
-                    }
+            // Only the negative side has to be affordable; the rest is what comes back.
+            const requires = {};
+            for (const [resourceType, amount] of Object.entries(resourceChanges)) {
+                if (typeof amount === 'number' &&
+                    amount < 0 &&
+                    isValidResourceType(resourceType)) {
+                    requires[resourceType] = Math.abs(amount);
                 }
             }
-            this.variantTree.pruneInvalidNodes();
+            this.applyAffordableChange(playerName, `Bank trade by ${playerName}`, requires, (state, clamp) => {
+                for (const [resourceType, amount] of Object.entries(resourceChanges)) {
+                    if (typeof amount !== 'number' ||
+                        !isValidResourceType(resourceType)) {
+                        continue;
+                    }
+                    if (clamp && amount < 0) {
+                        const held = getResourceAmount(state.resources, resourceType);
+                        updateResourceAmount(state.resources, resourceType, -Math.min(held, Math.abs(amount)));
+                    }
+                    else {
+                        updateResourceAmount(state.resources, resourceType, amount);
+                    }
+                }
+            });
         }
         /**
          * Get the current best estimate of a player's resources
