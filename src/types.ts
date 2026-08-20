@@ -1,4 +1,5 @@
 import { PropbableGameState } from './probableGameState';
+import type { PlayerLedger } from './cardLedger';
 
 export interface ResourceObjectType {
   sheep: number;
@@ -67,6 +68,11 @@ export interface GameType {
       [resourceType: string]: number;
     };
   };
+  /**
+   * Cards picked up and lost per player, by source. Kept here rather than in
+   * probableGameState because the first dice roll rebuilds that from scratch.
+   */
+  cardLedger: { [playerName: string]: PlayerLedger };
 }
 
 export interface DiceRollsType {

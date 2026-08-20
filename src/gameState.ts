@@ -43,6 +43,7 @@ export function getDefaultGame(): GameType {
       12: 0,
     },
     blockedDiceRolls: {},
+    cardLedger: {},
     remainingDiscoveryCardsProbabilities: {
       knights: 0,
       victoryPoints: 0,

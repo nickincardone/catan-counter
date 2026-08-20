@@ -1682,6 +1682,7 @@
                 12: 0,
             },
             blockedDiceRolls: {},
+            cardLedger: {},
             remainingDiscoveryCardsProbabilities: {
                 knights: 0,
                 victoryPoints: 0,
@@ -7233,6 +7234,85 @@
         active().showYouPlayerDialog();
     }
 
+    // cardLedger.ts
+    function emptyLedger() {
+        return {
+            dice: 0,
+            robGain: 0,
+            devGain: 0,
+            tradeGain: 0,
+            sevens: 0,
+            robLoss: 0,
+            monoLoss: 0,
+            tradeLoss: 0,
+            spent: 0,
+        };
+    }
+    function ledgerFor(playerName) {
+        let ledger = game.cardLedger[playerName];
+        if (!ledger) {
+            ledger = emptyLedger();
+            game.cardLedger[playerName] = ledger;
+        }
+        return ledger;
+    }
+    function recordGain(playerName, kind, cards) {
+        if (!playerName || cards <= 0)
+            return;
+        ledgerFor(playerName)[kind] += cards;
+    }
+    function recordLoss(playerName, kind, cards) {
+        if (!playerName || cards <= 0)
+            return;
+        ledgerFor(playerName)[kind] += cards;
+    }
+    /** Total cards in a set of resource changes, counting only the given sign. */
+    function countCards(changes, sign) {
+        let total = 0;
+        for (const value of Object.values(changes)) {
+            if (typeof value !== 'number')
+                continue;
+            if (sign === 'positive' && value > 0)
+                total += value;
+            if (sign === 'negative' && value < 0)
+                total += -value;
+        }
+        return total;
+    }
+    /**
+     * Record both halves of a trade. `changes` is net for `playerName`; the partner
+     * gets the mirror image. Passing no partner records a bank trade.
+     */
+    function recordTrade(playerName, partnerName, changes) {
+        const received = countCards(changes, 'positive');
+        const given = countCards(changes, 'negative');
+        recordGain(playerName, 'tradeGain', received);
+        recordLoss(playerName, 'tradeLoss', given);
+        // The partner's side is the mirror: what one gave, the other received.
+        recordGain(partnerName, 'tradeGain', given);
+        recordLoss(partnerName, 'tradeLoss', received);
+    }
+    /**
+     * Record a monopoly.
+     *
+     * The caster's haul is ground truth — the chat states it — so it is recorded
+     * exactly. The per-victim split is not in the chat at all, so each victim is
+     * charged what the tracker believes they were holding. That is the one entry in
+     * the ledger that can be wrong, and it can only be wrong about WHICH victims
+     * lost cards, never about how many the caster gained.
+     */
+    function recordMonopoly(casterName, totalStolen, perVictim) {
+        recordGain(casterName, 'devGain', totalStolen);
+        for (const victim of perVictim) {
+            recordLoss(victim.name, 'monoLoss', victim.cards);
+        }
+    }
+    /** A steal moves exactly one card, whether or not anyone knows which. */
+    function recordSteal(thiefName, victimName) {
+        recordGain(thiefName, 'robGain', 1);
+        recordLoss(victimName, 'robLoss', 1);
+    }
+
     /**
      * Handle a player discarding resources
      */
@@ -7253,6 +7333,8 @@
                 playerChanges[key] = -count;
             }
         });
+        // Anyone over the limit discards when a seven is rolled, not just the roller.
+        recordLoss(playerName, 'sevens', countCards(discardedResources, 'positive'));
         updateResources(playerName, playerChanges);
     }
     /**
@@ -7334,6 +7416,7 @@
             player2: tradePartner,
             resourceChanges: resourceChanges,
         });
+        recordTrade(playerName, tradePartner, resourceChanges);
         // Update the player who initiated the trade
         updateResources(playerName, resourceChanges);
         // Update the trade partner (opposite changes)
@@ -7361,6 +7444,7 @@
             playerName: playerName,
             resources: resources,
         });
+        recordGain(playerName, 'dice', countCards(resources, 'positive'));
         updateResources(playerName, resources);
     }
     /**
@@ -7375,6 +7459,7 @@
             victimName: victim,
             stolenResource: resource,
         });
+        recordSteal(thief, victim);
         updateResources(thief, { [resource]: 1 });
         updateResources(victim, { [resource]: -1 });
     }
@@ -7400,7 +7485,9 @@
             knownSteal(thief, victim, resourceType);
         }
         else {
-            // Unknown steal - we don't know what resource was stolen
+            // Unknown steal - we don't know what resource was stolen. The ledger counts
+            // cards, so it is exact anyway; knownSteal records its own.
+            recordSteal(thief, victim);
             game.probableGameState.processTransaction({
                 type: TransactionTypeEnum.ROBBER_STEAL,
                 stealerName: thief,
@@ -7421,6 +7508,7 @@
             resources: { wheat: 1, sheep: 1, ore: 1 },
         });
         game.devCards--;
+        recordLoss(playerName, 'spent', 3);
         updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
     }
     /**
@@ -7439,6 +7527,7 @@
             playerName: playerName,
             resourceChanges: resourceChanges,
         });
+        recordTrade(playerName, null, resourceChanges);
         updateResources(playerName, resourceChanges);
     }
     /**
@@ -7467,6 +7556,7 @@
                 playerName: playerName,
                 resources: { tree: 1, wheat: 1, brick: 1, sheep: 1 },
             });
+            recordLoss(playerName, 'spent', 4);
             updateResources(playerName, {
                 tree: -1,
                 wheat: -1,
@@ -7490,6 +7580,7 @@
                 playerName: playerName,
                 resources: { ore: 3, wheat: 2 },
             });
+            recordLoss(playerName, 'spent', 5);
             updateResources(playerName, { ore: -3, wheat: -2 });
             player.cities--;
             player.settlements++; // City replaces settlement
@@ -7509,6 +7600,7 @@
                 playerName: playerName,
                 resources: { tree: 1, brick: 1 },
             });
+            recordLoss(playerName, 'spent', 2);
             updateResources(playerName, { tree: -1, brick: -1 });
             player.roads--;
         }
@@ -7550,6 +7642,7 @@
             playerName: playerName,
             resources: resources,
         });
+        recordGain(playerName, 'devGain', countCards(resources, 'positive'));
         updateResources(playerName, resources);
     }
     /**
@@ -7587,15 +7680,19 @@
             return;
         // Calculate total resources to steal and remove from other players
         let actualStolen = 0;
+        const perVictim = [];
         game.players.forEach(otherPlayer => {
             if (otherPlayer.name !== playerName) {
                 const playerHas = otherPlayer.resources[resourceType];
                 if (playerHas > 0) {
                     actualStolen += playerHas;
+                    perVictim.push({ name: otherPlayer.name, cards: playerHas });
                     otherPlayer.resources[resourceType] = 0;
                 }
             }
         });
+        // The haul is ground truth from the chat; the split across victims is not.
+        recordMonopoly(playerName, totalStolen, perVictim);
         game.probableGameState.processTransaction({
             type: TransactionTypeEnum.MONOPOLY,
             playerName: playerName,
@@ -7614,6 +7711,8 @@
         const hasResources = Object.values(resources).some(count => count && count > 0);
         if (!hasResources)
             return;
+        // The ledger covers the whole game, opening hand included.
+        recordGain(playerName, 'dice', countCards(resources, 'positive'));
         updateResources(playerName, resources);
         console.log(`🏁 ${playerName} received starting resources: ${JSON.stringify(resources)}`);
     }
@@ -7647,6 +7746,7 @@
             victimName: victim,
             stolenResource: stolenResource,
         });
+        recordSteal(thief, victim);
         // Transfer resource from victim to thief
         updateResources(thief, { [stolenResource]: 1 });
         updateResources(victim, { [stolenResource]: -1 });

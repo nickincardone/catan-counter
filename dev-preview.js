@@ -1370,6 +1370,7 @@
                 12: 0,
             },
             blockedDiceRolls: {},
+            cardLedger: {},
             remainingDiscoveryCardsProbabilities: {
                 knights: 0,
                 victoryPoints: 0,
@@ -4681,6 +4682,57 @@
         active().showYouPlayerDialog();
     }
 
+    // cardLedger.ts
+    function emptyLedger() {
+        return {
+            dice: 0,
+            robGain: 0,
+            devGain: 0,
+            tradeGain: 0,
+            sevens: 0,
+            robLoss: 0,
+            monoLoss: 0,
+            tradeLoss: 0,
+            spent: 0,
+        };
+    }
+    function ledgerFor(playerName) {
+        let ledger = game.cardLedger[playerName];
+        if (!ledger) {
+            ledger = emptyLedger();
+            game.cardLedger[playerName] = ledger;
+        }
+        return ledger;
+    }
+    function recordGain(playerName, kind, cards) {
+        if (!playerName || cards <= 0)
+            return;
+        ledgerFor(playerName)[kind] += cards;
+    }
+    function recordLoss(playerName, kind, cards) {
+        if (!playerName || cards <= 0)
+            return;
+        ledgerFor(playerName)[kind] += cards;
+    }
+    /** Total cards in a set of resource changes, counting only the given sign. */
+    function countCards(changes, sign) {
+        let total = 0;
+        for (const value of Object.values(changes)) {
+            if (typeof value !== 'number')
+                continue;
+            if (sign === 'positive' && value > 0)
+                total += value;
+            if (sign === 'negative' && value < 0)
+                total += -value;
+        }
+        return total;
+    }
+    /** A steal moves exactly one card, whether or not anyone knows which. */
+    function recordSteal(thiefName, victimName) {
+        recordGain(thiefName, 'robGain', 1);
+        recordLoss(victimName, 'robLoss', 1);
+    }
+
     /**
      * Handle a player placing a settlement
      */
@@ -4748,6 +4800,7 @@
             playerName: playerName,
             resources: resources,
         });
+        recordGain(playerName, 'dice', countCards(resources, 'positive'));
         updateResources(playerName, resources);
     }
     /**
@@ -4762,6 +4815,7 @@
             victimName: victim,
             stolenResource: resource,
         });
+        recordSteal(thief, victim);
         updateResources(thief, { [resource]: 1 });
         updateResources(victim, { [resource]: -1 });
     }
@@ -4787,7 +4841,9 @@
             knownSteal(thief, victim, resourceType);
         }
         else {
-            // Unknown steal - we don't know what resource was stolen
+            // Unknown steal - we don't know what resource was stolen. The ledger counts
+            // cards, so it is exact anyway; knownSteal records its own.
+            recordSteal(thief, victim);
             game.probableGameState.processTransaction({
                 type: TransactionTypeEnum.ROBBER_STEAL,
                 stealerName: thief,

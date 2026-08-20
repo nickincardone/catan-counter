@@ -5,6 +5,14 @@ import {
   updateResources,
 } from './gameState.js';
 import { showYouPlayerDialog } from './ui/index.js';
+import {
+  countCards,
+  recordGain,
+  recordLoss,
+  recordMonopoly,
+  recordSteal,
+  recordTrade,
+} from './cardLedger.js';
 import { PropbableGameState } from './probableGameState.js';
 import {
   DiceRollsType,
@@ -38,6 +46,8 @@ export function playerDiscard(
     }
   });
 
+  // Anyone over the limit discards when a seven is rolled, not just the roller.
+  recordLoss(playerName, 'sevens', countCards(discardedResources, 'positive'));
   updateResources(playerName, playerChanges);
 }
 
@@ -143,6 +153,8 @@ export function playerTrade(
     resourceChanges: resourceChanges,
   });
 
+  recordTrade(playerName, tradePartner, resourceChanges);
+
   // Update the player who initiated the trade
   updateResources(playerName, resourceChanges);
 
@@ -178,6 +190,7 @@ export function playerGetResources(
     resources: resources,
   });
 
+  recordGain(playerName, 'dice', countCards(resources, 'positive'));
   updateResources(playerName, resources);
 }
 
@@ -198,6 +211,7 @@ export function knownSteal(
     stolenResource: resource,
   });
 
+  recordSteal(thief, victim);
   updateResources(thief, { [resource]: 1 } as any);
   updateResources(victim, { [resource]: -1 } as any);
 }
@@ -237,7 +251,9 @@ export function unknownSteal(
 
     knownSteal(thief, victim, resourceType);
   } else {
-    // Unknown steal - we don't know what resource was stolen
+    // Unknown steal - we don't know what resource was stolen. The ledger counts
+    // cards, so it is exact anyway; knownSteal records its own.
+    recordSteal(thief, victim);
     game.probableGameState.processTransaction({
       type: TransactionTypeEnum.ROBBER_STEAL,
       stealerName: thief,
@@ -260,6 +276,7 @@ export function buyDevCard(playerName: string | null): void {
   });
 
   game.devCards--;
+  recordLoss(playerName, 'spent', 3);
   updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
 }
 
@@ -285,6 +302,7 @@ export function bankTrade(
     resourceChanges: resourceChanges,
   });
 
+  recordTrade(playerName, null, resourceChanges);
   updateResources(playerName, resourceChanges);
 }
 
@@ -315,6 +333,7 @@ export function buildSettlement(playerName: string | null): void {
       resources: { tree: 1, wheat: 1, brick: 1, sheep: 1 },
     });
 
+    recordLoss(playerName, 'spent', 4);
     updateResources(playerName, {
       tree: -1,
       wheat: -1,
@@ -340,6 +359,7 @@ export function buildCity(playerName: string | null): void {
       resources: { ore: 3, wheat: 2 },
     });
 
+    recordLoss(playerName, 'spent', 5);
     updateResources(playerName, { ore: -3, wheat: -2 });
     player.cities--;
     player.settlements++; // City replaces settlement
@@ -360,6 +380,7 @@ export function buildRoad(playerName: string | null): void {
       playerName: playerName,
       resources: { tree: 1, brick: 1 },
     });
+    recordLoss(playerName, 'spent', 2);
     updateResources(playerName, { tree: -1, brick: -1 });
     player.roads--;
   }
@@ -410,6 +431,7 @@ export function yearOfPlentyTake(
     resources: resources,
   });
 
+  recordGain(playerName, 'devGain', countCards(resources, 'positive'));
   updateResources(playerName, resources);
 }
 
@@ -454,15 +476,20 @@ export function monopolySteal(
 
   // Calculate total resources to steal and remove from other players
   let actualStolen = 0;
+  const perVictim: Array<{ name: string; cards: number }> = [];
   game.players.forEach(otherPlayer => {
     if (otherPlayer.name !== playerName) {
       const playerHas = otherPlayer.resources[resourceType];
       if (playerHas > 0) {
         actualStolen += playerHas;
+        perVictim.push({ name: otherPlayer.name, cards: playerHas });
         otherPlayer.resources[resourceType] = 0;
       }
     }
   });
+
+  // The haul is ground truth from the chat; the split across victims is not.
+  recordMonopoly(playerName, totalStolen, perVictim);
 
   game.probableGameState.processTransaction({
     type: TransactionTypeEnum.MONOPOLY,
@@ -489,6 +516,8 @@ export function receiveStartingResources(
   );
   if (!hasResources) return;
 
+  // The ledger covers the whole game, opening hand included.
+  recordGain(playerName, 'dice', countCards(resources, 'positive'));
   updateResources(playerName, resources);
 
   console.log(
@@ -536,6 +565,8 @@ export function stealFromYou(
     victimName: victim,
     stolenResource: stolenResource,
   });
+
+  recordSteal(thief, victim);
 
   // Transfer resource from victim to thief
   updateResources(thief, { [stolenResource]: 1 } as any);
