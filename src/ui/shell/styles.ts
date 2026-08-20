@@ -32,6 +32,8 @@ function tokens(): string {
       --cc-good-border: ${THEME.goodBorder};
       --cc-probable: ${THEME.probable};
       --cc-danger: ${THEME.danger};
+      --cc-loss-text: ${THEME.lossText};
+      --cc-spend-text: ${THEME.spendText};
       --cc-bar: ${THEME.bar};
       --cc-text: ${THEME.text};
       --cc-text-body: ${THEME.textBody};

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from '@jest/globals';
 import { blockedRobberSection } from '../ui/sections/blockedRobber';
+import { cardFlowSection } from '../ui/sections/cardFlow';
+import { cardFlowLedgerSection } from '../ui/sections/cardFlowLedger';
 import { devDeckSection } from '../ui/sections/devDeck';
 import { diceSection } from '../ui/sections/dice';
 import { handsSection } from '../ui/sections/hands';
@@ -12,6 +14,7 @@ import type {
 } from '../ui/sections/types';
 import { RESOURCE_ORDER } from '../ui/view/types';
 import type {
+  CardFlowView,
   GameView,
   PlayerView,
   ResourceKey,
@@ -126,9 +129,36 @@ function view(overrides: Partial<GameView> = {}): GameView {
         },
       ],
     },
+    cardFlow: [],
     youPlayerName: null,
     hasStarted: true,
     isLoadingHistory: false,
+    ...overrides,
+  };
+}
+
+function flow(
+  name: string,
+  overrides: Partial<CardFlowView> = {}
+): CardFlowView {
+  return {
+    name,
+    color: '#59a8e8',
+    got: 0,
+    robbed: 0,
+    spentAndTraded: 0,
+    gained: 0,
+    dice: 0,
+    robGain: 0,
+    devGain: 0,
+    tradeGain: 0,
+    lost: 0,
+    sevens: 0,
+    robLoss: 0,
+    monoLoss: 0,
+    tradeLoss: 0,
+    spent: 0,
+    hand: 0,
     ...overrides,
   };
 }
@@ -485,6 +515,148 @@ describe('dev deck section', () => {
   });
 });
 
+describe('card flow section', () => {
+  const busy = () =>
+    view({
+      cardFlow: [
+        flow('Alice', {
+          got: 34,
+          devGain: 5,
+          robbed: 4,
+          sevens: 6,
+          spentAndTraded: 22,
+          hand: 7,
+        }),
+        flow('Bob', {
+          got: 29,
+          devGain: 0,
+          robbed: 2,
+          sevens: 0,
+          spentAndTraded: 18,
+          hand: 9,
+        }),
+      ],
+    });
+
+  it('shows a row per player under the six columns', () => {
+    mount(cardFlowSection, busy());
+
+    expect(all('.flow-head').map(n => n.textContent)).toEqual([
+      'GOT',
+      'DEV',
+      'ROBD',
+      '7s',
+      'SPENT',
+      'HAND',
+    ]);
+    expect(all('.flow-name').map(n => n.textContent)).toEqual(['Alice', 'Bob']);
+    expect(text('.section-hint')).toBe('whole game');
+  });
+
+  it('renders a row that reads as arithmetic that checks out', () => {
+    mount(cardFlowSection, busy());
+    const values = all('.flow-cell')
+      .slice(0, 6)
+      .map(n => Number(n.textContent));
+
+    expect(values).toEqual([34, 5, 4, 6, 22, 7]);
+    const [got, dev, robbed, sevens, spent, hand] = values;
+    expect(got + dev - robbed - sevens - spent).toBe(hand);
+  });
+
+  it('dims a column that never happened', () => {
+    mount(cardFlowSection, busy());
+    // Bob's DEV and 7s are zero; his GOT is not.
+    const bobCells = all('.flow-cell').slice(6, 12);
+    expect(bobCells[0].classList.contains('flow-cell--none')).toBe(false);
+    expect(bobCells[1].classList.contains('flow-cell--none')).toBe(true);
+    expect(bobCells[3].classList.contains('flow-cell--none')).toBe(true);
+  });
+
+  it('explains the three columns whose meaning is not obvious', () => {
+    mount(cardFlowSection, busy());
+    const note = text('.section-note');
+    expect(note).toContain('GOT');
+    expect(note).toContain('ROBD');
+    expect(note).toContain('SPENT');
+  });
+
+  it('says so before anything has moved', () => {
+    mount(cardFlowSection, view());
+    expect(
+      (host.querySelector('.section-empty') as HTMLElement).style.display
+    ).toBe('');
+  });
+
+  it('reuses its rows across updates', () => {
+    const section = mount(cardFlowSection, busy());
+    const first = host.querySelector('.flow-name');
+    section.update(busy());
+    expect(host.querySelector('.flow-name')).toBe(first);
+  });
+});
+
+describe('card flow ledger section', () => {
+  const ledger = () =>
+    view({
+      cardFlow: [
+        flow('Alice', {
+          gained: 44,
+          dice: 41,
+          robGain: 2,
+          devGain: 0,
+          tradeGain: 1,
+          lost: 37,
+          sevens: 0,
+          robLoss: 4,
+          monoLoss: 1,
+          tradeLoss: 2,
+          spent: 30,
+          hand: 7,
+        }),
+      ],
+    });
+
+  it('splits the totals into a gained band and a lost band', () => {
+    mount(cardFlowLedgerSection, ledger());
+
+    const bands = all('.ledger-band').map(n => n.textContent);
+    expect(bands).toEqual(['GAINED', 'LOST']);
+    expect(all('.ledger-head').map(n => n.textContent)).toEqual([
+      'ALL',
+      'DICE',
+      'ROB',
+      'DEV',
+      'TRDE',
+      'ALL',
+      '7s',
+      'ROB',
+      'MONO',
+      'TRDE',
+      'SPENT',
+      'HAND',
+    ]);
+  });
+
+  it('balances: everything gained less everything lost is the hand', () => {
+    mount(cardFlowLedgerSection, ledger());
+
+    const gained = Number(text('.ledger-total--gain'));
+    const lost = Number(text('.ledger-total--loss'));
+    const hand = Number(text('.ledger-hand'));
+    expect(gained - lost).toBe(hand);
+
+    // And each band's parts add up to its own total.
+    const parts = all('.ledger-part').map(n => Number(n.textContent));
+    expect(parts.slice(0, 4).reduce((a, b) => a + b, 0)).toBe(gained);
+    expect(parts.slice(4).reduce((a, b) => a + b, 0)).toBe(lost);
+  });
+
+  it('is too wide for a rail and says so', () => {
+    expect(cardFlowLedgerSection.supports).toEqual(['horizontal']);
+  });
+});
+
 describe('players section', () => {
   it('shows victory points, knights and pieces left', () => {
     mount(
@@ -519,6 +691,8 @@ describe('every section', () => {
   const sections: SectionDefinition[] = [
     handsSection,
     unknownStealsSection,
+    cardFlowSection,
+    cardFlowLedgerSection,
     blockedRobberSection,
     diceSection,
     devDeckSection,

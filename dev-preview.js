@@ -1862,7 +1862,7 @@
         wheat: 'wheat.svg',
         ore: 'ore.svg',
     };
-    const STYLES$6 = {
+    const STYLES$8 = {
         modalBackdrop: `
     position: fixed;
     top: 0;
@@ -1932,7 +1932,7 @@
      */
     function createModalBackdrop() {
         const backdrop = document.createElement('div');
-        backdrop.style.cssText = STYLES$6.modalBackdrop;
+        backdrop.style.cssText = STYLES$8.modalBackdrop;
         return backdrop;
     }
     /**
@@ -1940,7 +1940,7 @@
      */
     function createModalDialog() {
         const dialog = document.createElement('div');
-        dialog.style.cssText = STYLES$6.modalDialog;
+        dialog.style.cssText = STYLES$8.modalDialog;
         return dialog;
     }
     /**
@@ -1950,7 +1950,7 @@
         const button = document.createElement('button');
         button.setAttribute('data-resource', resource);
         button.style.cssText = `
-    ${STYLES$6.primaryButton}
+    ${STYLES$8.primaryButton}
     display: flex;
     align-items: center;
     gap: 10px;
@@ -2343,7 +2343,7 @@
     <div style="margin-top: 15px; display: flex; justify-content: flex-end;">
       <button 
         id="cancel-resolve-btn"
-        style="${STYLES$6.secondaryButton}"
+        style="${STYLES$8.secondaryButton}"
       >Cancel</button>
     </div>
   `;
@@ -2653,6 +2653,108 @@
         showYouPlayerDialog: showYouPlayerDialog$1,
     };
 
+    // cardLedger.ts
+    function emptyLedger() {
+        return {
+            dice: 0,
+            robGain: 0,
+            devGain: 0,
+            tradeGain: 0,
+            sevens: 0,
+            robLoss: 0,
+            monoLoss: 0,
+            tradeLoss: 0,
+            spent: 0,
+        };
+    }
+    function ledgerFor(playerName) {
+        let ledger = game.cardLedger[playerName];
+        if (!ledger) {
+            ledger = emptyLedger();
+            game.cardLedger[playerName] = ledger;
+        }
+        return ledger;
+    }
+    /** Read a player's ledger. Players nobody has seen act as read yet read empty. */
+    function getLedger(playerName) {
+        var _a;
+        return (_a = game.cardLedger[playerName]) !== null && _a !== void 0 ? _a : emptyLedger();
+    }
+    function recordGain(playerName, kind, cards) {
+        if (!playerName || cards <= 0)
+            return;
+        ledgerFor(playerName)[kind] += cards;
+    }
+    function recordLoss(playerName, kind, cards) {
+        if (!playerName || cards <= 0)
+            return;
+        ledgerFor(playerName)[kind] += cards;
+    }
+    /** Total cards in a set of resource changes, counting only the given sign. */
+    function countCards(changes, sign) {
+        let total = 0;
+        for (const value of Object.values(changes)) {
+            if (typeof value !== 'number')
+                continue;
+            if (sign === 'positive' && value > 0)
+                total += value;
+            if (sign === 'negative' && value < 0)
+                total += -value;
+        }
+        return total;
+    }
+    /**
+     * Record both halves of a trade. `changes` is net for `playerName`; the partner
+     * gets the mirror image. Passing no partner records a bank trade.
+     */
+    function recordTrade(playerName, partnerName, changes) {
+        const received = countCards(changes, 'positive');
+        const given = countCards(changes, 'negative');
+        recordGain(playerName, 'tradeGain', received);
+        recordLoss(playerName, 'tradeLoss', given);
+        // The partner's side is the mirror: what one gave, the other received.
+        recordGain(partnerName, 'tradeGain', given);
+        recordLoss(partnerName, 'tradeLoss', received);
+    }
+    /**
+     * Record a monopoly.
+     *
+     * The caster's haul is ground truth — the chat states it — so it is recorded
+     * exactly. The per-victim split is not in the chat at all, so each victim is
+     * charged what the tracker believes they were holding. That is the one entry in
+     * the ledger that can be wrong, and it can only be wrong about WHICH victims
+     * lost cards, never about how many the caster gained.
+     */
+    function recordMonopoly(casterName, totalStolen, perVictim) {
+        recordGain(casterName, 'devGain', totalStolen);
+        for (const victim of perVictim) {
+            recordLoss(victim.name, 'monoLoss', victim.cards);
+        }
+    }
+    /** A steal moves exactly one card, whether or not anyone knows which. */
+    function recordSteal(thiefName, victimName) {
+        recordGain(thiefName, 'robGain', 1);
+        recordLoss(victimName, 'robLoss', 1);
+    }
+    /**
+     * Fold a ledger into the numbers both card-flow tables show.
+     *
+     * Every gain lands in exactly one of `got`/`devGain` and every loss in exactly
+     * one of `robbed`/`sevens`/`spentAndTraded`, so the compact table balances:
+     * got + devGain - robbed - sevens - spentAndTraded === hand.
+     */
+    function totalsFor(playerName) {
+        const ledger = getLedger(playerName);
+        const gained = ledger.dice + ledger.robGain + ledger.devGain + ledger.tradeGain;
+        const lost = ledger.sevens +
+            ledger.robLoss +
+            ledger.monoLoss +
+            ledger.tradeLoss +
+            ledger.spent;
+        return Object.assign(Object.assign({}, ledger), { gained,
+            lost, hand: gained - lost, got: ledger.dice + ledger.robGain + ledger.tradeGain, robbed: ledger.robLoss + ledger.monoLoss, spentAndTraded: ledger.spent + ledger.tradeLoss });
+    }
+
     // view/types.ts
     // The shape every section renders from. This is deliberately plain data: no
     // DOM, no chrome APIs, no references back into the tracker. A section that only
@@ -2746,6 +2848,30 @@
             roads: player.roads,
             isYou: player.name === youPlayerName,
         };
+    }
+    function buildCardFlow(players) {
+        return players.map(player => {
+            const totals = totalsFor(player.name);
+            return {
+                name: player.name,
+                color: player.color,
+                got: totals.got,
+                robbed: totals.robbed,
+                spentAndTraded: totals.spentAndTraded,
+                gained: totals.gained,
+                dice: totals.dice,
+                robGain: totals.robGain,
+                devGain: totals.devGain,
+                tradeGain: totals.tradeGain,
+                lost: totals.lost,
+                sevens: totals.sevens,
+                robLoss: totals.robLoss,
+                monoLoss: totals.monoLoss,
+                tradeLoss: totals.tradeLoss,
+                spent: totals.spent,
+                hand: totals.hand,
+            };
+        });
     }
     function buildBank(gameResources) {
         return RESOURCE_ORDER.map(resource => ({
@@ -2902,8 +3028,10 @@
         var _a;
         const { blocked, blockedTotal } = buildBlocked(game);
         const steals = buildSteals(game);
+        const ordered = orderPlayers(game.players, game.youPlayerName);
         return {
-            players: orderPlayers(game.players, game.youPlayerName).map(player => buildPlayer(player, game, game.youPlayerName)),
+            players: ordered.map(player => buildPlayer(player, game, game.youPlayerName)),
+            cardFlow: buildCardFlow(ordered),
             bank: buildBank(game.gameResources),
             steals,
             openStealCount: steals.filter(steal => !steal.resolved).length,
@@ -2953,6 +3081,7 @@
             sections: [
                 { id: 'hands' },
                 { id: 'unknown-steals' },
+                { id: 'card-flow' },
                 { id: 'blocked-robber' },
             ],
         },
@@ -3061,6 +3190,10 @@
         /** Probable holdings, which sit against a resource tint rather than a panel. */
         probable: '#6fdcae',
         danger: '#e35b5b',
+        /** Numbers in a losing column: softer than the dice seven's red. */
+        lossText: '#f19a9a',
+        /** Numbers in a spending column. */
+        spendText: '#e8b877',
         bar: '#5b6775',
         text: '#ffffff',
         textBody: '#eef1f4',
@@ -3112,6 +3245,8 @@
       --cc-good-border: ${THEME.goodBorder};
       --cc-probable: ${THEME.probable};
       --cc-danger: ${THEME.danger};
+      --cc-loss-text: ${THEME.lossText};
+      --cc-spend-text: ${THEME.spendText};
       --cc-bar: ${THEME.bar};
       --cc-text: ${THEME.text};
       --cc-text-body: ${THEME.textBody};
@@ -3939,7 +4074,7 @@
     }
 
     // sections/blockedRobber.ts
-    const STYLES$5 = `
+    const STYLES$7 = `
   .blocked-row {
     display: flex;
     align-items: center;
@@ -3972,7 +4107,7 @@
         title: 'Blocked by robber',
         supports: ['vertical'],
         min: { width: 200, height: 0 },
-        styles: STYLES$5,
+        styles: STYLES$7,
         mount(host, view, ctx) {
             const { head, hintNode } = sectionHead('Blocked by robber');
             const rows = el('div', 'section-rows');
@@ -3995,6 +4130,320 @@
                     row.append(el('div', 'blocked-number', String(entry.diceNumber)), img(ctx.assetUrl(`assets/${RESOURCE_STYLE[entry.resource].icon}`), entry.resource), el('div', 'blocked-spacer'), el('span', 'blocked-count', `\u00d7${entry.count}`));
                     rows.appendChild(row);
                 }
+            }
+            render(view);
+            return {
+                update: render,
+                destroy: () => {
+                    host.textContent = '';
+                },
+            };
+        },
+    };
+
+    // sections/cardFlow.ts
+    const STYLES$6 = `
+  .flow-grid {
+    display: grid;
+    grid-template-columns: minmax(78px, 1.2fr) repeat(6, minmax(26px, 1fr));
+    gap: 3px;
+    align-items: center;
+    min-width: 0;
+  }
+  .flow-head {
+    font-family: var(--cc-mono);
+    font-size: 10px;
+    color: var(--cc-label-dim);
+    text-align: center;
+  }
+  .flow-name {
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 4px;
+  }
+  .flow-cell {
+    border-radius: 4px;
+    padding: 5px 0;
+    text-align: center;
+    font-family: var(--cc-mono);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .flow-cell--gain { background: rgba(94,200,160,.12); color: var(--cc-good-text); }
+  .flow-cell--loss { background: rgba(227,91,91,.12); color: var(--cc-loss-text); }
+  .flow-cell--spend { background: rgba(232,163,61,.12); color: var(--cc-spend-text); }
+  .flow-cell--hand { color: var(--cc-text-body); min-width: 0; }
+  /* A column that never happened should not read as a number worth weighing. */
+  .flow-cell--none { color: var(--cc-zero); }
+`;
+    const NOTE$1 = 'GOT is everything picked up: production, trades and steals. ROBD is what ' +
+        'the robber or a monopoly took. SPENT covers building, buying and trading away.';
+    /** Column definitions, in display order. */
+    const COLUMNS = [
+        { label: 'GOT', tone: 'gain', dimZero: false, value: r => r.got },
+        { label: 'DEV', tone: 'gain', dimZero: true, value: r => r.devGain },
+        { label: 'ROBD', tone: 'loss', dimZero: true, value: r => r.robbed },
+        { label: '7s', tone: 'loss', dimZero: true, value: r => r.sevens },
+        {
+            label: 'SPENT',
+            tone: 'spend',
+            dimZero: false,
+            value: r => r.spentAndTraded,
+        },
+        { label: 'HAND', tone: 'hand', dimZero: false, value: r => r.hand },
+    ];
+    const cardFlowSection = {
+        id: 'card-flow',
+        title: 'Card flow',
+        supports: ['vertical', 'horizontal'],
+        min: { width: 260, height: 120 },
+        styles: STYLES$6,
+        mount(host, view) {
+            const { head } = sectionHead('Card flow', 'whole game');
+            const grid = el('div', 'flow-grid');
+            const empty = el('div', 'section-empty', 'Nothing has moved yet.');
+            const note = el('div', 'section-note', NOTE$1);
+            grid.appendChild(el('div')); // spacer above the player-name column
+            for (const column of COLUMNS) {
+                grid.appendChild(el('div', 'flow-head', column.label));
+            }
+            host.append(head, grid, empty, note);
+            let rows = new Map();
+            let seating = '';
+            function render(next) {
+                var _a;
+                const names = next.cardFlow.map(row => row.name).join(' ');
+                if (names !== seating) {
+                    seating = names;
+                    // Rebuild the body but keep the header cells that lead the grid.
+                    while (grid.children.length > COLUMNS.length + 1) {
+                        (_a = grid.lastElementChild) === null || _a === void 0 ? void 0 : _a.remove();
+                    }
+                    rows = new Map();
+                    for (const row of next.cardFlow) {
+                        const name = el('div', 'flow-name');
+                        grid.appendChild(name);
+                        const cells = COLUMNS.map(column => {
+                            const cell = el('div', column.tone === 'hand'
+                                ? 'flow-cell flow-cell--hand'
+                                : `flow-cell flow-cell--${column.tone}`);
+                            grid.appendChild(cell);
+                            return cell;
+                        });
+                        rows.set(row.name, { name, cells });
+                    }
+                }
+                for (const row of next.cardFlow) {
+                    const nodes = rows.get(row.name);
+                    if (!nodes)
+                        continue;
+                    nodes.name.textContent = row.name;
+                    nodes.name.style.color = row.color;
+                    COLUMNS.forEach((column, index) => {
+                        const value = column.value(row);
+                        const cell = nodes.cells[index];
+                        cell.textContent = String(value);
+                        cell.classList.toggle('flow-cell--none', column.dimZero && value === 0);
+                    });
+                }
+                const hasPlayers = next.cardFlow.length > 0;
+                empty.style.display = hasPlayers ? 'none' : '';
+                note.style.display = hasPlayers ? '' : 'none';
+                grid.style.display = hasPlayers ? 'grid' : 'none';
+            }
+            render(view);
+            return {
+                update: render,
+                destroy: () => {
+                    host.textContent = '';
+                },
+            };
+        },
+    };
+
+    // sections/cardFlowLedger.ts
+    const STYLES$5 = `
+  .ledger-grid {
+    display: grid;
+    grid-template-columns:
+      minmax(80px, 1.1fr)
+      repeat(5, minmax(28px, .8fr))
+      10px
+      repeat(6, minmax(28px, .8fr))
+      10px
+      minmax(32px, .9fr);
+    gap: 3px;
+    align-items: center;
+    min-width: 0;
+  }
+  .ledger-band {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--cc-mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+  }
+  .ledger-band-rule { flex: 1; height: 1px; }
+  .ledger-band--gain { color: var(--cc-good-text); }
+  .ledger-band--gain .ledger-band-rule { background: rgba(143,224,196,.3); }
+  .ledger-band--loss { color: var(--cc-loss-text); }
+  .ledger-band--loss .ledger-band-rule { background: rgba(241,154,154,.3); }
+
+  .ledger-head {
+    font-family: var(--cc-mono);
+    font-size: 10px;
+    color: var(--cc-label-dim);
+    text-align: center;
+  }
+  /* The two subtotal columns lead their band, so they read first. */
+  .ledger-head--total { color: var(--cc-text-muted); }
+  .ledger-name {
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 4px;
+  }
+  .ledger-total {
+    border-radius: 4px;
+    padding: 5px 0;
+    text-align: center;
+    font-family: var(--cc-mono);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .ledger-total--gain { background: rgba(94,200,160,.16); color: var(--cc-good-text); }
+  .ledger-total--loss { background: rgba(227,91,91,.16); color: var(--cc-loss-text); }
+  .ledger-part {
+    text-align: center;
+    font-family: var(--cc-mono);
+    font-size: 12px;
+    color: var(--cc-text-body);
+  }
+  .ledger-part--none { color: var(--cc-zero); }
+  .ledger-hand {
+    text-align: center;
+    font-family: var(--cc-mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--cc-text-body);
+  }
+`;
+    /** Sub-columns of each band, in display order. */
+    const GAINS = [
+        { label: 'DICE', value: r => r.dice },
+        { label: 'ROB', value: r => r.robGain },
+        { label: 'DEV', value: r => r.devGain },
+        { label: 'TRDE', value: r => r.tradeGain },
+    ];
+    const LOSSES = [
+        { label: '7s', value: r => r.sevens },
+        { label: 'ROB', value: r => r.robLoss },
+        { label: 'MONO', value: r => r.monoLoss },
+        { label: 'TRDE', value: r => r.tradeLoss },
+        { label: 'SPENT', value: r => r.spent },
+    ];
+    function band(kind, label, span) {
+        const node = el('div', `ledger-band ledger-band--${kind}`);
+        node.style.gridColumn = `span ${span}`;
+        node.append(el('span', undefined, label), el('div', 'ledger-band-rule'));
+        return node;
+    }
+    const cardFlowLedgerSection = {
+        id: 'card-flow-ledger',
+        title: 'Card flow — full ledger',
+        // Fourteen columns of numbers: only a wide bar can hold it.
+        supports: ['horizontal'],
+        min: { width: 0, height: 150 },
+        styles: STYLES$5,
+        mount(host, view) {
+            const { head, hintNode } = sectionHead('Card flow · full ledger', 'every gain and loss by source');
+            const grid = el('div', 'ledger-grid');
+            const empty = el('div', 'section-empty', 'Nothing has moved yet.');
+            // Band row: name spacer, GAINED over its five, gap, LOST over its six, HAND.
+            grid.appendChild(el('div'));
+            grid.appendChild(band('gain', 'GAINED', 5));
+            grid.appendChild(el('div'));
+            grid.appendChild(band('loss', 'LOST', 6));
+            grid.appendChild(el('div'));
+            grid.appendChild(el('div'));
+            // Column labels.
+            grid.appendChild(el('div'));
+            grid.appendChild(el('div', 'ledger-head ledger-head--total', 'ALL'));
+            for (const column of GAINS) {
+                grid.appendChild(el('div', 'ledger-head', column.label));
+            }
+            grid.appendChild(el('div'));
+            grid.appendChild(el('div', 'ledger-head ledger-head--total', 'ALL'));
+            for (const column of LOSSES) {
+                grid.appendChild(el('div', 'ledger-head', column.label));
+            }
+            grid.appendChild(el('div'));
+            grid.appendChild(el('div', 'ledger-head ledger-head--total', 'HAND'));
+            const headerCells = grid.children.length;
+            host.append(head, grid, empty);
+            let rows = new Map();
+            let seating = '';
+            function render(next) {
+                var _a;
+                hintNode.style.display = next.cardFlow.length > 0 ? '' : 'none';
+                const names = next.cardFlow.map(row => row.name).join(' ');
+                if (names !== seating) {
+                    seating = names;
+                    while (grid.children.length > headerCells) {
+                        (_a = grid.lastElementChild) === null || _a === void 0 ? void 0 : _a.remove();
+                    }
+                    rows = new Map();
+                    for (const row of next.cardFlow) {
+                        const name = el('div', 'ledger-name');
+                        const gained = el('div', 'ledger-total ledger-total--gain');
+                        grid.append(name, gained);
+                        const gains = GAINS.map(() => {
+                            const cell = el('div', 'ledger-part');
+                            grid.appendChild(cell);
+                            return cell;
+                        });
+                        grid.appendChild(el('div'));
+                        const lost = el('div', 'ledger-total ledger-total--loss');
+                        grid.appendChild(lost);
+                        const losses = LOSSES.map(() => {
+                            const cell = el('div', 'ledger-part');
+                            grid.appendChild(cell);
+                            return cell;
+                        });
+                        grid.appendChild(el('div'));
+                        const hand = el('div', 'ledger-hand');
+                        grid.appendChild(hand);
+                        rows.set(row.name, { name, gained, gains, lost, losses, hand });
+                    }
+                }
+                for (const row of next.cardFlow) {
+                    const nodes = rows.get(row.name);
+                    if (!nodes)
+                        continue;
+                    nodes.name.textContent = row.name;
+                    nodes.name.style.color = row.color;
+                    nodes.gained.textContent = String(row.gained);
+                    nodes.lost.textContent = String(row.lost);
+                    nodes.hand.textContent = String(row.hand);
+                    const paint = (cells, columns) => {
+                        columns.forEach((column, index) => {
+                            const value = column.value(row);
+                            cells[index].textContent = String(value);
+                            cells[index].classList.toggle('ledger-part--none', value === 0);
+                        });
+                    };
+                    paint(nodes.gains, GAINS);
+                    paint(nodes.losses, LOSSES);
+                }
+                const hasPlayers = next.cardFlow.length > 0;
+                empty.style.display = hasPlayers ? 'none' : '';
+                grid.style.display = hasPlayers ? 'grid' : 'none';
             }
             render(view);
             return {
@@ -4645,6 +5094,8 @@
     // sections/index.ts
     registerSection(handsSection);
     registerSection(unknownStealsSection);
+    registerSection(cardFlowSection);
+    registerSection(cardFlowLedgerSection);
     registerSection(blockedRobberSection);
     registerSection(diceSection);
     registerSection(devDeckSection);
@@ -4698,57 +5149,30 @@
         active().showYouPlayerDialog();
     }
 
-    // cardLedger.ts
-    function emptyLedger() {
-        return {
-            dice: 0,
-            robGain: 0,
-            devGain: 0,
-            tradeGain: 0,
-            sevens: 0,
-            robLoss: 0,
-            monoLoss: 0,
-            tradeLoss: 0,
-            spent: 0,
-        };
-    }
-    function ledgerFor(playerName) {
-        let ledger = game.cardLedger[playerName];
-        if (!ledger) {
-            ledger = emptyLedger();
-            game.cardLedger[playerName] = ledger;
-        }
-        return ledger;
-    }
-    function recordGain(playerName, kind, cards) {
-        if (!playerName || cards <= 0)
+    /**
+     * Handle a player discarding resources
+     */
+    function playerDiscard(playerName, discardedResources) {
+        if (!playerName)
             return;
-        ledgerFor(playerName)[kind] += cards;
+        // Remove resources from player (negative values, automatically adds to bank)
+        const playerChanges = {};
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_LOSS,
+            playerName: playerName,
+            resources: discardedResources,
+        });
+        Object.keys(discardedResources).forEach(resource => {
+            const key = resource;
+            const count = discardedResources[key];
+            if (count && count > 0) {
+                playerChanges[key] = -count;
+            }
+        });
+        // Anyone over the limit discards when a seven is rolled, not just the roller.
+        recordLoss(playerName, 'sevens', countCards(discardedResources, 'positive'));
+        updateResources(playerName, playerChanges);
     }
-    function recordLoss(playerName, kind, cards) {
-        if (!playerName || cards <= 0)
-            return;
-        ledgerFor(playerName)[kind] += cards;
-    }
-    /** Total cards in a set of resource changes, counting only the given sign. */
-    function countCards(changes, sign) {
-        let total = 0;
-        for (const value of Object.values(changes)) {
-            if (typeof value !== 'number')
-                continue;
-            if (sign === 'positive' && value > 0)
-                total += value;
-            if (sign === 'negative' && value < 0)
-                total += -value;
-        }
-        return total;
-    }
-    /** A steal moves exactly one card, whether or not anyone knows which. */
-    function recordSteal(thiefName, victimName) {
-        recordGain(thiefName, 'robGain', 1);
-        recordLoss(victimName, 'robLoss', 1);
-    }
-
     /**
      * Handle a player placing a settlement
      */
@@ -4799,6 +5223,35 @@
             // Increment the blocked count
             game.blockedDiceRolls[diceNumber][resourceType]++;
         }
+    }
+    /**
+     * Handle a trade between two players
+     */
+    function playerTrade(playerName, tradePartner, resourceChanges) {
+        if (!playerName || !tradePartner)
+            return;
+        // Validate that there are actual resource changes
+        const hasChanges = Object.values(resourceChanges).some(count => count && count !== 0);
+        if (!hasChanges)
+            return;
+        // add call to game probable processor to handle trade
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.TRADE,
+            player1: playerName,
+            player2: tradePartner,
+            resourceChanges: resourceChanges,
+        });
+        recordTrade(playerName, tradePartner, resourceChanges);
+        // Update the player who initiated the trade
+        updateResources(playerName, resourceChanges);
+        // Update the trade partner (opposite changes)
+        const partnerChanges = {};
+        Object.entries(resourceChanges).forEach(([resource, count]) => {
+            if (count && count !== 0) {
+                partnerChanges[resource] = -count;
+            }
+        });
+        updateResources(tradePartner, partnerChanges);
     }
     /**
      * Handle a player getting resources
@@ -4869,6 +5322,40 @@
         }
     }
     /**
+     * Handle a player buying a development card
+     */
+    function buyDevCard(playerName) {
+        if (!playerName)
+            return;
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_LOSS,
+            playerName: playerName,
+            resources: { wheat: 1, sheep: 1, ore: 1 },
+        });
+        game.devCards--;
+        recordLoss(playerName, 'spent', 3);
+        updateResources(playerName, { wheat: -1, sheep: -1, ore: -1 });
+    }
+    /**
+     * Handle a player trading with the bank
+     */
+    function bankTrade(playerName, resourceChanges) {
+        if (!playerName)
+            return;
+        // Validate that there are actual resource changes
+        const hasChanges = Object.values(resourceChanges).some(count => count && count !== 0);
+        if (!hasChanges)
+            return;
+        // Process the bank trade as a single transaction
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.BANK_TRADE,
+            playerName: playerName,
+            resourceChanges: resourceChanges,
+        });
+        recordTrade(playerName, null, resourceChanges);
+        updateResources(playerName, resourceChanges);
+    }
+    /**
      * Handle a player using a knight card
      */
     function useKnight(playerName) {
@@ -4882,6 +5369,97 @@
         }
     }
     /**
+     * Handle a player building a settlement
+     */
+    function buildSettlement(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.probableGameState.processTransaction({
+                type: TransactionTypeEnum.RESOURCE_LOSS,
+                playerName: playerName,
+                resources: { tree: 1, wheat: 1, brick: 1, sheep: 1 },
+            });
+            recordLoss(playerName, 'spent', 4);
+            updateResources(playerName, {
+                tree: -1,
+                wheat: -1,
+                brick: -1,
+                sheep: -1,
+            });
+            player.settlements--;
+            player.victoryPoints++;
+        }
+    }
+    /**
+     * Handle a player building a city
+     */
+    function buildCity(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.probableGameState.processTransaction({
+                type: TransactionTypeEnum.RESOURCE_LOSS,
+                playerName: playerName,
+                resources: { ore: 3, wheat: 2 },
+            });
+            recordLoss(playerName, 'spent', 5);
+            updateResources(playerName, { ore: -3, wheat: -2 });
+            player.cities--;
+            player.settlements++; // City replaces settlement
+            player.victoryPoints++;
+        }
+    }
+    /**
+     * Handle a player building a road
+     */
+    function buildRoad(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.probableGameState.processTransaction({
+                type: TransactionTypeEnum.RESOURCE_LOSS,
+                playerName: playerName,
+                resources: { tree: 1, brick: 1 },
+            });
+            recordLoss(playerName, 'spent', 2);
+            updateResources(playerName, { tree: -1, brick: -1 });
+            player.roads--;
+        }
+    }
+    /**
+     * Handle a player using Year of Plenty card
+     */
+    function useYearOfPlenty(playerName) {
+        if (!playerName)
+            return;
+        const player = game.players.find(p => p.name === playerName);
+        if (player) {
+            game.yearOfPlenties--;
+            player.discoveryCards.yearOfPlenties++;
+        }
+    }
+    /**
+     * Handle a player taking resources from bank via Year of Plenty
+     */
+    function yearOfPlentyTake(playerName, resources) {
+        if (!playerName)
+            return;
+        const hasResources = Object.values(resources).some(count => count && count > 0);
+        if (!hasResources)
+            return;
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.RESOURCE_GAIN,
+            playerName: playerName,
+            resources: resources,
+        });
+        recordGain(playerName, 'devGain', countCards(resources, 'positive'));
+        updateResources(playerName, resources);
+    }
+    /**
      * Handle a player using Monopoly card
      */
     function useMonopoly(playerName) {
@@ -4892,6 +5470,53 @@
             game.monopolies--;
             player.discoveryCards.monopolies++;
         }
+    }
+    /**
+     * Handle monopoly resource steal - takes resources from all other players
+     */
+    function monopolySteal(playerName, resourceType, totalStolen) {
+        if (!playerName || totalStolen <= 0)
+            return;
+        const monopolyPlayer = game.players.find(p => p.name === playerName);
+        if (!monopolyPlayer)
+            return;
+        // Calculate total resources to steal and remove from other players
+        let actualStolen = 0;
+        const perVictim = [];
+        game.players.forEach(otherPlayer => {
+            if (otherPlayer.name !== playerName) {
+                const playerHas = otherPlayer.resources[resourceType];
+                if (playerHas > 0) {
+                    actualStolen += playerHas;
+                    perVictim.push({ name: otherPlayer.name, cards: playerHas });
+                    otherPlayer.resources[resourceType] = 0;
+                }
+            }
+        });
+        // The haul is ground truth from the chat; the split across victims is not.
+        recordMonopoly(playerName, totalStolen, perVictim);
+        game.probableGameState.processTransaction({
+            type: TransactionTypeEnum.MONOPOLY,
+            playerName: playerName,
+            resourceType: resourceType,
+            totalStolen: totalStolen,
+        });
+        // Add the actual stolen amount to monopoly player (directly, not via updateResources)
+        monopolyPlayer.resources[resourceType] += actualStolen;
+    }
+    /**
+     * Handle a player receiving starting resources
+     */
+    function receiveStartingResources(playerName, resources) {
+        if (!playerName)
+            return;
+        const hasResources = Object.values(resources).some(count => count && count > 0);
+        if (!hasResources)
+            return;
+        // The ledger covers the whole game, opening hand included.
+        recordGain(playerName, 'dice', countCards(resources, 'positive'));
+        updateResources(playerName, resources);
+        console.log(`🏁 ${playerName} received starting resources: ${JSON.stringify(resources)}`);
     }
 
     // dev/preview.ts
@@ -4912,6 +5537,9 @@
         for (const [name, color] of PLAYERS)
             placeSettlement(name, color);
         game.probableGameState = new PropbableGameState(game.players);
+        for (const [name] of PLAYERS) {
+            receiveStartingResources(name, { wheat: 1, sheep: 1 });
+        }
         // Set before the first roll: rollDice asks who you are otherwise, and here
         // there is no colonist page to auto-detect from.
         setYouPlayerForTesting('NickTheSwift');
@@ -4935,6 +5563,46 @@
             for (let i = 0; i < count; i++)
                 rollDice(Number(total));
         }
+        // A game's worth of card movement, so both card-flow tables have something
+        // real to show. Everything here is affordable, as a real game's would be.
+        // Kept within what the bank actually holds — 19 of each — so the bank row
+        // does not go negative.
+        playerGetResources('Shaum1928', {
+            tree: 3,
+            brick: 3,
+            sheep: 4,
+            wheat: 3,
+            ore: 2,
+        });
+        playerGetResources('Powdahhh', {
+            tree: 2,
+            brick: 2,
+            sheep: 1,
+            wheat: 3,
+            ore: 3,
+        });
+        playerGetResources('NickTheSwift', {
+            tree: 3,
+            brick: 2,
+            sheep: 2,
+            wheat: 2,
+            ore: 4,
+        });
+        playerGetResources('emipaco', {
+            tree: 1,
+            brick: 1,
+            sheep: 2,
+            wheat: 2,
+            ore: 4,
+        });
+        playerTrade('Shaum1928', 'Powdahhh', { wheat: -2, tree: 1 });
+        bankTrade('NickTheSwift', { ore: -4, brick: 1 });
+        buildSettlement('Shaum1928');
+        buildRoad('Powdahhh');
+        buildCity('NickTheSwift');
+        buyDevCard('emipaco');
+        buyDevCard('Shaum1928');
+        playerDiscard('Powdahhh', { wheat: 2, ore: 1 });
         playerGetResources('Shaum1928', { sheep: 3, wheat: 2 });
         playerGetResources('Powdahhh', { wheat: 2, brick: 1 });
         playerGetResources('NickTheSwift', { sheep: 1, wheat: 3 });
@@ -4951,6 +5619,11 @@
         useKnight('Shaum1928');
         useKnight('emipaco');
         useMonopoly('emipaco');
+        // Gives the ledger's DEV column something to show: a monopoly haul counts as
+        // cards gained through a development card.
+        monopolySteal('emipaco', 'sheep', 4);
+        useYearOfPlenty('Powdahhh');
+        yearOfPlentyTake('Powdahhh', { brick: 1, tree: 1 });
     }
     seedGame();
     const shell = new Shell({

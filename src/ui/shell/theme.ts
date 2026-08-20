@@ -22,6 +22,10 @@ export const THEME = {
   /** Probable holdings, which sit against a resource tint rather than a panel. */
   probable: '#6fdcae',
   danger: '#e35b5b',
+  /** Numbers in a losing column: softer than the dice seven's red. */
+  lossText: '#f19a9a',
+  /** Numbers in a spending column. */
+  spendText: '#e8b877',
   bar: '#5b6775',
   text: '#ffffff',
   textBody: '#eef1f4',

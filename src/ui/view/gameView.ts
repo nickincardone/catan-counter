@@ -7,9 +7,11 @@
 // This module is pure: same GameType in, same GameView out. No DOM, no chrome.
 
 import type { GameType, PlayerType, ResourceObjectType } from '../../types.js';
+import { totalsFor } from '../../cardLedger.js';
 import {
   RESOURCE_ORDER,
   type BankView,
+  type CardFlowView,
   type BlockedView,
   type DevCardKey,
   type DevCardView,
@@ -126,6 +128,31 @@ function buildPlayer(
     roads: player.roads,
     isYou: player.name === youPlayerName,
   };
+}
+
+function buildCardFlow(players: PlayerType[]): CardFlowView[] {
+  return players.map(player => {
+    const totals = totalsFor(player.name);
+    return {
+      name: player.name,
+      color: player.color,
+      got: totals.got,
+      robbed: totals.robbed,
+      spentAndTraded: totals.spentAndTraded,
+      gained: totals.gained,
+      dice: totals.dice,
+      robGain: totals.robGain,
+      devGain: totals.devGain,
+      tradeGain: totals.tradeGain,
+      lost: totals.lost,
+      sevens: totals.sevens,
+      robLoss: totals.robLoss,
+      monoLoss: totals.monoLoss,
+      tradeLoss: totals.tradeLoss,
+      spent: totals.spent,
+      hand: totals.hand,
+    };
+  });
 }
 
 function buildBank(gameResources: ResourceObjectType): BankView[] {
@@ -323,11 +350,13 @@ export function buildGameView(
 ): GameView {
   const { blocked, blockedTotal } = buildBlocked(game);
   const steals = buildSteals(game);
+  const ordered = orderPlayers(game.players, game.youPlayerName);
 
   return {
-    players: orderPlayers(game.players, game.youPlayerName).map(player =>
+    players: ordered.map(player =>
       buildPlayer(player, game, game.youPlayerName)
     ),
+    cardFlow: buildCardFlow(ordered),
     bank: buildBank(game.gameResources),
     steals,
     openStealCount: steals.filter(steal => !steal.resolved).length,

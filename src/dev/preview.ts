@@ -7,13 +7,24 @@
 // references it, and it is only reachable by opening dev-preview.html.
 
 import {
+  bankTrade,
   blockedDiceRoll,
+  buildCity,
+  buildRoad,
+  buildSettlement,
+  buyDevCard,
   placeSettlement,
+  playerDiscard,
   playerGetResources,
+  monopolySteal,
+  playerTrade,
+  receiveStartingResources,
   rollDice,
   unknownSteal,
   useKnight,
   useMonopoly,
+  useYearOfPlenty,
+  yearOfPlentyTake,
 } from '../gameActions.js';
 import { game, resetGameState, setYouPlayerForTesting } from '../gameState.js';
 import { PropbableGameState } from '../probableGameState.js';
@@ -39,6 +50,9 @@ function seedGame(): void {
 
   for (const [name, color] of PLAYERS) placeSettlement(name, color);
   game.probableGameState = new PropbableGameState(game.players);
+  for (const [name] of PLAYERS) {
+    receiveStartingResources(name, { wheat: 1, sheep: 1 });
+  }
   // Set before the first roll: rollDice asks who you are otherwise, and here
   // there is no colonist page to auto-detect from.
   setYouPlayerForTesting('NickTheSwift');
@@ -63,6 +77,48 @@ function seedGame(): void {
     for (let i = 0; i < count; i++) rollDice(Number(total));
   }
 
+  // A game's worth of card movement, so both card-flow tables have something
+  // real to show. Everything here is affordable, as a real game's would be.
+  // Kept within what the bank actually holds — 19 of each — so the bank row
+  // does not go negative.
+  playerGetResources('Shaum1928', {
+    tree: 3,
+    brick: 3,
+    sheep: 4,
+    wheat: 3,
+    ore: 2,
+  });
+  playerGetResources('Powdahhh', {
+    tree: 2,
+    brick: 2,
+    sheep: 1,
+    wheat: 3,
+    ore: 3,
+  });
+  playerGetResources('NickTheSwift', {
+    tree: 3,
+    brick: 2,
+    sheep: 2,
+    wheat: 2,
+    ore: 4,
+  });
+  playerGetResources('emipaco', {
+    tree: 1,
+    brick: 1,
+    sheep: 2,
+    wheat: 2,
+    ore: 4,
+  });
+
+  playerTrade('Shaum1928', 'Powdahhh', { wheat: -2, tree: 1 });
+  bankTrade('NickTheSwift', { ore: -4, brick: 1 });
+  buildSettlement('Shaum1928');
+  buildRoad('Powdahhh');
+  buildCity('NickTheSwift');
+  buyDevCard('emipaco');
+  buyDevCard('Shaum1928');
+  playerDiscard('Powdahhh', { wheat: 2, ore: 1 });
+
   playerGetResources('Shaum1928', { sheep: 3, wheat: 2 });
   playerGetResources('Powdahhh', { wheat: 2, brick: 1 });
   playerGetResources('NickTheSwift', { sheep: 1, wheat: 3 });
@@ -82,6 +138,11 @@ function seedGame(): void {
   useKnight('Shaum1928');
   useKnight('emipaco');
   useMonopoly('emipaco');
+  // Gives the ledger's DEV column something to show: a monopoly haul counts as
+  // cards gained through a development card.
+  monopolySteal('emipaco', 'sheep', 4);
+  useYearOfPlenty('Powdahhh');
+  yearOfPlentyTake('Powdahhh', { brick: 1, tree: 1 });
 }
 
 seedGame();

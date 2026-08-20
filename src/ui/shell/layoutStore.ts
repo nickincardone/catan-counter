@@ -48,6 +48,7 @@ export const DEFAULT_LAYOUT: V2Layout = {
     sections: [
       { id: 'hands' },
       { id: 'unknown-steals' },
+      { id: 'card-flow' },
       { id: 'blocked-robber' },
     ],
   },

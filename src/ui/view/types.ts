@@ -97,6 +97,39 @@ export interface DiceView {
   bars: DiceBarView[];
 }
 
+/**
+ * One player's row in either card-flow table. The compact table reads
+ * got/devGain/robbed/sevens/spentAndTraded; the full ledger breaks the same
+ * totals down by source. Both balance to `hand`.
+ */
+export interface CardFlowView {
+  name: string;
+  color: string;
+
+  /** Picked up other than through a development card. */
+  got: number;
+  /** Taken by the robber or a monopoly. */
+  robbed: number;
+  /** Spent building or buying, plus given away in trades. */
+  spentAndTraded: number;
+
+  gained: number;
+  dice: number;
+  robGain: number;
+  devGain: number;
+  tradeGain: number;
+
+  lost: number;
+  sevens: number;
+  robLoss: number;
+  monoLoss: number;
+  tradeLoss: number;
+  spent: number;
+
+  /** Cards actually held — exact, even while steals are unresolved. */
+  hand: number;
+}
+
 export interface BlockedView {
   diceNumber: number;
   resource: ResourceKey;
@@ -136,6 +169,8 @@ export interface GameView {
   blockedTotal: number;
   dice: DiceView;
   devDeck: DevDeckView;
+  /** Per-player card ledger, in the same order as `players`. */
+  cardFlow: CardFlowView[];
   youPlayerName: string | null;
   /** Tracking only starts at the first roll; before that v2 shows a hint. */
   hasStarted: boolean;

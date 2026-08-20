@@ -349,9 +349,13 @@ describe('layout storage', () => {
   });
 
   it('does not alias the default layout', () => {
+    const before = DEFAULT_LAYOUT.left.sections.length;
     const copy = cloneLayout(DEFAULT_LAYOUT);
     copy.left.sections.push({ id: 'dice' });
-    expect(DEFAULT_LAYOUT.left.sections).toHaveLength(3);
+    copy.left.size = 1;
+
+    expect(DEFAULT_LAYOUT.left.sections).toHaveLength(before);
+    expect(DEFAULT_LAYOUT.left.size).not.toBe(1);
   });
 
   it('reports a collapsed gutter as a thin strip and an empty one as nothing', () => {

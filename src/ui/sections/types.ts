@@ -20,6 +20,8 @@ export type ResourceKeyLike = ResourceKey;
 export type SectionId =
   | 'hands'
   | 'unknown-steals'
+  | 'card-flow'
+  | 'card-flow-ledger'
   | 'blocked-robber'
   | 'dice'
   | 'dev-deck'
