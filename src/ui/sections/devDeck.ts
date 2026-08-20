@@ -82,6 +82,7 @@ interface TileNodes {
 export const devDeckSection: SectionDefinition = {
   id: 'dev-deck',
   title: 'Dev deck',
+  note: 'Cards left and who played what',
   supports: ['horizontal', 'vertical'],
   min: { width: 240, height: 110 },
   styles: STYLES,

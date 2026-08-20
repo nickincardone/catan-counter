@@ -50,8 +50,10 @@ export interface SectionInstance {
 
 export interface SectionDefinition {
   id: SectionId;
-  /** Human name, used by diagnostics and any future arrangement UI. */
+  /** Human name, used by diagnostics and the settings menu. */
   title: string;
+  /** One line on what the section is for, shown in the settings menu. */
+  note?: string;
   /** Gutter shapes this section can be read in. */
   supports: GutterAxis[];
   /** Below this it is illegible, so the shell refuses to place it. */

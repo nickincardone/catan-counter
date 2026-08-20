@@ -39,6 +39,7 @@ const STYLES = `
 export const blockedRobberSection: SectionDefinition = {
   id: 'blocked-robber',
   title: 'Blocked by robber',
+  note: 'Production denied per number',
   supports: ['vertical'],
   min: { width: 200, height: 0 },
   styles: STYLES,

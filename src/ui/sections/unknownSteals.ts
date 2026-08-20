@@ -148,6 +148,7 @@ function signature(view: GameView): string {
 export const unknownStealsSection: SectionDefinition = {
   id: 'unknown-steals',
   title: 'Unknown steals',
+  note: 'Click a candidate to resolve a steal',
   supports: ['vertical'],
   min: { width: 220, height: 0 },
   styles: STYLES,

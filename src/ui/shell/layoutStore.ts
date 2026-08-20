@@ -29,9 +29,23 @@ export interface V2Layout {
   right: GutterConfig;
   top: GutterConfig;
   bottom: GutterConfig;
+  /**
+   * Sections switched off, remembered in the order they were hidden.
+   *
+   * Explicit rather than "everything not placed": a section missing from a
+   * stored layout is otherwise ambiguous between hidden on purpose and added
+   * since that layout was saved. Optional, so older stored layouts still parse.
+   */
+  off?: Placement[];
 }
 
 export const GUTTER_NAMES: GutterName[] = ['left', 'right', 'top', 'bottom'];
+
+/** Where a section can be put. 'off' is a real choice, not the absence of one. */
+export type Zone = GutterName | 'off';
+
+/** Zone order, which is also the order the settings menu lists sections in. */
+export const ZONES: Zone[] = ['left', 'top', 'bottom', 'right', 'off'];
 
 /** Width the rail collapses to — enough for the reopen chevron. */
 export const COLLAPSED_SIZE = 28;
@@ -62,7 +76,48 @@ export const DEFAULT_LAYOUT: V2Layout = {
   },
   right: { size: 0, collapsed: true, sections: [] },
   top: { size: 0, collapsed: true, sections: [] },
+  off: [{ id: 'card-flow-ledger' }, { id: 'players' }],
 };
+
+export interface LayoutPreset {
+  name: string;
+  note: string;
+  build(): V2Layout;
+}
+
+/**
+ * Presets set placement only. Gutter sizes are deliberately left alone, so
+ * picking one does not undo a rail you had sized to taste.
+ */
+export const PRESETS: LayoutPreset[] = [
+  {
+    name: 'Full read',
+    note: 'Everything, left rail and bottom bar',
+    build: () => cloneLayout(DEFAULT_LAYOUT),
+  },
+  {
+    name: 'Competitive',
+    note: 'Dice and card flow, bottom bar only',
+    build: () => ({
+      version: 1,
+      left: { ...DEFAULT_LAYOUT.left, sections: [] },
+      right: { ...DEFAULT_LAYOUT.right, sections: [] },
+      top: { ...DEFAULT_LAYOUT.top, sections: [] },
+      bottom: {
+        ...DEFAULT_LAYOUT.bottom,
+        sections: [{ id: 'dice' }, { id: 'card-flow' }],
+      },
+      off: [
+        { id: 'hands' },
+        { id: 'unknown-steals' },
+        { id: 'blocked-robber' },
+        { id: 'dev-deck' },
+        { id: 'card-flow-ledger' },
+        { id: 'players' },
+      ],
+    }),
+  },
+];
 
 declare const chrome:
   | {
@@ -91,6 +146,7 @@ export function cloneLayout(layout: V2Layout): V2Layout {
       ...layout.bottom,
       sections: layout.bottom.sections.map(s => ({ ...s })),
     },
+    off: (layout.off ?? []).map(s => ({ ...s })),
   };
 }
 
@@ -120,6 +176,15 @@ export function parseLayout(value: unknown): V2Layout | null {
   const layout = value as V2Layout | null;
   if (!layout || layout.version !== DEFAULT_LAYOUT.version) return null;
   if (!GUTTER_NAMES.every(name => isGutterConfig(layout[name]))) return null;
+  if (
+    layout.off !== undefined &&
+    (!Array.isArray(layout.off) ||
+      layout.off.some(
+        placement => !placement || typeof placement.id !== 'string'
+      ))
+  ) {
+    return null;
+  }
   return cloneLayout(layout);
 }
 
@@ -153,4 +218,104 @@ export async function writeLayout(layout: V2Layout): Promise<void> {
 export function gutterThickness(gutter: GutterConfig): number {
   if (gutter.sections.length === 0) return 0;
   return gutter.collapsed ? COLLAPSED_SIZE : gutter.size;
+}
+
+/** Which zone a section currently sits in, or null if the layout omits it. */
+export function zoneOf(layout: V2Layout, id: SectionId): Zone | null {
+  for (const name of GUTTER_NAMES) {
+    if (layout[name].sections.some(placement => placement.id === id)) {
+      return name;
+    }
+  }
+  if ((layout.off ?? []).some(placement => placement.id === id)) return 'off';
+  return null;
+}
+
+function listFor(layout: V2Layout, zone: Zone): Placement[] {
+  if (zone === 'off') {
+    if (!layout.off) layout.off = [];
+    return layout.off;
+  }
+  return layout[zone].sections;
+}
+
+/**
+ * Move a section to a zone, appending it at the end. Returns a new layout;
+ * moving a section to the zone it already occupies changes nothing.
+ */
+export function placeSection(
+  layout: V2Layout,
+  id: SectionId,
+  zone: Zone
+): V2Layout {
+  const next = cloneLayout(layout);
+  const current = zoneOf(next, id);
+  if (current === zone) return next;
+
+  if (current) {
+    const list = listFor(next, current);
+    const index = list.findIndex(placement => placement.id === id);
+    if (index >= 0) list.splice(index, 1);
+  }
+  listFor(next, zone).push({ id });
+  return next;
+}
+
+/** Move a section one step up or down within its own zone. */
+export function reorderSection(
+  layout: V2Layout,
+  id: SectionId,
+  direction: -1 | 1
+): V2Layout {
+  const next = cloneLayout(layout);
+  const zone = zoneOf(next, id);
+  if (!zone) return next;
+
+  const list = listFor(next, zone);
+  const index = list.findIndex(placement => placement.id === id);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= list.length) return next;
+
+  const moved = list[index];
+  list[index] = list[target];
+  list[target] = moved;
+  return next;
+}
+
+/**
+ * Fold in any section the stored layout predates, at its default position.
+ *
+ * A section absent from a stored layout has never been decided about — it was
+ * added in a later version — so it takes the place it was designed for rather
+ * than staying invisible forever. One that was switched off is in `off`, and
+ * stays there.
+ */
+export function withKnownSections(
+  layout: V2Layout,
+  knownIds: SectionId[]
+): V2Layout {
+  let next = cloneLayout(layout);
+  for (const id of knownIds) {
+    if (zoneOf(next, id)) continue;
+    next = placeSection(next, id, zoneOf(DEFAULT_LAYOUT, id) ?? 'off');
+  }
+  return next;
+}
+
+/** Every known section with its zone, in the order the settings menu lists. */
+export function listSections(
+  layout: V2Layout,
+  knownIds: SectionId[]
+): Array<{ id: SectionId; zone: Zone }> {
+  const full = withKnownSections(layout, knownIds);
+  const rows: Array<{ id: SectionId; zone: Zone }> = [];
+
+  for (const zone of ZONES) {
+    for (const placement of listFor(full, zone)) {
+      if (knownIds.includes(placement.id)) {
+        rows.push({ id: placement.id, zone });
+      }
+    }
+  }
+  return rows;
 }

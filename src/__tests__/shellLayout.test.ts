@@ -492,3 +492,125 @@ describe('bundled fonts', () => {
     expect(buildStyleSheet([])).not.toContain('@font-face');
   });
 });
+
+describe('the settings menu', () => {
+  let shell: Shell;
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    root()?.remove();
+    resetGameState();
+    game.youPlayerName = null;
+    rollDice(6);
+    _resetPageFrameForTesting(5);
+  });
+
+  afterEach(() => shell?.unmount());
+
+  function mountWith(layout: V2Layout, registry: SectionRegistry): Shell {
+    shell = new Shell({ registry, onAction: () => undefined });
+    shell.setLayout(layout);
+    shell.mount();
+    return shell;
+  }
+
+  it('opens from the gear in the rail header', () => {
+    const hands = fakeSection('hands');
+    mountWith(layoutWith(['hands']), { hands: hands.definition });
+
+    expect(shadow(shell).querySelector('.settings-panel')).toBeNull();
+    (shadow(shell).querySelector('.rail-gear') as HTMLElement).click();
+    expect(shadow(shell).querySelector('.settings-panel')).toBeTruthy();
+  });
+
+  it('floats the gear when no rail is on screen to hold it', () => {
+    const dice = fakeSection('dice', ['horizontal']);
+    mountWith(layoutWith([], ['dice']), { dice: dice.definition });
+
+    // Nothing else offers a way back into settings in this arrangement.
+    expect(shadow(shell).querySelector('.rail-gear')).toBeNull();
+    const floating = shadow(shell).querySelector('.floating-gear');
+    expect(floating).toBeTruthy();
+
+    (floating as HTMLElement).click();
+    expect(shadow(shell).querySelector('.settings-panel')).toBeTruthy();
+  });
+
+  it('keeps the gear in the header while a rail is showing', () => {
+    const hands = fakeSection('hands');
+    const dice = fakeSection('dice', ['horizontal']);
+    mountWith(layoutWith(['hands'], ['dice']), {
+      hands: hands.definition,
+      dice: dice.definition,
+    });
+
+    expect(shadow(shell).querySelector('.rail-gear')).toBeTruthy();
+    expect(shadow(shell).querySelector('.floating-gear')).toBeNull();
+  });
+
+  it('applies a placement change to the page behind it, live', () => {
+    const hands = fakeSection('hands');
+    const dice = fakeSection('dice');
+    mountWith(layoutWith(['hands'], ['dice']), {
+      hands: hands.definition,
+      dice: dice.definition,
+    });
+    (shadow(shell).querySelector('.rail-gear') as HTMLElement).click();
+
+    const diceRow = [...shadow(shell).querySelectorAll('.section-row')].find(
+      row => row.querySelector('.section-row-name')?.textContent === 'dice'
+    )!;
+    const off = [...diceRow.querySelectorAll('.zone-button')].find(
+      button => button.textContent === 'OFF'
+    ) as HTMLButtonElement;
+    off.click();
+
+    expect(shell.getLayout().bottom.sections).toHaveLength(0);
+    expect(
+      shadow(shell).querySelector('.gutter [data-section="dice"]')
+    ).toBeNull();
+    // And the dialog is still open, showing the change it just made.
+    expect(shadow(shell).querySelector('.settings-panel')).toBeTruthy();
+  });
+
+  it('refuses a zone the section cannot be read in, and says why', () => {
+    const wide = fakeSection('card-flow-ledger', ['horizontal']);
+    mountWith(layoutWith([], ['card-flow-ledger']), {
+      'card-flow-ledger': wide.definition,
+    });
+    (shadow(shell).querySelector('.floating-gear') as HTMLElement).click();
+
+    const left = [...shadow(shell).querySelectorAll('.zone-button')].find(
+      button => button.textContent === 'LEFT'
+    ) as HTMLButtonElement;
+    expect(left.disabled).toBe(true);
+    expect(left.title).toContain('too wide');
+  });
+
+  it('closes on Done and on Escape', () => {
+    const hands = fakeSection('hands');
+    mountWith(layoutWith(['hands']), { hands: hands.definition });
+    const gear = () => shadow(shell).querySelector('.rail-gear') as HTMLElement;
+
+    gear().click();
+    (shadow(shell).querySelector('.settings-done') as HTMLElement).click();
+    expect(shadow(shell).querySelector('.settings-panel')).toBeNull();
+
+    gear().click();
+    shadow(shell)
+      .querySelector('.settings-backdrop')!
+      .dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+      );
+    expect(shadow(shell).querySelector('.settings-panel')).toBeNull();
+  });
+
+  it('goes away with the interface', () => {
+    const hands = fakeSection('hands');
+    mountWith(layoutWith(['hands']), { hands: hands.definition });
+    (shadow(shell).querySelector('.rail-gear') as HTMLElement).click();
+
+    shell.unmount();
+    expect(document.querySelector('.settings-panel')).toBeNull();
+  });
+});

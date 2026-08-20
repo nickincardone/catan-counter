@@ -73,6 +73,7 @@ function paintRow(nodes: RowNodes, player: PlayerView): void {
 export const playersSection: SectionDefinition = {
   id: 'players',
   title: 'Players',
+  note: 'Victory points, knights and pieces left',
   supports: ['vertical'],
   min: { width: 220, height: 0 },
   styles: STYLES,

@@ -58,7 +58,8 @@ interface ColumnNodes {
 
 export const diceSection: SectionDefinition = {
   id: 'dice',
-  title: 'Dice',
+  title: 'Dice rolls',
+  note: 'Distribution against the expected rate',
   supports: ['horizontal', 'vertical'],
   min: { width: 260, height: 110 },
   styles: STYLES,

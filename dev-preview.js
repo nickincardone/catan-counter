@@ -2653,6 +2653,34 @@
         showYouPlayerDialog: showYouPlayerDialog$1,
     };
 
+    // sections/dom.ts
+    // Small helpers so a section reads as the structure it renders rather than as
+    // a wall of createElement calls.
+    function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className)
+            node.className = className;
+        if (text !== undefined)
+            node.textContent = text;
+        return node;
+    }
+    /** A section header: label on the left, hint on the right. */
+    function sectionHead(label, hint = '') {
+        const head = el('div', 'section-head');
+        const labelNode = el('span', 'section-label', label);
+        const hintNode = el('span', 'section-hint', hint);
+        head.append(labelNode, hintNode);
+        return { head, labelNode, hintNode };
+    }
+    function img(src, alt, className) {
+        const node = el('img', className);
+        node.src = src;
+        node.alt = alt;
+        // Everything referenced here is a bundled asset, never a network fetch.
+        node.decoding = 'async';
+        return node;
+    }
+
     // cardLedger.ts
     function emptyLedger() {
         return {
@@ -3068,6 +3096,8 @@
 
     // shell/layoutStore.ts
     const GUTTER_NAMES = ['left', 'right', 'top', 'bottom'];
+    /** Zone order, which is also the order the settings menu lists sections in. */
+    const ZONES = ['left', 'top', 'bottom', 'right', 'off'];
     /** Width the rail collapses to — enough for the reopen chevron. */
     const COLLAPSED_SIZE = 28;
     const MIN_RAIL_WIDTH = 280;
@@ -3095,14 +3125,47 @@
         },
         right: { size: 0, collapsed: true, sections: [] },
         top: { size: 0, collapsed: true, sections: [] },
+        off: [{ id: 'card-flow-ledger' }, { id: 'players' }],
     };
+    /**
+     * Presets set placement only. Gutter sizes are deliberately left alone, so
+     * picking one does not undo a rail you had sized to taste.
+     */
+    const PRESETS = [
+        {
+            name: 'Full read',
+            note: 'Everything, left rail and bottom bar',
+            build: () => cloneLayout(DEFAULT_LAYOUT),
+        },
+        {
+            name: 'Competitive',
+            note: 'Dice and card flow, bottom bar only',
+            build: () => ({
+                version: 1,
+                left: Object.assign(Object.assign({}, DEFAULT_LAYOUT.left), { sections: [] }),
+                right: Object.assign(Object.assign({}, DEFAULT_LAYOUT.right), { sections: [] }),
+                top: Object.assign(Object.assign({}, DEFAULT_LAYOUT.top), { sections: [] }),
+                bottom: Object.assign(Object.assign({}, DEFAULT_LAYOUT.bottom), { sections: [{ id: 'dice' }, { id: 'card-flow' }] }),
+                off: [
+                    { id: 'hands' },
+                    { id: 'unknown-steals' },
+                    { id: 'blocked-robber' },
+                    { id: 'dev-deck' },
+                    { id: 'card-flow-ledger' },
+                    { id: 'players' },
+                ],
+            }),
+        },
+    ];
     function cloneLayout(layout) {
+        var _a;
         return {
             version: layout.version,
             left: Object.assign(Object.assign({}, layout.left), { sections: layout.left.sections.map(s => (Object.assign({}, s))) }),
             right: Object.assign(Object.assign({}, layout.right), { sections: layout.right.sections.map(s => (Object.assign({}, s))) }),
             top: Object.assign(Object.assign({}, layout.top), { sections: layout.top.sections.map(s => (Object.assign({}, s))) }),
             bottom: Object.assign(Object.assign({}, layout.bottom), { sections: layout.bottom.sections.map(s => (Object.assign({}, s))) }),
+            off: ((_a = layout.off) !== null && _a !== void 0 ? _a : []).map(s => (Object.assign({}, s))),
         };
     }
     function isGutterConfig(value) {
@@ -3127,6 +3190,11 @@
             return null;
         if (!GUTTER_NAMES.every(name => isGutterConfig(layout[name])))
             return null;
+        if (layout.off !== undefined &&
+            (!Array.isArray(layout.off) ||
+                layout.off.some(placement => !placement || typeof placement.id !== 'string'))) {
+            return null;
+        }
         return cloneLayout(layout);
     }
     function storageAvailable() {
@@ -3165,6 +3233,91 @@
         if (gutter.sections.length === 0)
             return 0;
         return gutter.collapsed ? COLLAPSED_SIZE : gutter.size;
+    }
+    /** Which zone a section currently sits in, or null if the layout omits it. */
+    function zoneOf(layout, id) {
+        var _a;
+        for (const name of GUTTER_NAMES) {
+            if (layout[name].sections.some(placement => placement.id === id)) {
+                return name;
+            }
+        }
+        if (((_a = layout.off) !== null && _a !== void 0 ? _a : []).some(placement => placement.id === id))
+            return 'off';
+        return null;
+    }
+    function listFor(layout, zone) {
+        if (zone === 'off') {
+            if (!layout.off)
+                layout.off = [];
+            return layout.off;
+        }
+        return layout[zone].sections;
+    }
+    /**
+     * Move a section to a zone, appending it at the end. Returns a new layout;
+     * moving a section to the zone it already occupies changes nothing.
+     */
+    function placeSection(layout, id, zone) {
+        const next = cloneLayout(layout);
+        const current = zoneOf(next, id);
+        if (current === zone)
+            return next;
+        if (current) {
+            const list = listFor(next, current);
+            const index = list.findIndex(placement => placement.id === id);
+            if (index >= 0)
+                list.splice(index, 1);
+        }
+        listFor(next, zone).push({ id });
+        return next;
+    }
+    /** Move a section one step up or down within its own zone. */
+    function reorderSection(layout, id, direction) {
+        const next = cloneLayout(layout);
+        const zone = zoneOf(next, id);
+        if (!zone)
+            return next;
+        const list = listFor(next, zone);
+        const index = list.findIndex(placement => placement.id === id);
+        const target = index + direction;
+        if (index < 0 || target < 0 || target >= list.length)
+            return next;
+        const moved = list[index];
+        list[index] = list[target];
+        list[target] = moved;
+        return next;
+    }
+    /**
+     * Fold in any section the stored layout predates, at its default position.
+     *
+     * A section absent from a stored layout has never been decided about — it was
+     * added in a later version — so it takes the place it was designed for rather
+     * than staying invisible forever. One that was switched off is in `off`, and
+     * stays there.
+     */
+    function withKnownSections(layout, knownIds) {
+        var _a;
+        let next = cloneLayout(layout);
+        for (const id of knownIds) {
+            if (zoneOf(next, id))
+                continue;
+            next = placeSection(next, id, (_a = zoneOf(DEFAULT_LAYOUT, id)) !== null && _a !== void 0 ? _a : 'off');
+        }
+        return next;
+    }
+    /** Every known section with its zone, in the order the settings menu lists. */
+    function listSections(layout, knownIds) {
+        const full = withKnownSections(layout, knownIds);
+        const rows = [];
+        for (const zone of ZONES) {
+            for (const placement of listFor(full, zone)) {
+                if (knownIds.includes(placement.id)) {
+                    rows.push({ id: placement.id, zone });
+                }
+            }
+        }
+        return rows;
     }
 
     // shell/theme.ts
@@ -3348,6 +3501,42 @@
   .rail-title {
     font-weight: 800; font-size: 18px; color: var(--cc-text); line-height: 1.1;
   }
+  .rail-controls { display: flex; align-items: center; gap: 2px; }
+  .rail-gear {
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--cc-chevron);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+  }
+  .rail-gear:hover { background: rgba(255,255,255,.08); color: var(--cc-text); }
+
+  /* Shown only when neither rail is on screen to hold the header. */
+  .floating-gear {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 8px;
+    background: rgba(14,16,19,.85);
+    color: var(--cc-text-body);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    pointer-events: auto;
+    padding: 0;
+  }
+  .floating-gear:hover { background: var(--cc-panel); }
+
   .rail-collapse {
     font-family: var(--cc-mono);
     font-size: 16px;
@@ -3490,6 +3679,431 @@
         }
         loaded = [];
         pending = null;
+    }
+
+    // shell/settings.ts
+    const ZONE_LABEL = {
+        left: 'LEFT',
+        top: 'TOP',
+        bottom: 'BTM',
+        right: 'RIGHT',
+        off: 'OFF',
+    };
+    /** Which zones a section can actually be read in. */
+    function allowedZones(definition) {
+        return ZONES.filter(zone => {
+            if (zone === 'off')
+                return true;
+            const axis = zone === 'left' || zone === 'right' ? 'vertical' : 'horizontal';
+            return definition.supports.includes(axis);
+        });
+    }
+    const SETTINGS_STYLES = `
+  .settings-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+  }
+  .settings-scrim { position: absolute; inset: 0; background: rgba(6,7,9,.72); }
+  .settings-panel {
+    position: relative;
+    width: 560px;
+    max-width: calc(100vw - 40px);
+    max-height: calc(100vh - 60px);
+    overflow-y: auto;
+    background: var(--cc-panel);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 12px;
+    box-shadow: 0 30px 70px rgba(0,0,0,.6);
+  }
+  .settings-header {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--cc-hairline);
+    position: sticky;
+    top: 0;
+    background: var(--cc-panel);
+    z-index: 1;
+  }
+  /* Focused programmatically so Escape works; the ring would be noise. */
+  .settings-panel:focus { outline: none; }
+  .settings-title { font-size: 18px; font-weight: 800; color: var(--cc-text); }
+  .settings-close {
+    font-family: var(--cc-mono);
+    font-size: 18px;
+    color: var(--cc-mono-dim);
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 0 4px;
+  }
+  .settings-close:hover { color: var(--cc-text); }
+
+  .settings-group { padding: 18px 20px 8px; }
+  .settings-group-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .settings-legend {
+    font-family: var(--cc-mono);
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--cc-accent);
+  }
+  .settings-hint {
+    font-family: var(--cc-mono);
+    font-size: 11px;
+    color: var(--cc-label-dim);
+  }
+
+  .preset-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .preset {
+    background: var(--cc-surface);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 7px;
+    padding: 9px 13px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    min-width: 0;
+  }
+  .preset:hover { border-color: var(--cc-accent); }
+  .preset--active {
+    background: var(--cc-accent-tint);
+    border-color: var(--cc-accent);
+  }
+  .preset-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--cc-text-body);
+    line-height: 1.2;
+  }
+  .preset--active .preset-name { color: var(--cc-accent); }
+  .preset-note {
+    font-size: 11px;
+    color: var(--cc-label-dim);
+    line-height: 1.3;
+    margin-top: 2px;
+  }
+
+  .section-list { display: flex; flex-direction: column; gap: 6px; }
+  .section-row {
+    background: var(--cc-surface);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .section-row--off { border-color: transparent; }
+  .section-row-text { flex: 1; min-width: 0; }
+  .section-row-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--cc-text-body);
+    line-height: 1.2;
+  }
+  .section-row--off .section-row-name { color: var(--cc-label-dim); }
+  .section-row-note {
+    font-size: 11px;
+    color: var(--cc-label-dim);
+    line-height: 1.3;
+    margin-top: 2px;
+  }
+
+  .zone-picker {
+    display: flex;
+    gap: 2px;
+    background: rgba(0,0,0,.35);
+    border-radius: 7px;
+    padding: 2px;
+  }
+  .zone-button {
+    font-family: var(--cc-mono);
+    font-size: 11px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    border: 0;
+    background: none;
+    color: var(--cc-mono-dim);
+    cursor: pointer;
+  }
+  .zone-button:hover:not(:disabled) { color: var(--cc-text); }
+  .zone-button--active {
+    background: var(--cc-accent);
+    color: var(--cc-panel);
+    font-weight: 700;
+  }
+  .zone-button:disabled { color: var(--cc-zero); cursor: not-allowed; }
+
+  .reorder { display: flex; flex-direction: column; gap: 2px; }
+  .reorder button {
+    width: 22px;
+    height: 15px;
+    border: 0;
+    border-radius: 4px;
+    background: rgba(255,255,255,.07);
+    color: var(--cc-chevron);
+    font-size: 9px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .reorder button:hover:not(:disabled) { background: rgba(255,255,255,.16); color: var(--cc-text); }
+  .reorder button:disabled { color: var(--cc-zero); cursor: default; }
+
+  .size-row { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
+  .size-row:first-of-type { margin-top: 0; }
+  .size-label { font-size: 13px; color: var(--cc-text-muted); width: 92px; }
+  .size-row input { flex: 1; accent-color: var(--cc-accent); }
+  .size-value {
+    font-family: var(--cc-mono);
+    font-size: 12px;
+    color: var(--cc-text-muted);
+    width: 52px;
+    text-align: right;
+  }
+
+  .settings-footer {
+    padding: 18px 20px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .settings-reset {
+    font-family: var(--cc-mono);
+    font-size: 11px;
+    color: var(--cc-mono-dim);
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 0;
+  }
+  .settings-reset:hover { color: var(--cc-text); }
+  .settings-done {
+    background: var(--cc-accent);
+    color: var(--cc-panel);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 800;
+    border: 0;
+    border-radius: 8px;
+    padding: 9px 18px;
+    cursor: pointer;
+  }
+  .settings-done:hover { filter: brightness(1.08); }
+`;
+    class SettingsDialog {
+        constructor(options) {
+            this.options = options;
+            this.root = null;
+            this.body = null;
+        }
+        isOpen() {
+            return this.root !== null;
+        }
+        open(parent) {
+            if (this.root)
+                return;
+            const backdrop = el('div', 'settings-backdrop');
+            const scrim = el('div', 'settings-scrim');
+            scrim.addEventListener('click', () => this.options.onClose());
+            const panel = el('div', 'settings-panel');
+            panel.setAttribute('role', 'dialog');
+            panel.setAttribute('aria-label', 'Counter settings');
+            const header = el('div', 'settings-header');
+            header.append(el('div', 'settings-title', 'Counter settings'));
+            const close = el('button', 'settings-close', '×');
+            close.type = 'button';
+            close.setAttribute('aria-label', 'Close settings');
+            close.addEventListener('click', () => this.options.onClose());
+            header.appendChild(close);
+            const body = el('div');
+            panel.append(header, body);
+            backdrop.append(scrim, panel);
+            parent.appendChild(backdrop);
+            this.root = backdrop;
+            this.body = body;
+            this.render();
+            // Escape closes, as a dialog should.
+            const onKey = (event) => {
+                if (event.key === 'Escape')
+                    this.options.onClose();
+            };
+            backdrop.addEventListener('keydown', onKey);
+            panel.tabIndex = -1;
+            panel.focus();
+        }
+        close() {
+            var _a;
+            (_a = this.root) === null || _a === void 0 ? void 0 : _a.remove();
+            this.root = null;
+            this.body = null;
+        }
+        /** Rebuild the dialog's contents from the current layout. */
+        render() {
+            if (!this.body)
+                return;
+            const layout = this.options.layout();
+            const definitions = this.options.sections();
+            const byId = new Map(definitions.map(d => [d.id, d]));
+            this.body.textContent = '';
+            this.body.append(this.buildPresets(layout), this.buildSections(layout, byId), this.buildSizes(layout), this.buildFooter());
+        }
+        group(legend, hint) {
+            const group = el('div', 'settings-group');
+            const head = el('div', 'settings-group-head');
+            head.appendChild(el('span', 'settings-legend', legend));
+            if (hint)
+                head.appendChild(el('span', 'settings-hint', hint));
+            group.appendChild(head);
+            return group;
+        }
+        buildPresets(layout) {
+            const group = this.group('Presets');
+            const row = el('div', 'preset-row');
+            for (const preset of PRESETS) {
+                const built = preset.build();
+                const active = samePlacement(built, layout);
+                const button = el('button', active ? 'preset preset--active' : 'preset');
+                button.type = 'button';
+                button.append(el('div', 'preset-name', preset.name), el('div', 'preset-note', preset.note));
+                button.addEventListener('click', () => {
+                    // Presets set placement only; the current gutter sizes are kept.
+                    const next = preset.build();
+                    next.left.size = layout.left.size;
+                    next.right.size = layout.right.size;
+                    next.top.size = layout.top.size;
+                    next.bottom.size = layout.bottom.size;
+                    this.options.onLayout(next);
+                });
+                row.appendChild(button);
+            }
+            group.appendChild(row);
+            return group;
+        }
+        buildSections(layout, byId) {
+            const group = this.group('Sections', 'place · reorder · hide');
+            const list = el('div', 'section-list');
+            const rows = listSections(layout, [...byId.keys()].filter((id) => byId.has(id)));
+            rows.forEach(({ id, zone }, index) => {
+                const definition = byId.get(id);
+                if (!definition)
+                    return;
+                const row = el('div', zone === 'off' ? 'section-row section-row--off' : 'section-row');
+                // Deliberately not data-section: that identifies a MOUNTED section in a
+                // gutter, and sharing it makes every selector ambiguous.
+                row.dataset.settingsRow = id;
+                const text = el('div', 'section-row-text');
+                text.append(el('div', 'section-row-name', definition.title));
+                if (definition.note) {
+                    text.append(el('div', 'section-row-note', definition.note));
+                }
+                row.appendChild(text);
+                row.appendChild(this.buildZonePicker(layout, definition, zone));
+                row.appendChild(this.buildReorder(layout, rows, id, zone, index));
+                list.appendChild(row);
+            });
+            group.appendChild(list);
+            return group;
+        }
+        buildZonePicker(layout, definition, zone) {
+            const picker = el('div', 'zone-picker');
+            const allowed = allowedZones(definition);
+            for (const candidate of ZONES) {
+                const button = el('button', candidate === zone ? 'zone-button zone-button--active' : 'zone-button', ZONE_LABEL[candidate]);
+                button.type = 'button';
+                button.dataset.zone = candidate;
+                if (!allowed.includes(candidate)) {
+                    // Saying why beats a control that silently does nothing.
+                    button.disabled = true;
+                    button.title = `${definition.title} is too wide to read in a side rail`;
+                }
+                else {
+                    button.addEventListener('click', () => this.options.onLayout(placeSection(layout, definition.id, candidate)));
+                }
+                picker.appendChild(button);
+            }
+            return picker;
+        }
+        buildReorder(layout, rows, id, zone, index) {
+            const inZone = rows.filter(row => row.zone === zone);
+            const position = inZone.findIndex(row => row.id === id);
+            const wrap = el('div', 'reorder');
+            const step = (direction, label, disabled) => {
+                const button = el('button', undefined, label);
+                button.type = 'button';
+                button.disabled = disabled;
+                button.setAttribute('aria-label', direction === -1 ? 'Move up' : 'Move down');
+                if (!disabled) {
+                    button.addEventListener('click', () => this.options.onLayout(reorderSection(layout, id, direction)));
+                }
+                return button;
+            };
+            wrap.append(step(-1, '▲', position <= 0), step(1, '▼', position < 0 || position >= inZone.length - 1));
+            return wrap;
+        }
+        buildSizes(layout) {
+            const group = this.group('Gutter size');
+            const slider = (label, value, min, max, onInput) => {
+                const row = el('div', 'size-row');
+                const input = el('input');
+                input.type = 'range';
+                input.min = String(min);
+                input.max = String(max);
+                input.step = '5';
+                input.value = String(value);
+                input.setAttribute('aria-label', label);
+                const readout = el('span', 'size-value', `${value}px`);
+                input.addEventListener('input', () => {
+                    const next = Number(input.value);
+                    readout.textContent = `${next}px`;
+                    onInput(next);
+                });
+                row.append(el('span', 'size-label', label), input, readout);
+                return row;
+            };
+            group.append(slider('Side rail', layout.left.size, MIN_RAIL_WIDTH, MAX_RAIL_WIDTH, n => this.options.onSize('rail', n)), slider('Bottom bar', layout.bottom.size, 150, 320, n => this.options.onSize('bar', n)));
+            return group;
+        }
+        buildFooter() {
+            const footer = el('div', 'settings-footer');
+            const reset = el('button', 'settings-reset', 'RESET TO DEFAULT');
+            reset.type = 'button';
+            reset.addEventListener('click', () => this.options.onReset());
+            const done = el('button', 'settings-done', 'Done');
+            done.type = 'button';
+            done.addEventListener('click', () => this.options.onClose());
+            footer.append(reset, done);
+            return footer;
+        }
+    }
+    /** Whether two layouts place every section the same way, sizes aside. */
+    function samePlacement(a, b) {
+        var _a;
+        const ids = new Set();
+        for (const layout of [a, b]) {
+            for (const zone of ZONES) {
+                const list = zone === 'off' ? ((_a = layout.off) !== null && _a !== void 0 ? _a : []) : layout[zone].sections;
+                for (const placement of list)
+                    ids.add(placement.id);
+            }
+        }
+        for (const id of ids) {
+            if (zoneOf(a, id) !== zoneOf(b, id))
+                return false;
+        }
+        return true;
     }
 
     /**
@@ -3681,6 +4295,25 @@
             return path;
         }
     }
+    /** Drawn rather than an emoji, so it scales and recolors with the UI. */
+    function gearIcon(size) {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', String(size));
+        svg.setAttribute('height', String(size));
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2');
+        svg.setAttribute('stroke-linecap', 'round');
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', '12');
+        circle.setAttribute('cy', '12');
+        circle.setAttribute('r', '3.2');
+        const teeth = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        teeth.setAttribute('d', 'M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.7 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.7a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.7a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.3 9c.24.58.8.97 1.43 1h.27a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z');
+        svg.append(circle, teeth);
+        return svg;
+    }
     /**
      * Whether the gutters should show a status instead of the sections. Both cases
      * are moments when the tables would be actively misleading: during a history
@@ -3737,6 +4370,14 @@
             this.status = '';
             this.disposers = [];
             this.framePending = false;
+            this.settings = new SettingsDialog({
+                layout: () => this.layout,
+                sections: () => registeredSections(this.options.registry),
+                onLayout: next => this.applyLayout(next),
+                onSize: (gutter, size) => this.applySize(gutter, size),
+                onReset: () => this.applyLayout(cloneLayout(DEFAULT_LAYOUT)),
+                onClose: () => this.closeSettings(),
+            });
         }
         isMounted() {
             return this.root !== null;
@@ -3751,7 +4392,10 @@
             document.documentElement.appendChild(this.root);
             this.shadow = this.root.attachShadow({ mode: 'open' });
             const style = document.createElement('style');
-            style.textContent = buildStyleSheet(registeredStyles());
+            style.textContent = buildStyleSheet([
+                ...registeredStyles(this.options.registry),
+                SETTINGS_STYLES,
+            ]);
             this.shadow.appendChild(style);
             // Registered on the document rather than in the shadow root, which Chrome
             // would ignore. Nothing waits on it: the stacks fall back to system faces
@@ -3766,15 +4410,17 @@
             void readLayout().then(stored => {
                 if (!this.root)
                     return;
-                if (JSON.stringify(stored) === JSON.stringify(this.layout))
+                const merged = withKnownSections(stored, registeredSections(this.options.registry).map(section => section.id));
+                if (JSON.stringify(merged) === JSON.stringify(this.layout))
                     return;
-                this.layout = stored;
+                this.layout = merged;
                 this.render();
             });
         }
         unmount() {
             if (!this.root)
                 return;
+            this.settings.close();
             this.destroySections();
             this.disposers.forEach(dispose => dispose());
             this.disposers = [];
@@ -3824,6 +4470,9 @@
             this.destroySections();
             this.gutters.forEach(gutter => gutter.remove());
             this.gutters.clear();
+            this.shadow
+                .querySelectorAll('.floating-gear')
+                .forEach(node => node.remove());
             const view = this.currentView();
             const headerGutter = this.headerGutter();
             this.status = (_b = (_a = statusFor(view)) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : '';
@@ -3862,12 +4511,23 @@
                 this.shadow.appendChild(gutter);
                 this.gutters.set(name, gutter);
             }
+            // The header only ever lives on a vertical rail; without one, float it.
+            const railHasHeader = headerGutter === 'left' || headerGutter === 'right';
+            if (!railHasHeader)
+                this.shadow.appendChild(this.buildFloatingGear());
             void this.syncPageFrame();
         }
-        /** The header lives in the first gutter that exists, preferring the rail. */
+        /**
+         * The header lives on a side rail, preferring the left. Bars are too short to
+         * carry it, so when neither rail is in use there is no header at all and the
+         * gear floats over the page instead.
+         */
         headerGutter() {
-            var _a;
-            return ((_a = GUTTER_NAMES.find(name => this.layout[name].sections.length > 0)) !== null && _a !== void 0 ? _a : null);
+            if (this.layout.left.sections.length > 0)
+                return 'left';
+            if (this.layout.right.sections.length > 0)
+                return 'right';
+            return null;
         }
         sizeGutter(gutter, name) {
             const thickness = gutterThickness(this.layout[name]);
@@ -3912,10 +4572,22 @@
             toggle.title = collapsed ? 'Expand the counter' : 'Collapse the counter';
             toggle.setAttribute('aria-label', collapsed ? 'Expand the counter' : 'Collapse the counter');
             toggle.addEventListener('click', () => this.toggleCollapse());
-            header.append(collapsed ? toggle : brand);
-            if (!collapsed)
-                header.appendChild(toggle);
+            if (collapsed) {
+                header.append(toggle);
+                return header;
+            }
+            const controls = el('div', 'rail-controls');
+            controls.append(this.buildGearButton(17, 'rail-gear'), toggle);
+            header.append(brand, controls);
             return header;
+        }
+        /**
+         * With no rail on screen there is no header to hold the gear, so it floats
+         * over the page instead. Without this the Competitive preset — bottom bar
+         * only — would have no way back into settings.
+         */
+        buildFloatingGear() {
+            return this.buildGearButton(18, 'floating-gear');
         }
         toggleCollapse() {
             const name = this.headerGutter();
@@ -4028,6 +4700,51 @@
                 }
             });
         }
+        /** Apply a layout change from the settings menu, live. */
+        applyLayout(next) {
+            this.layout = cloneLayout(next);
+            void writeLayout(this.layout);
+            this.render();
+            // The dialog is rebuilt separately: render() only owns the gutters.
+            this.settings.render();
+        }
+        /**
+         * Both side rails share one width and both bars one height, so the slider
+         * that sets a rail sets whichever rail is showing.
+         */
+        applySize(gutter, size) {
+            if (gutter === 'rail') {
+                this.layout.left.size = size;
+                this.layout.right.size = size;
+            }
+            else {
+                this.layout.top.size = size;
+                this.layout.bottom.size = size;
+            }
+            this.applySizes();
+            void writeLayout(this.layout);
+            void this.syncPageFrame();
+        }
+        openSettings() {
+            if (!this.shadow || this.settings.isOpen())
+                return;
+            this.settings.open(this.shadow);
+        }
+        closeSettings() {
+            this.settings.close();
+            this.render();
+        }
+        /** A gear that opens the settings menu. */
+        buildGearButton(size, className) {
+            const button = document.createElement('button');
+            button.className = className;
+            button.type = 'button';
+            button.title = 'Counter settings';
+            button.setAttribute('aria-label', 'Counter settings');
+            button.appendChild(gearIcon(size));
+            button.addEventListener('click', () => this.openSettings());
+            return button;
+        }
         /** Test seam: the layout the shell is currently rendering. */
         getLayout() {
             return cloneLayout(this.layout);
@@ -4043,34 +4760,6 @@
         getShadowRoot() {
             return this.shadow;
         }
-    }
-
-    // sections/dom.ts
-    // Small helpers so a section reads as the structure it renders rather than as
-    // a wall of createElement calls.
-    function el(tag, className, text) {
-        const node = document.createElement(tag);
-        if (className)
-            node.className = className;
-        if (text !== undefined)
-            node.textContent = text;
-        return node;
-    }
-    /** A section header: label on the left, hint on the right. */
-    function sectionHead(label, hint = '') {
-        const head = el('div', 'section-head');
-        const labelNode = el('span', 'section-label', label);
-        const hintNode = el('span', 'section-hint', hint);
-        head.append(labelNode, hintNode);
-        return { head, labelNode, hintNode };
-    }
-    function img(src, alt, className) {
-        const node = el('img', className);
-        node.src = src;
-        node.alt = alt;
-        // Everything referenced here is a bundled asset, never a network fetch.
-        node.decoding = 'async';
-        return node;
     }
 
     // sections/blockedRobber.ts
@@ -4105,6 +4794,7 @@
     const blockedRobberSection = {
         id: 'blocked-robber',
         title: 'Blocked by robber',
+        note: 'Production denied per number',
         supports: ['vertical'],
         min: { width: 200, height: 0 },
         styles: STYLES$7,
@@ -4198,6 +4888,7 @@
     const cardFlowSection = {
         id: 'card-flow',
         title: 'Card flow',
+        note: 'Gained, robbed, discarded and spent per player',
         supports: ['vertical', 'horizontal'],
         min: { width: 260, height: 120 },
         styles: STYLES$6,
@@ -4357,6 +5048,7 @@
     const cardFlowLedgerSection = {
         id: 'card-flow-ledger',
         title: 'Card flow — full ledger',
+        note: 'Every gain and loss by source, top or bottom only',
         // Fourteen columns of numbers: only a wide bar can hold it.
         supports: ['horizontal'],
         min: { width: 0, height: 150 },
@@ -4521,6 +5213,7 @@
     const devDeckSection = {
         id: 'dev-deck',
         title: 'Dev deck',
+        note: 'Cards left and who played what',
         supports: ['horizontal', 'vertical'],
         min: { width: 240, height: 110 },
         styles: STYLES$4,
@@ -4607,7 +5300,8 @@
 `;
     const diceSection = {
         id: 'dice',
-        title: 'Dice',
+        title: 'Dice rolls',
+        note: 'Distribution against the expected rate',
         supports: ['horizontal', 'vertical'],
         min: { width: 260, height: 110 },
         styles: STYLES$3,
@@ -4767,6 +5461,7 @@
     const handsSection = {
         id: 'hands',
         title: 'Hands',
+        note: 'Per-player card counts and probabilities',
         supports: ['vertical'],
         min: { width: 220, height: 0 },
         styles: STYLES$2,
@@ -4880,6 +5575,7 @@
     const playersSection = {
         id: 'players',
         title: 'Players',
+        note: 'Victory points, knights and pieces left',
         supports: ['vertical'],
         min: { width: 220, height: 0 },
         styles: STYLES$1,
@@ -5041,6 +5737,7 @@
     const unknownStealsSection = {
         id: 'unknown-steals',
         title: 'Unknown steals',
+        note: 'Click a candidate to resolve a steal',
         supports: ['vertical'],
         min: { width: 220, height: 0 },
         styles: STYLES,

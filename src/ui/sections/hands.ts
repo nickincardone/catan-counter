@@ -136,6 +136,7 @@ function paintRow(nodes: RowNodes, player: PlayerView): void {
 export const handsSection: SectionDefinition = {
   id: 'hands',
   title: 'Hands',
+  note: 'Per-player card counts and probabilities',
   supports: ['vertical'],
   min: { width: 220, height: 0 },
   styles: STYLES,

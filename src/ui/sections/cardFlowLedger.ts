@@ -118,6 +118,7 @@ function band(kind: 'gain' | 'loss', label: string, span: number): HTMLElement {
 export const cardFlowLedgerSection: SectionDefinition = {
   id: 'card-flow-ledger',
   title: 'Card flow — full ledger',
+  note: 'Every gain and loss by source, top or bottom only',
   // Fourteen columns of numbers: only a wide bar can hold it.
   supports: ['horizontal'],
   min: { width: 0, height: 150 },

@@ -3,11 +3,13 @@
 // colonist squeezed to fit. The shell knows about gutters and never about what
 // a section renders; a section knows what it renders and never about gutters.
 
+import { el } from '../sections/dom.js';
 import { buildGameView } from '../view/gameView.js';
 import type { GameView } from '../view/types.js';
 import { game } from '../../gameState.js';
 import {
   getSection,
+  registeredSections,
   registeredStyles,
   type SectionRegistry,
 } from '../sections/registry.js';
@@ -25,12 +27,14 @@ import {
   cloneLayout,
   gutterThickness,
   readLayout,
+  withKnownSections,
   writeLayout,
   type GutterName,
   type V2Layout,
 } from './layoutStore.js';
 import { buildStyleSheet } from './styles.js';
 import { loadFonts, unloadFonts } from './fonts.js';
+import { SETTINGS_STYLES, SettingsDialog } from './settings.js';
 import {
   applyPageFrame,
   refreshPageFrame,
@@ -55,6 +59,35 @@ function assetUrl(path: string): string {
   } catch {
     return path;
   }
+}
+
+/** Drawn rather than an emoji, so it scales and recolors with the UI. */
+function gearIcon(size: number): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+
+  const circle = document.createElementNS(
+    'http://www.w3.org/2000/svg',
+    'circle'
+  );
+  circle.setAttribute('cx', '12');
+  circle.setAttribute('cy', '12');
+  circle.setAttribute('r', '3.2');
+
+  const teeth = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  teeth.setAttribute(
+    'd',
+    'M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.7 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.7a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.7a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.3 9c.24.58.8.97 1.43 1h.27a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z'
+  );
+
+  svg.append(circle, teeth);
+  return svg;
 }
 
 interface MountedSection {
@@ -129,6 +162,14 @@ export class Shell {
   private status = '';
   private disposers: Array<() => void> = [];
   private framePending = false;
+  private readonly settings = new SettingsDialog({
+    layout: () => this.layout,
+    sections: () => registeredSections(this.options.registry),
+    onLayout: next => this.applyLayout(next),
+    onSize: (gutter, size) => this.applySize(gutter, size),
+    onReset: () => this.applyLayout(cloneLayout(DEFAULT_LAYOUT)),
+    onClose: () => this.closeSettings(),
+  });
 
   constructor(private readonly options: ShellOptions) {}
 
@@ -147,7 +188,10 @@ export class Shell {
     this.shadow = this.root.attachShadow({ mode: 'open' });
 
     const style = document.createElement('style');
-    style.textContent = buildStyleSheet(registeredStyles());
+    style.textContent = buildStyleSheet([
+      ...registeredStyles(this.options.registry),
+      SETTINGS_STYLES,
+    ]);
     this.shadow.appendChild(style);
 
     // Registered on the document rather than in the shadow root, which Chrome
@@ -165,14 +209,19 @@ export class Shell {
     // Storage answers after the first paint; re-render if it differs.
     void readLayout().then(stored => {
       if (!this.root) return;
-      if (JSON.stringify(stored) === JSON.stringify(this.layout)) return;
-      this.layout = stored;
+      const merged = withKnownSections(
+        stored,
+        registeredSections(this.options.registry).map(section => section.id)
+      );
+      if (JSON.stringify(merged) === JSON.stringify(this.layout)) return;
+      this.layout = merged;
       this.render();
     });
   }
 
   unmount(): void {
     if (!this.root) return;
+    this.settings.close();
     this.destroySections();
     this.disposers.forEach(dispose => dispose());
     this.disposers = [];
@@ -222,6 +271,9 @@ export class Shell {
     this.destroySections();
     this.gutters.forEach(gutter => gutter.remove());
     this.gutters.clear();
+    this.shadow
+      .querySelectorAll('.floating-gear')
+      .forEach(node => node.remove());
 
     const view = this.currentView();
     const headerGutter = this.headerGutter();
@@ -265,14 +317,22 @@ export class Shell {
       this.gutters.set(name, gutter);
     }
 
+    // The header only ever lives on a vertical rail; without one, float it.
+    const railHasHeader = headerGutter === 'left' || headerGutter === 'right';
+    if (!railHasHeader) this.shadow.appendChild(this.buildFloatingGear());
+
     void this.syncPageFrame();
   }
 
-  /** The header lives in the first gutter that exists, preferring the rail. */
+  /**
+   * The header lives on a side rail, preferring the left. Bars are too short to
+   * carry it, so when neither rail is in use there is no header at all and the
+   * gear floats over the page instead.
+   */
   private headerGutter(): GutterName | null {
-    return (
-      GUTTER_NAMES.find(name => this.layout[name].sections.length > 0) ?? null
-    );
+    if (this.layout.left.sections.length > 0) return 'left';
+    if (this.layout.right.sections.length > 0) return 'right';
+    return null;
   }
 
   private sizeGutter(gutter: HTMLElement, name: GutterName): void {
@@ -325,9 +385,24 @@ export class Shell {
     );
     toggle.addEventListener('click', () => this.toggleCollapse());
 
-    header.append(collapsed ? toggle : brand);
-    if (!collapsed) header.appendChild(toggle);
+    if (collapsed) {
+      header.append(toggle);
+      return header;
+    }
+
+    const controls = el('div', 'rail-controls');
+    controls.append(this.buildGearButton(17, 'rail-gear'), toggle);
+    header.append(brand, controls);
     return header;
+  }
+
+  /**
+   * With no rail on screen there is no header to hold the gear, so it floats
+   * over the page instead. Without this the Competitive preset — bottom bar
+   * only — would have no way back into settings.
+   */
+  private buildFloatingGear(): HTMLElement {
+    return this.buildGearButton(18, 'floating-gear');
   }
 
   private toggleCollapse(): void {
@@ -450,6 +525,54 @@ export class Shell {
     } finally {
       this.framePending = false;
     }
+  }
+
+  /** Apply a layout change from the settings menu, live. */
+  private applyLayout(next: V2Layout): void {
+    this.layout = cloneLayout(next);
+    void writeLayout(this.layout);
+    this.render();
+    // The dialog is rebuilt separately: render() only owns the gutters.
+    this.settings.render();
+  }
+
+  /**
+   * Both side rails share one width and both bars one height, so the slider
+   * that sets a rail sets whichever rail is showing.
+   */
+  private applySize(gutter: 'rail' | 'bar', size: number): void {
+    if (gutter === 'rail') {
+      this.layout.left.size = size;
+      this.layout.right.size = size;
+    } else {
+      this.layout.top.size = size;
+      this.layout.bottom.size = size;
+    }
+    this.applySizes();
+    void writeLayout(this.layout);
+    void this.syncPageFrame();
+  }
+
+  openSettings(): void {
+    if (!this.shadow || this.settings.isOpen()) return;
+    this.settings.open(this.shadow);
+  }
+
+  private closeSettings(): void {
+    this.settings.close();
+    this.render();
+  }
+
+  /** A gear that opens the settings menu. */
+  private buildGearButton(size: number, className: string): HTMLElement {
+    const button = document.createElement('button');
+    button.className = className;
+    button.type = 'button';
+    button.title = 'Counter settings';
+    button.setAttribute('aria-label', 'Counter settings');
+    button.appendChild(gearIcon(size));
+    button.addEventListener('click', () => this.openSettings());
+    return button;
   }
 
   /** Test seam: the layout the shell is currently rendering. */

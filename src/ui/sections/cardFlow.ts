@@ -83,6 +83,7 @@ interface RowNodes {
 export const cardFlowSection: SectionDefinition = {
   id: 'card-flow',
   title: 'Card flow',
+  note: 'Gained, robbed, discarded and spent per player',
   supports: ['vertical', 'horizontal'],
   min: { width: 260, height: 120 },
   styles: STYLES,

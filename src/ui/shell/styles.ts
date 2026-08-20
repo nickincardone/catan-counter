@@ -136,6 +136,42 @@ const FRAME = `
   .rail-title {
     font-weight: 800; font-size: 18px; color: var(--cc-text); line-height: 1.1;
   }
+  .rail-controls { display: flex; align-items: center; gap: 2px; }
+  .rail-gear {
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--cc-chevron);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+  }
+  .rail-gear:hover { background: rgba(255,255,255,.08); color: var(--cc-text); }
+
+  /* Shown only when neither rail is on screen to hold the header. */
+  .floating-gear {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 8px;
+    background: rgba(14,16,19,.85);
+    color: var(--cc-text-body);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    pointer-events: auto;
+    padding: 0;
+  }
+  .floating-gear:hover { background: var(--cc-panel); }
+
   .rail-collapse {
     font-family: var(--cc-mono);
     font-size: 16px;
