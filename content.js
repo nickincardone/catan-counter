@@ -8988,6 +8988,11 @@
         if (isWaitingForYouPlayerSelection)
             return;
         const messageText = ((_a = element.textContent) === null || _a === void 0 ? void 0 : _a.replace(/\s+/g, ' ').trim()) || '';
+        // A row the virtual scroller has not filled in yet. This must return BEFORE
+        // the duplicate check: that check is a high-water mark, so marking an empty
+        // row processed discards the real message when it arrives.
+        if (!messageText && element.querySelector('img') === null)
+            return;
         if (ignoreElement(element, messageText))
             return;
         if (checkDuplicateElement(element))
@@ -9340,10 +9345,28 @@
     const messageBuffer = new MessageOrderBuffer(updateGameFromChat);
     let blockedFlushTimer = null;
     /**
+     * A row the virtual scroller has created but not yet filled in.
+     *
+     * Colonist's scroller mints rows with a data-index well before their content
+     * exists — in a replay, hundreds of them at once. They carry no text and no
+     * icons, so there is nothing to read yet.
+     */
+    function isPlaceholderRow(element) {
+        var _a;
+        return !((_a = element.textContent) === null || _a === void 0 ? void 0 : _a.trim()) && element.querySelector('img') === null;
+    }
+    /**
      * Capture one rendered chat row: log it verbatim (the logger dedups by index
      * itself) and queue it for in-order parsing.
+     *
+     * Placeholders are skipped rather than captured. Capturing one would spend its
+     * data-index in the parser's high-water mark and the logger's dedup, and the
+     * real message would then be thrown away as already-seen when it finally
+     * rendered — quietly losing whatever it said.
      */
     function captureRow(element) {
+        if (isPlaceholderRow(element))
+            return;
         logChatMessage(element);
         messageBuffer.capture(element);
     }

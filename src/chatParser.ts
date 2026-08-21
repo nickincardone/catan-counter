@@ -111,6 +111,11 @@ export function updateGameFromChat(element: HTMLElement): void {
 
   const messageText = element.textContent?.replace(/\s+/g, ' ').trim() || '';
 
+  // A row the virtual scroller has not filled in yet. This must return BEFORE
+  // the duplicate check: that check is a high-water mark, so marking an empty
+  // row processed discards the real message when it arrives.
+  if (!messageText && element.querySelector('img') === null) return;
+
   if (ignoreElement(element, messageText)) return;
 
   if (checkDuplicateElement(element)) return;

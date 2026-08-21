@@ -30,10 +30,27 @@ const messageBuffer = new MessageOrderBuffer(updateGameFromChat);
 let blockedFlushTimer: number | null = null;
 
 /**
+ * A row the virtual scroller has created but not yet filled in.
+ *
+ * Colonist's scroller mints rows with a data-index well before their content
+ * exists — in a replay, hundreds of them at once. They carry no text and no
+ * icons, so there is nothing to read yet.
+ */
+function isPlaceholderRow(element: HTMLElement): boolean {
+  return !element.textContent?.trim() && element.querySelector('img') === null;
+}
+
+/**
  * Capture one rendered chat row: log it verbatim (the logger dedups by index
  * itself) and queue it for in-order parsing.
+ *
+ * Placeholders are skipped rather than captured. Capturing one would spend its
+ * data-index in the parser's high-water mark and the logger's dedup, and the
+ * real message would then be thrown away as already-seen when it finally
+ * rendered — quietly losing whatever it said.
  */
 function captureRow(element: HTMLElement): void {
+  if (isPlaceholderRow(element)) return;
   logChatMessage(element);
   messageBuffer.capture(element);
 }
