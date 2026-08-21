@@ -158,6 +158,8 @@ export const LOG_TYPE_NAMES: Record<number, string> = {
   66: 'achievement-gained',
   68: 'achievement-transferred',
   86: 'monopoly-steal',
+  113: 'embargo-placed',
+  114: 'embargo-lifted',
   115: 'trade-accepted',
   116: 'bank-trade',
   117: 'trade-offer-targeted',

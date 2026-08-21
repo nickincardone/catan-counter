@@ -264,6 +264,28 @@ describe('decoding actions', () => {
     });
   });
 
+  it('records an embargo being placed and lifted', () => {
+    // Refusing to trade with a player is a real decision, not chatter, so it
+    // belongs in the action list rather than in the unknown pile.
+    const record = decodeReplay(
+      replay([
+        event(0, [{ type: 113, playerColor: 5, embargoedPlayerColor: 2 }]),
+        event(1, [{ type: 114, playerColor: 5, embargoedPlayerColor: 2 }]),
+      ])
+    );
+
+    expect(record.actions[0]).toMatchObject({
+      kind: 'embargo-placed',
+      player: 5,
+      detail: { against: 2 },
+    });
+    expect(record.actions[1]).toMatchObject({
+      kind: 'embargo-lifted',
+      player: 5,
+      detail: { against: 2 },
+    });
+  });
+
   it('reports a log type it does not know instead of dropping the entry', () => {
     const record = decodeReplay(
       replay([event(0, [{ type: 999, playerColor: 1, mysteryField: 7 }])])

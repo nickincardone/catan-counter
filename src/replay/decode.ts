@@ -338,6 +338,14 @@ function decodeDetail(
         amountStolen: numberOrNull(text.amountStolen),
       };
 
+    case 113:
+    case 114:
+      // Refusing to trade with someone, and taking it back. Checked against the
+      // embargo list that moves with each entry: after all seventeen of type
+      // 113 the target is on the player's list, and after all eight of type 114
+      // it is off it.
+      return { against: numberOrNull(text.embargoedPlayerColor) };
+
     case 115:
       return {
         acceptedBy: numberOrNull(text.acceptingPlayerColor),
