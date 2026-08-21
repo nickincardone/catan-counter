@@ -38,3 +38,6 @@ test-results/
 .agents/
 .claude/
 data-collection.md
+
+# Harvested replay data: contains usernames and chat.
+data/

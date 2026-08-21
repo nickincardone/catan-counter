@@ -14,6 +14,7 @@ import {
 } from './transportCapture.js';
 import type { TransportCapture } from './transportCapture.js';
 import { installViewportControl } from './pageViewport.js';
+import { installReplayHook } from './pageReplayHook.js';
 
 const MAX_CAPTURE_DATA_LENGTH = 262_144;
 const MAX_STARTUP_BACKLOG = 2_000;
@@ -246,6 +247,9 @@ function installTransportHook(): void {
 }
 
 installTransportHook();
+// Replays never touch the WebSocket: Colonist downloads the whole game once,
+// during page load, over XHR. See pageReplayHook.ts.
+installReplayHook();
 // The v2 gutter UI needs colonist to lay out inside a smaller area, which only
 // works from this world — see pageViewport.ts. It stays inert until the content
 // script asks for an inset.

@@ -30,7 +30,17 @@ function config(input, file, name) {
   };
 }
 
+// The replay decoder also runs outside the browser, as a command-line tool for
+// turning saved raw replays into decoded records.
+const replayCli = {
+  input: 'src/replay/cli.ts',
+  output: { file: 'scripts/decode-replay.js', format: 'cjs' },
+  external: ['node:fs', 'node:path'],
+  plugins: [typescript({ tsconfig: './tsconfig.json' })],
+};
+
 export default [
+  replayCli,
   config(
     'src/pageTransportHook.ts',
     'page-transport-hook.js',
