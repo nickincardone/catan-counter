@@ -135,7 +135,7 @@ describe('decoding actions', () => {
     ]);
   });
 
-  it('tells a setup placement from a purchase, and names the piece', () => {
+  it('tells a free placement from a purchase, and names the piece', () => {
     const record = decodeReplay(
       replay([
         event(0, [{ type: 4, playerColor: 1, pieceEnum: 2 }]),
@@ -144,13 +144,37 @@ describe('decoding actions', () => {
     );
 
     expect(record.actions[0]).toMatchObject({
-      kind: 'setup-placement',
-      detail: { piece: 'settlement' },
+      kind: 'free-placement',
+      detail: { piece: 'settlement', duringOpening: true },
     });
     expect(record.actions[1]).toMatchObject({
       kind: 'build',
       detail: { piece: 'city', isVictoryPoint: true },
     });
+  });
+
+  it('separates opening placements from the roads a road building card gives', () => {
+    // Type 4 is not the opening, it is a piece placed without paying. Road
+    // building produces two more of them, mid-game, and reading those as
+    // opening placements would put four settlements' worth of free pieces in
+    // the wrong phase of the game.
+    const record = decodeReplay(
+      replay([
+        event(0, [{ type: 4, playerColor: 1, pieceEnum: 2 }]),
+        event(1, [{ type: 10, playerColor: 1, firstDice: 3, secondDice: 4 }]),
+        event(1, [{ type: 20, playerColor: 1, cardEnum: 14 }]),
+        event(0, [{ type: 4, playerColor: 1, pieceEnum: 0 }]),
+        event(0, [{ type: 4, playerColor: 1, pieceEnum: 0 }]),
+      ])
+    );
+
+    const placements = record.actions.filter(a => a.kind === 'free-placement');
+    expect(placements.map(p => p.detail.duringOpening)).toEqual([
+      true,
+      false,
+      false,
+    ]);
+    expect(record.actions[2].detail).toEqual({ card: 'road-building' });
   });
 
   it('names a bought development card and the card that was played', () => {

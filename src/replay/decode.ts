@@ -252,11 +252,20 @@ function decodeBoard(mapState: unknown): DecodedBoard {
  */
 function decodeDetail(
   logType: number,
-  text: RawLogText
+  text: RawLogText,
+  context: { rolled: boolean }
 ): Record<string, unknown> {
   switch (logType) {
-    case 4: // setup placement
-    case 5: // built during play
+    case 4:
+      // Placed without paying: the opening settlements and roads, and also the
+      // two roads a road building card gives. The first roll separates them —
+      // the opening is over by the time anyone rolls.
+      return {
+        piece: name(PIECE_NAMES, text.pieceEnum),
+        duringOpening: !context.rolled,
+      };
+
+    case 5: // bought and paid for
       return {
         piece: name(PIECE_NAMES, text.pieceEnum),
         ...(text.isVp !== undefined ? { isVictoryPoint: text.isVp } : {}),
@@ -452,6 +461,9 @@ export function decodeReplay(
   const unknownLogTypes: Record<string, number> = {};
 
   let timeMs = 0;
+  // The opening is the stretch before anyone rolls, which is what tells a
+  // free placement in the opening from one a road building card paid for.
+  const context = { rolled: false };
   events.forEach((event, eventIndex) => {
     // deltaS is seconds since the previous event and is the only thing `input`
     // carries; summing it gives a clock without needing per-event timestamps.
@@ -478,7 +490,7 @@ export function decodeReplay(
         kind: kind ?? 'unknown',
         logType,
         player,
-        detail: decodeDetail(logType, text),
+        detail: decodeDetail(logType, text, context),
       };
       actions.push(action);
 
@@ -500,6 +512,7 @@ export function decodeReplay(
       }
 
       if (logType === 10) {
+        context.rolled = true;
         const first = numberOrNull(text.firstDice);
         const second = numberOrNull(text.secondDice);
         if (first !== null && second !== null) {

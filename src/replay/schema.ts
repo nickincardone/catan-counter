@@ -62,10 +62,12 @@ export const CARD_BACK = 0;
  * by: every play of 11 precedes a robber move, the single play of 13 precedes
  * the monopoly entry, and both plays of 15 precede a year-of-plenty gain.
  *
- * 12 and 14 are settled by elimination, because neither was played in the games
- * this was built from: a victory point card cannot be played, and 12 is the one
- * that never appears in a play entry, which leaves 14 for road building. If a
- * play of 12 ever shows up, that pairing is wrong and this is the place to fix.
+ * Road building is confirmed the same way, once a wider harvest turned up
+ * fifteen plays of 14: each is followed immediately by exactly two roads placed
+ * for free, thirty in total, and never by anything else. That leaves 12 as the
+ * victory point card, which fits the one thing that can be said about it — it
+ * is never played, because a point card cannot be. If a play of 12 ever shows
+ * up, that pairing is wrong and this is the place to fix.
  */
 export const DEVELOPMENT_CARD_NAMES: Record<number, string> = {
   10: 'hidden',
@@ -121,9 +123,17 @@ export const VICTORY_POINT_SOURCES: Record<
  *
  * Every one of these was fixed by evidence rather than by reading names: the
  * parameters an entry carries, the state slices that change in the same event,
- * and the counts (16 setup placements is four players placing two settlements
- * and two roads; the deck shrinking 24, 23, 22 across type 1 entries is three
+ * and the counts (the deck shrinking 24, 23, 22 across type 1 entries is three
  * development card purchases).
+ *
+ * Type 4 is worth spelling out, because its first reading was wrong. It looked
+ * like the opening placement — sixteen of them a game is four players laying
+ * two settlements and two roads — until a road building card turned up: every
+ * play of one is followed by exactly two more type 4 roads. It is not the
+ * opening, it is a piece placed without paying for it, and the two cases split
+ * cleanly on whether the first roll has happened. Across twelve games that was
+ * 192 before the first roll, exactly sixteen each, and 30 after, all roads and
+ * exactly twice the fifteen road building plays.
  *
  * Types not listed here are preserved verbatim by the decoder rather than
  * dropped, so an unrecognised entry is visible instead of silently lost. What
@@ -132,7 +142,7 @@ export const VICTORY_POINT_SOURCES: Record<
  */
 export const LOG_TYPE_NAMES: Record<number, string> = {
   1: 'buy-development-card',
-  4: 'setup-placement',
+  4: 'free-placement',
   5: 'build',
   10: 'roll',
   11: 'move-robber',
