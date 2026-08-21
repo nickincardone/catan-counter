@@ -44,12 +44,61 @@ export interface ReplayCaptureMeta {
   capturedAt: string;
 }
 
+/** Why a replay never arrived. */
+export interface ReplayProblem {
+  status: number;
+  reason: 'rate-limited' | 'signed-out' | 'refused' | 'unknown';
+}
+
+/**
+ * Statuses no retry is coming for.
+ *
+ * 403 is deliberately not here: Colonist answers its own first request with one
+ * and retries, so treating it as terminal would abandon every load.
+ */
+const TERMINAL_STATUSES: Record<number, ReplayProblem['reason']> = {
+  429: 'rate-limited',
+  401: 'signed-out',
+};
+
+/** Whether a status means no payload is coming, rather than "not yet". */
+export function terminalReason(status: number): ReplayProblem['reason'] | null {
+  return TERMINAL_STATUSES[status] ?? null;
+}
+
+/**
+ * Explain a page load that produced no replay, from the statuses it saw.
+ *
+ * A refusal is indistinguishable from a slow load unless it is asked about, and
+ * a harvest that silently collects nothing is the failure mode worth guarding
+ * against, so the reason is derived here rather than left to a timeout.
+ */
+export function describeReplayFailure(
+  statuses: number[]
+): ReplayProblem | null {
+  if (statuses.includes(200)) return null;
+  for (let index = statuses.length - 1; index >= 0; index--) {
+    const reason = terminalReason(statuses[index]);
+    if (reason) return { status: statuses[index], reason };
+  }
+  const last = statuses[statuses.length - 1];
+  return last === undefined ? null : { status: last, reason: 'refused' };
+}
+
 export interface ReplayPageApi {
   version: 1;
   /** What has been captured so far, without the bytes. */
   meta(): ReplayCaptureMeta[];
   /** Whether a successful payload has arrived. */
   ready(): boolean;
+  /**
+   * Why no payload arrived, when none did.
+   *
+   * A harvest that quietly collects nothing is the failure worth guarding
+   * against, and a refusal looks exactly like a slow load from the outside, so
+   * the reason has to be askable rather than inferred from a timeout.
+   */
+  problem(): ReplayProblem | null;
   /**
    * Resolve once a successful payload exists, or when the wait runs out.
    *
@@ -122,7 +171,7 @@ function identify(value: string): {
 }
 
 const captures: ReplayCapture[] = [];
-const waiters: Array<() => void> = [];
+const waiters: Array<(ready: boolean) => void> = [];
 let nextCaptureId = 0;
 
 function successful(): ReplayCapture | undefined {
@@ -163,20 +212,38 @@ function bridge(capture: ReplayCapture): void {
   }
 }
 
+function settle(ready: boolean): void {
+  const pending = waiters.splice(0, waiters.length);
+  for (const resolve of pending) resolve(ready);
+}
+
 function deliver(capture: ReplayCapture): void {
   captures.push(capture);
   while (captures.length > MAX_RETAINED) captures.shift();
 
-  console.info(
-    `[Catan Counter] Replay ${capture.gameId ?? '?'}: status ${capture.status}, ${capture.byteLength} bytes`
-  );
+  const terminal = terminalReason(capture.status);
+  if (terminal) {
+    // Loud, because the alternative is a harvest that looks like it worked and
+    // collected nothing. Rate limiting in particular arrives after a run of
+    // successes, so it is easy to miss in a batch.
+    console.warn(
+      `[Catan Counter] Replay ${capture.gameId ?? '?'} refused: ${capture.status} (${terminal}). Stop and wait rather than retrying.`
+    );
+  } else {
+    console.info(
+      `[Catan Counter] Replay ${capture.gameId ?? '?'}: status ${capture.status}, ${capture.byteLength} bytes`
+    );
+  }
 
   bridge(capture);
 
   if (capture.status === 200) {
-    const pending = waiters.splice(0, waiters.length);
-    for (const resolve of pending) resolve();
+    settle(true);
+    return;
   }
+  // Nothing is coming for these, so stop waiting now instead of spending the
+  // whole timeout on a request that has already been refused.
+  if (terminal) settle(false);
 }
 
 function record(
@@ -246,6 +313,8 @@ function installPageApi(): void {
 
     ready: () => successful() !== undefined,
 
+    problem: () => describeReplayFailure(captures.map(c => c.status)),
+
     whenReady: (timeoutMs = 20_000) =>
       new Promise<boolean>(resolve => {
         if (successful()) {
@@ -258,7 +327,7 @@ function installPageApi(): void {
           settled = true;
           resolve(value);
         };
-        waiters.push(() => done(true));
+        waiters.push(done);
         window.setTimeout(() => done(successful() !== undefined), timeoutMs);
       }),
 

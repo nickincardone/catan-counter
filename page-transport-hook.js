@@ -255,6 +255,39 @@
     const REPLAY_PATH = '/api/replay/';
     /** Captures kept in memory for the page API; a page rarely loads more than one. */
     const MAX_RETAINED = 8;
+    /**
+     * Statuses no retry is coming for.
+     *
+     * 403 is deliberately not here: Colonist answers its own first request with one
+     * and retries, so treating it as terminal would abandon every load.
+     */
+    const TERMINAL_STATUSES = {
+        429: 'rate-limited',
+        401: 'signed-out',
+    };
+    /** Whether a status means no payload is coming, rather than "not yet". */
+    function terminalReason(status) {
+        var _a;
+        return (_a = TERMINAL_STATUSES[status]) !== null && _a !== void 0 ? _a : null;
+    }
+    /**
+     * Explain a page load that produced no replay, from the statuses it saw.
+     *
+     * A refusal is indistinguishable from a slow load unless it is asked about, and
+     * a harvest that silently collects nothing is the failure mode worth guarding
+     * against, so the reason is derived here rather than left to a timeout.
+     */
+    function describeReplayFailure(statuses) {
+        if (statuses.includes(200))
+            return null;
+        for (let index = statuses.length - 1; index >= 0; index--) {
+            const reason = terminalReason(statuses[index]);
+            if (reason)
+                return { status: statuses[index], reason };
+        }
+        const last = statuses[statuses.length - 1];
+        return last === undefined ? null : { status: last, reason: 'refused' };
+    }
     function bytesToBase64$1(bytes) {
         let binary = '';
         const chunkSize = 0x8000;
@@ -328,18 +361,35 @@
                 total, chunk: base64.slice(index * REPLAY_CHUNK_LENGTH, (index + 1) * REPLAY_CHUNK_LENGTH) }, (index === total - 1 ? { meta } : {})), window.location.origin);
         }
     }
+    function settle(ready) {
+        const pending = waiters.splice(0, waiters.length);
+        for (const resolve of pending)
+            resolve(ready);
+    }
     function deliver(capture) {
-        var _a;
+        var _a, _b;
         captures.push(capture);
         while (captures.length > MAX_RETAINED)
             captures.shift();
-        console.info(`[Catan Counter] Replay ${(_a = capture.gameId) !== null && _a !== void 0 ? _a : '?'}: status ${capture.status}, ${capture.byteLength} bytes`);
+        const terminal = terminalReason(capture.status);
+        if (terminal) {
+            // Loud, because the alternative is a harvest that looks like it worked and
+            // collected nothing. Rate limiting in particular arrives after a run of
+            // successes, so it is easy to miss in a batch.
+            console.warn(`[Catan Counter] Replay ${(_a = capture.gameId) !== null && _a !== void 0 ? _a : '?'} refused: ${capture.status} (${terminal}). Stop and wait rather than retrying.`);
+        }
+        else {
+            console.info(`[Catan Counter] Replay ${(_b = capture.gameId) !== null && _b !== void 0 ? _b : '?'}: status ${capture.status}, ${capture.byteLength} bytes`);
+        }
         bridge(capture);
         if (capture.status === 200) {
-            const pending = waiters.splice(0, waiters.length);
-            for (const resolve of pending)
-                resolve();
+            settle(true);
+            return;
         }
+        // Nothing is coming for these, so stop waiting now instead of spending the
+        // whole timeout on a request that has already been refused.
+        if (terminal)
+            settle(false);
     }
     function record(rawUrl, status, contentType, bytes) {
         const { gameId, playerColor } = identify(rawUrl);
@@ -401,6 +451,7 @@
                 capturedAt: capture.capturedAt,
             })),
             ready: () => successful() !== undefined,
+            problem: () => describeReplayFailure(captures.map(c => c.status)),
             whenReady: (timeoutMs = 20000) => new Promise(resolve => {
                 if (successful()) {
                     resolve(true);
@@ -413,7 +464,7 @@
                     settled = true;
                     resolve(value);
                 };
-                waiters.push(() => done(true));
+                waiters.push(done);
                 window.setTimeout(() => done(successful() !== undefined), timeoutMs);
             }),
             data(index) {
