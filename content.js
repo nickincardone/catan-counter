@@ -90,6 +90,51 @@
      * Automatically detects the current player from the web-header-username
      * This eliminates the need for user input popups
      */
+    /**
+     * Which seat belongs to the person watching, read from colonist's player panel.
+     *
+     * Every player block carries `data-player-color`, and colonist marks the other
+     * three with an `opponentPlayerRow` class. The one WITHOUT it is the viewer.
+     * That is the only reliable source: the page header carries the logged-in
+     * ACCOUNT name, which is a different thing — in a replay or while spectating it
+     * is nobody at the table.
+     *
+     * Returns null when there is no single unambiguous own-row, which is what a
+     * pure spectator view looks like.
+     */
+    function getCurrentPlayerFromPanel() {
+        const container = document.querySelector('[data-player-information-container]');
+        if (!container)
+            return null;
+        const own = Array.from(container.querySelectorAll('[data-player-color]')).filter(block => !/opponentPlayerRow/i.test(block.className || ''));
+        if (own.length !== 1)
+            return null;
+        return firstOwnText(own[0]);
+    }
+    /**
+     * The first text in a subtree that belongs to an element rather than to its
+     * descendants. In a player block that is the name, which sits in its own
+     * element ahead of the counts.
+     *
+     * Deliberately not innerText: it would read the counts in too, and it does not
+     * exist under jsdom, so nothing about this could be tested.
+     */
+    function firstOwnText(root) {
+        var _a;
+        const queue = [root];
+        while (queue.length > 0) {
+            const element = queue.shift();
+            for (const node of Array.from(element.childNodes)) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const text = (_a = node.textContent) === null || _a === void 0 ? void 0 : _a.trim();
+                    if (text)
+                        return text;
+                }
+            }
+            queue.push(...Array.from(element.children));
+        }
+        return null;
+    }
     function getCurrentPlayerFromHeader() {
         var _a;
         const headerElement = document.getElementsByClassName('web-header-username')[0];
@@ -1721,11 +1766,26 @@
      * Returns true if successful, false otherwise
      */
     function autoDetectCurrentPlayer() {
-        const detectedPlayer = getCurrentPlayerFromHeader();
-        if (detectedPlayer) {
-            setYouPlayer(detectedPlayer);
-            console.log(`✅ Auto-detected and set current player: ${detectedPlayer}`);
+        // The panel knows which seat the viewer is sitting in, so ask it first.
+        const fromPanel = getCurrentPlayerFromPanel();
+        if (fromPanel) {
+            setYouPlayer(fromPanel);
+            console.log(`✅ Auto-detected current player from the panel: ${fromPanel}`);
             return true;
+        }
+        // The header holds the logged-in ACCOUNT name, which is only the same thing
+        // when you are playing your own game. In a replay or while spectating it is
+        // someone who is not at the table, and accepting it sends every "from you"
+        // steal to a player who does not exist — silently, because the actions that
+        // move those cards just return when they cannot find the name.
+        const fromHeader = getCurrentPlayerFromHeader();
+        if (fromHeader && game.players.some(player => player.name === fromHeader)) {
+            setYouPlayer(fromHeader);
+            console.log(`✅ Auto-detected current player from the header: ${fromHeader}`);
+            return true;
+        }
+        if (fromHeader) {
+            console.log(`🔍 Ignoring header name "${fromHeader}" — not a player in this game`);
         }
         console.log('❌ Failed to auto-detect current player');
         return false;
@@ -8911,8 +8971,16 @@
      * Handle a player stealing a specific resource from the current player
      */
     function stealFromYou(thief, victim, stolenResource) {
-        if (!thief || !victim)
+        // "X stole from you" names the thief but not the victim: the victim is
+        // whoever is watching. If that is unknown, or names somebody who is not at
+        // this table, the steal used to be dropped without a word — and a whole
+        // game's worth of them went missing at once. Say so instead.
+        if (!thief)
             return;
+        if (!victim || !game.players.some(player => player.name === victim)) {
+            console.warn(`⚠️ ${thief} stole from you, but "you" is ${victim ? `"${victim}", who is not in this game` : 'unknown'} — the card is unaccounted for`);
+            return;
+        }
         game.probableGameState.processTransaction({
             type: TransactionTypeEnum.ROBBER_STEAL,
             stealerName: thief,

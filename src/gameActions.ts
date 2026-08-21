@@ -557,7 +557,17 @@ export function stealFromYou(
   victim: string | null,
   stolenResource: keyof ResourceObjectType
 ): void {
-  if (!thief || !victim) return;
+  // "X stole from you" names the thief but not the victim: the victim is
+  // whoever is watching. If that is unknown, or names somebody who is not at
+  // this table, the steal used to be dropped without a word — and a whole
+  // game's worth of them went missing at once. Say so instead.
+  if (!thief) return;
+  if (!victim || !game.players.some(player => player.name === victim)) {
+    console.warn(
+      `⚠️ ${thief} stole from you, but "you" is ${victim ? `"${victim}", who is not in this game` : 'unknown'} — the card is unaccounted for`
+    );
+    return;
+  }
 
   game.probableGameState.processTransaction({
     type: TransactionTypeEnum.ROBBER_STEAL,

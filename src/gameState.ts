@@ -5,7 +5,10 @@ import {
   ResourceObjectType,
   UnknownTransaction,
 } from './types.js';
-import { getCurrentPlayerFromHeader } from './domUtils.js';
+import {
+  getCurrentPlayerFromHeader,
+  getCurrentPlayerFromPanel,
+} from './domUtils.js';
 import { PropbableGameState } from './probableGameState.js';
 
 export function getDefaultGame(): GameType {
@@ -71,16 +74,45 @@ export function setYouPlayer(playerName: string): void {
  * Returns true if successful, false otherwise
  */
 export function autoDetectCurrentPlayer(): boolean {
-  const detectedPlayer = getCurrentPlayerFromHeader();
-  if (detectedPlayer) {
-    setYouPlayer(detectedPlayer);
-    hasAskedForYouPlayer = true; // Mark as resolved
-    console.log(`✅ Auto-detected and set current player: ${detectedPlayer}`);
+  // The panel knows which seat the viewer is sitting in, so ask it first.
+  const fromPanel = getCurrentPlayerFromPanel();
+  if (fromPanel) {
+    setYouPlayer(fromPanel);
+    hasAskedForYouPlayer = true;
+    console.log(`✅ Auto-detected current player from the panel: ${fromPanel}`);
     return true;
+  }
+
+  // The header holds the logged-in ACCOUNT name, which is only the same thing
+  // when you are playing your own game. In a replay or while spectating it is
+  // someone who is not at the table, and accepting it sends every "from you"
+  // steal to a player who does not exist — silently, because the actions that
+  // move those cards just return when they cannot find the name.
+  const fromHeader = getCurrentPlayerFromHeader();
+  if (fromHeader && game.players.some(player => player.name === fromHeader)) {
+    setYouPlayer(fromHeader);
+    hasAskedForYouPlayer = true;
+    console.log(
+      `✅ Auto-detected current player from the header: ${fromHeader}`
+    );
+    return true;
+  }
+  if (fromHeader) {
+    console.log(
+      `🔍 Ignoring header name "${fromHeader}" — not a player in this game`
+    );
   }
 
   console.log('❌ Failed to auto-detect current player');
   return false;
+}
+
+/** Whether "you" names somebody actually sitting at this table. */
+export function youPlayerIsSeated(): boolean {
+  return (
+    !!game.youPlayerName &&
+    game.players.some(player => player.name === game.youPlayerName)
+  );
 }
 
 export function setYouPlayerForTesting(playerName: string): void {

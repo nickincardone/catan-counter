@@ -32,7 +32,9 @@ export function getPlayerCardCounts(playerNames: string[]): {
   [playerName: string]: number;
 } {
   const counts: { [playerName: string]: number } = {};
-  const container = document.querySelector('[data-player-information-container]');
+  const container = document.querySelector(
+    '[data-player-information-container]'
+  );
   if (!container) return counts;
 
   const blocks = container.querySelectorAll<HTMLElement>('[data-player-color]');
@@ -71,8 +73,59 @@ export function getPlayerColor(element: HTMLElement): string {
  * Automatically detects the current player from the web-header-username
  * This eliminates the need for user input popups
  */
+/**
+ * Which seat belongs to the person watching, read from colonist's player panel.
+ *
+ * Every player block carries `data-player-color`, and colonist marks the other
+ * three with an `opponentPlayerRow` class. The one WITHOUT it is the viewer.
+ * That is the only reliable source: the page header carries the logged-in
+ * ACCOUNT name, which is a different thing — in a replay or while spectating it
+ * is nobody at the table.
+ *
+ * Returns null when there is no single unambiguous own-row, which is what a
+ * pure spectator view looks like.
+ */
+export function getCurrentPlayerFromPanel(): string | null {
+  const container = document.querySelector(
+    '[data-player-information-container]'
+  );
+  if (!container) return null;
+
+  const own = Array.from(
+    container.querySelectorAll<HTMLElement>('[data-player-color]')
+  ).filter(block => !/opponentPlayerRow/i.test(block.className || ''));
+
+  if (own.length !== 1) return null;
+  return firstOwnText(own[0]);
+}
+
+/**
+ * The first text in a subtree that belongs to an element rather than to its
+ * descendants. In a player block that is the name, which sits in its own
+ * element ahead of the counts.
+ *
+ * Deliberately not innerText: it would read the counts in too, and it does not
+ * exist under jsdom, so nothing about this could be tested.
+ */
+function firstOwnText(root: Element): string | null {
+  const queue: Element[] = [root];
+  while (queue.length > 0) {
+    const element = queue.shift() as Element;
+    for (const node of Array.from(element.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent?.trim();
+        if (text) return text;
+      }
+    }
+    queue.push(...Array.from(element.children));
+  }
+  return null;
+}
+
 export function getCurrentPlayerFromHeader(): string | null {
-  const headerElement = document.getElementsByClassName('web-header-username')[0];
+  const headerElement = document.getElementsByClassName(
+    'web-header-username'
+  )[0];
   if (!headerElement) {
     console.log('🔍 web-header-username element not found');
     return null;
