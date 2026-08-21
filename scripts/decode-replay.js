@@ -499,7 +499,7 @@ function decodeReplay(raw, options = {}) {
                 target,
                 consistent: winner === undefined || target === null
                     ? true
-                    : winner.totalPoints === target,
+                    : winner.totalPoints >= target,
             },
         },
     };
@@ -593,13 +593,15 @@ function run(argv) {
                             .join(', ')}]`
                         : ''));
             }
-            // A winner whose points do not reach the target means a victory-point
-            // source is weighted wrongly; say so rather than writing a quiet lie.
+            // A winner short of the target means a victory-point source is weighted
+            // wrongly, or the game is a variant scoring on rules this does not model.
+            // Overshooting is fine — two-point achievements move a player past the
+            // line — so only falling short is worth saying anything about.
             const check = record.diagnostics.victoryPointsCheck;
             if (!check.consistent) {
                 console.warn(`  warning: ${node_path.basename(file)} winner scores ${check.winnerTotal}, ` +
-                    `but the game was played to ${check.target}. ` +
-                    'A victory-point source is probably mapped wrongly.');
+                    `short of the ${check.target} the game was played to. ` +
+                    'A victory-point source is mapped wrongly, or this is a variant.');
             }
         }
         catch (error) {

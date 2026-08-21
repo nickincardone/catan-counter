@@ -423,6 +423,26 @@ describe('final standings', () => {
     expect(check).toEqual({ winnerTotal: 10, target: 10, consistent: true });
   });
 
+  it('accepts a winner who overshot, since two-point gains jump the line', () => {
+    // Real game: taking largest army and then longest road from nine points
+    // finishes on eleven. Demanding an exact landing would cry wolf on it.
+    const raw = replay([]);
+    (
+      raw.data!.eventHistory!.endGameState as never as Record<string, never>
+    ).players = {
+      '3': {
+        color: 3,
+        rank: 1,
+        victoryPoints: { '0': 3, '1': 1, '2': 2, '3': 1, '4': 1 },
+        winningPlayer: true,
+      },
+    } as never;
+
+    const check = decodeReplay(raw).diagnostics.victoryPointsCheck;
+    expect(check.winnerTotal).toBe(11);
+    expect(check.consistent).toBe(true);
+  });
+
   it('flags a winner whose points do not add up to the target', () => {
     const raw = replay([]);
     // A point source weighted wrongly would look exactly like this.

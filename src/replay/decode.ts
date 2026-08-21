@@ -150,9 +150,16 @@ export interface ReplayRecord {
     /** Log types with no name yet, and how often each appeared. */
     unknownLogTypes: Record<string, number>;
     /**
-     * Whether the winner's points add up to what the game was played to. A
-     * false here means a victory-point source is weighted wrongly, which would
-     * otherwise show up only as quietly wrong scores.
+     * Whether the winner reached the score the game was played to.
+     *
+     * At least, not exactly: overshooting is legal and common. Taking longest
+     * road or largest army moves two points at once, so a player sitting on
+     * nine can finish on eleven, and revealing point cards can do the same.
+     * One of the harvested games ends 11-6-5-5 for that exact reason.
+     *
+     * Falling short is the real signal, and it is what a mis-weighted source
+     * or a variant scoring on rules base Catan does not have looks like: a
+     * Cities and Knights game reads as 10 against a target of 13.
      */
     victoryPointsCheck: {
       winnerTotal: number | null;
@@ -553,7 +560,7 @@ export function decodeReplay(
         consistent:
           winner === undefined || target === null
             ? true
-            : winner.totalPoints === target,
+            : winner.totalPoints >= target,
       },
     },
   };
