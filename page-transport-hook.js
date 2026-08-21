@@ -69,6 +69,37 @@
      * Install the override. Safe to call more than once; only the first call wires
      * anything up. Returns immediately — nothing changes until an inset arrives.
      */
+    /**
+     * Run a measurement once colonist has had a chance to re-lay out.
+     *
+     * A frame is the natural moment to measure, but requestAnimationFrame does not
+     * fire at all in a background tab — and a game can easily be loaded, or left,
+     * in one. Relying on it alone meant the reply never arrived there, the content
+     * script timed out, and v2 silently fell back to covering the page for the rest
+     * of the session.
+     *
+     * Racing the frame against a short timer fixed that only partly, because Chrome
+     * throttles timers in a hidden tab to roughly one a second: a 48ms timer can
+     * land well past the content script's 750ms patience, so the handshake failed
+     * intermittently on loads that happened in the background. A hidden tab has
+     * nothing to wait for anyway — it is not going to paint — so measure straight
+     * away there, and keep the race for when the page can actually render.
+     */
+    function scheduleMeasurement(measure) {
+        if (document.hidden) {
+            measure();
+            return;
+        }
+        let done = false;
+        const once = () => {
+            if (done)
+                return;
+            done = true;
+            measure();
+        };
+        requestAnimationFrame(once);
+        window.setTimeout(once, 48);
+    }
     function installViewportControl() {
         const flagged = window;
         if (flagged.__catanCounterViewportInstalled)
@@ -121,26 +152,8 @@
             };
             window.postMessage(message, window.location.origin);
         }
-        /**
-         * Report once colonist has had a chance to re-lay out.
-         *
-         * A frame is the natural moment to measure, but requestAnimationFrame does
-         * not fire at all in a background tab — and a game can easily be loaded, or
-         * left, in one. Relying on it alone meant the reply never arrived there, the
-         * content script timed out, and v2 silently fell back to covering the page
-         * for the rest of the session. So race the frame against a timer and report
-         * on whichever comes first.
-         */
         function scheduleReport(nonce) {
-            let done = false;
-            const once = () => {
-                if (done)
-                    return;
-                done = true;
-                report(nonce);
-            };
-            requestAnimationFrame(once);
-            window.setTimeout(once, 48);
+            scheduleMeasurement(() => report(nonce));
         }
         window.addEventListener('message', event => {
             var _a;
