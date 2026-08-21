@@ -548,6 +548,36 @@ function collect(target) {
     }
     return [full];
 }
+/** A popup export, as opposed to one game's raw payload. */
+function asBundle(value) {
+    const bundle = value;
+    if (!bundle || typeof bundle !== 'object')
+        return null;
+    if (typeof bundle.bundleVersion !== 'number')
+        return null;
+    if (!Array.isArray(bundle.replays))
+        return null;
+    return bundle.replays;
+}
+/**
+ * Split a bundle into the per-game raw files the rest of the tool expects.
+ * Returns the paths written.
+ */
+function unpackBundle(entries, outDir, quiet) {
+    const written = [];
+    for (const entry of entries) {
+        if (!entry || entry.payload === undefined)
+            continue;
+        const gameId = typeof entry.gameId === 'string' ? entry.gameId : 'unknown';
+        const path = node_path.join(outDir, `colonist-replay-${gameId}.json`);
+        node_fs.writeFileSync(path, JSON.stringify(entry.payload));
+        written.push(path);
+    }
+    if (!quiet) {
+        console.log(`Unpacked ${written.length} replay(s) from the bundle.`);
+    }
+    return written;
+}
 /** The gameId is in the filename Colonist's own download name carries. */
 function gameIdFrom(path) {
     const match = /colonist-replay-([^.]+)\.json$/.exec(node_path.basename(path));
@@ -559,11 +589,33 @@ function run(argv) {
         console.error('usage: node scripts/decode-replay.js <raw.json | directory> [--out <dir>] [--anonymize] [--quiet]');
         return 2;
     }
-    const files = options.targets.flatMap(collect);
+    let files = options.targets.flatMap(collect);
     if (files.length === 0) {
-        console.error('No raw replay files found.');
+        console.error('No replay files found.');
         return 1;
     }
+    // A bundle stands in for the games inside it, so everything downstream only
+    // ever deals with one game per file.
+    const expanded = [];
+    for (const file of files) {
+        let entries = null;
+        try {
+            entries = asBundle(JSON.parse(node_fs.readFileSync(file, 'utf8')));
+        }
+        catch (_a) {
+            /* handled per-file below, where the error can be reported */
+        }
+        if (entries) {
+            const outDir = options.outDir
+                ? node_path.resolve(options.outDir)
+                : node_path.resolve(file, '..');
+            expanded.push(...unpackBundle(entries, outDir, options.quiet));
+        }
+        else {
+            expanded.push(file);
+        }
+    }
+    files = expanded;
     let failures = 0;
     for (const file of files) {
         try {

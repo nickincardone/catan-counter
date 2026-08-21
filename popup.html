@@ -66,6 +66,50 @@
         font-size: 11px;
         color: #c3ccd4;
       }
+      .section {
+        margin: 16px 0 0;
+        padding: 13px 0 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+      }
+      h2 {
+        margin: 0 0 2px;
+        font-size: 12px;
+        font-weight: 800;
+        color: #fff;
+      }
+      #replay-count {
+        margin: 0 0 9px;
+        font-size: 11px;
+        color: #8a939d;
+      }
+      .buttons {
+        display: flex;
+        gap: 7px;
+      }
+      button {
+        flex: 1;
+        padding: 8px 6px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.06);
+        color: #eef1f4;
+        font: inherit;
+        font-weight: 700;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        border-color: #8a939d;
+      }
+      button.primary {
+        border-color: #e8a33d;
+        background: rgba(232, 163, 61, 0.16);
+        color: #f4c887;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
       #status {
         margin: 12px 0 0;
         font-size: 11px;
@@ -93,6 +137,14 @@
         </span>
       </label>
     </fieldset>
+    <div class="section">
+      <h2>Replays</h2>
+      <p id="replay-count">Checking…</p>
+      <div class="buttons">
+        <button id="export-replays" class="primary" disabled>Export all</button>
+        <button id="clear-replays" disabled>Clear</button>
+      </div>
+    </div>
     <p id="status"></p>
     <script src="popup.js"></script>
   </body>

@@ -18,10 +18,25 @@ import {
 } from './messageLogger.js';
 import { MessageOrderBuffer } from './messageOrderBuffer.js';
 import { startTransportCaptureBridge } from './transportCapture.js';
+import { startReplayCaptureBridge } from './replayCapture.js';
+import { storeReplayCapture } from './replayStore.js';
 
 // Start listening immediately so the MAIN-world hook can replay WebSocket
 // traffic captured before Colonist rendered the chat or board.
 startTransportCaptureBridge(logTransportCapture);
+
+// Replays arrive whole, over XHR, once per page load — see pageReplayHook.ts.
+// Holding them here rather than downloading one per game is what lets a harvest
+// of any size end in a single export from the popup.
+startReplayCaptureBridge(capture => {
+  void storeReplayCapture(capture).then(outcome => {
+    if (outcome !== 'ignored') {
+      console.info(
+        `📼 Replay ${capture.gameId} ${outcome} (${capture.byteLength} bytes) — export from the extension popup`
+      );
+    }
+  });
+});
 
 // All chat rows flow through this buffer so the parser always sees them in
 // strict data-index order — the parser's dedup is a monotonic high-water mark,

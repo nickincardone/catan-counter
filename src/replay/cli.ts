@@ -1,8 +1,12 @@
 // replay/cli.ts
 // Turn saved raw replays into decoded records.
 //
-//   node scripts/decode-replay.js <raw.json | directory> [--out <dir>]
+//   node scripts/decode-replay.js <file | directory> [--out <dir>]
 //                                 [--anonymize] [--quiet]
+//
+// Takes either a single raw replay or an export bundle from the extension
+// popup, which holds a whole harvest in one file. A bundle is unpacked into one
+// raw replay per game first, so both routes leave the same thing on disk.
 //
 // Raw files are never modified: decoding writes a sibling `<name>.record.json`
 // so the original bytes stay as the thing everything else can be re-derived
@@ -51,6 +55,43 @@ function collect(target: string): string[] {
   return [full];
 }
 
+interface BundleEntry {
+  gameId?: string;
+  payload?: unknown;
+}
+
+/** A popup export, as opposed to one game's raw payload. */
+function asBundle(value: unknown): BundleEntry[] | null {
+  const bundle = value as { bundleVersion?: unknown; replays?: unknown };
+  if (!bundle || typeof bundle !== 'object') return null;
+  if (typeof bundle.bundleVersion !== 'number') return null;
+  if (!Array.isArray(bundle.replays)) return null;
+  return bundle.replays as BundleEntry[];
+}
+
+/**
+ * Split a bundle into the per-game raw files the rest of the tool expects.
+ * Returns the paths written.
+ */
+function unpackBundle(
+  entries: BundleEntry[],
+  outDir: string,
+  quiet: boolean
+): string[] {
+  const written: string[] = [];
+  for (const entry of entries) {
+    if (!entry || entry.payload === undefined) continue;
+    const gameId = typeof entry.gameId === 'string' ? entry.gameId : 'unknown';
+    const path = join(outDir, `colonist-replay-${gameId}.json`);
+    writeFileSync(path, JSON.stringify(entry.payload));
+    written.push(path);
+  }
+  if (!quiet) {
+    console.log(`Unpacked ${written.length} replay(s) from the bundle.`);
+  }
+  return written;
+}
+
 /** The gameId is in the filename Colonist's own download name carries. */
 function gameIdFrom(path: string): string | null {
   const match = /colonist-replay-([^.]+)\.json$/.exec(basename(path));
@@ -66,11 +107,32 @@ function run(argv: string[]): number {
     return 2;
   }
 
-  const files = options.targets.flatMap(collect);
+  let files = options.targets.flatMap(collect);
   if (files.length === 0) {
-    console.error('No raw replay files found.');
+    console.error('No replay files found.');
     return 1;
   }
+
+  // A bundle stands in for the games inside it, so everything downstream only
+  // ever deals with one game per file.
+  const expanded: string[] = [];
+  for (const file of files) {
+    let entries: BundleEntry[] | null = null;
+    try {
+      entries = asBundle(JSON.parse(readFileSync(file, 'utf8')));
+    } catch {
+      /* handled per-file below, where the error can be reported */
+    }
+    if (entries) {
+      const outDir = options.outDir
+        ? resolve(options.outDir)
+        : resolve(file, '..');
+      expanded.push(...unpackBundle(entries, outDir, options.quiet));
+    } else {
+      expanded.push(file);
+    }
+  }
+  files = expanded;
 
   let failures = 0;
   for (const file of files) {

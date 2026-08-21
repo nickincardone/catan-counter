@@ -3843,18 +3843,18 @@
         5: 'grain',
         6: 'ore',
     };
-    function isRecord$1(value) {
+    function isRecord$2(value) {
         return typeof value === 'object' && value !== null && !Array.isArray(value);
     }
     function numberValue(value) {
         return typeof value === 'number' && Number.isFinite(value) ? value : null;
     }
     function sortedNumericEntries(value) {
-        if (!isRecord$1(value))
+        if (!isRecord$2(value))
             return [];
         return Object.entries(value)
             .map(([id, state]) => [Number(id), state])
-            .filter((entry) => Number.isSafeInteger(entry[0]) && isRecord$1(entry[1]))
+            .filter((entry) => Number.isSafeInteger(entry[0]) && isRecord$2(entry[1]))
             .sort((a, b) => a[0] - b[0]);
     }
     function buildingName(code) {
@@ -3876,7 +3876,7 @@
             bytes[index] = binary.charCodeAt(index);
         }
         const decoded = decode(bytes);
-        return isRecord$1(decoded) ? decoded : null;
+        return isRecord$2(decoded) ? decoded : null;
     }
     /**
      * Incrementally turns Colonist's inbound MessagePack snapshots/diffs into a
@@ -3913,17 +3913,17 @@
             if (!envelope)
                 return;
             this.decodedIncomingCaptures++;
-            const data = isRecord$1(envelope.data) ? envelope.data : null;
+            const data = isRecord$2(envelope.data) ? envelope.data : null;
             if (!data)
                 return;
             const messageType = numberValue(data.type);
             const protocolSequence = (_a = numberValue(data.sequence)) !== null && _a !== void 0 ? _a : -1;
-            if (messageType === 4 && isRecord$1(data.payload)) {
+            if (messageType === 4 && isRecord$2(data.payload)) {
                 this.applyFullSnapshot(data.payload, capture.capturedAt, protocolSequence);
                 return;
             }
-            if (messageType === 91 && isRecord$1(data.payload)) {
-                const diff = isRecord$1(data.payload.diff) ? data.payload.diff : null;
+            if (messageType === 91 && isRecord$2(data.payload)) {
+                const diff = isRecord$2(data.payload.diff) ? data.payload.diff : null;
                 if (diff)
                     this.applyDiff(diff, capture.capturedAt, protocolSequence);
             }
@@ -3939,8 +3939,8 @@
         }
         applyFullSnapshot(payload, capturedAt, protocolSequence) {
             var _a;
-            const gameState = isRecord$1(payload.gameState) ? payload.gameState : null;
-            const mapState = gameState && isRecord$1(gameState.mapState) ? gameState.mapState : null;
+            const gameState = isRecord$2(payload.gameState) ? payload.gameState : null;
+            const mapState = gameState && isRecord$2(gameState.mapState) ? gameState.mapState : null;
             if (!mapState)
                 return;
             const hexes = sortedNumericEntries(mapState.tileHexStates).map(([id, state]) => {
@@ -3969,13 +3969,13 @@
                     portCode,
                 };
             });
-            const robberState = isRecord$1(gameState === null || gameState === void 0 ? void 0 : gameState.mechanicRobberState)
+            const robberState = isRecord$2(gameState === null || gameState === void 0 ? void 0 : gameState.mechanicRobberState)
                 ? gameState.mechanicRobberState
                 : null;
             const users = Array.isArray(payload.playerUserStates)
                 ? payload.playerUserStates
                 : [];
-            const players = users.filter(isRecord$1).map((user) => {
+            const players = users.filter(isRecord$2).map((user) => {
                 var _a, _b;
                 return ({
                     color: (_a = numberValue(user.selectedColor)) !== null && _a !== void 0 ? _a : -1,
@@ -4005,7 +4005,7 @@
         applyDiff(diff, capturedAt, protocolSequence) {
             if (!this.board)
                 return;
-            const mapState = isRecord$1(diff.mapState) ? diff.mapState : null;
+            const mapState = isRecord$2(diff.mapState) ? diff.mapState : null;
             for (const [id, patch] of sortedNumericEntries(mapState === null || mapState === void 0 ? void 0 : mapState.tileCornerStates)) {
                 const corner = this.board.corners.find(item => item.id === id);
                 if (!corner)
@@ -4054,7 +4054,7 @@
                     });
                 }
             }
-            const robberState = isRecord$1(diff.mechanicRobberState)
+            const robberState = isRecord$2(diff.mechanicRobberState)
                 ? diff.mechanicRobberState
                 : null;
             const robberHexId = numberValue(robberState === null || robberState === void 0 ? void 0 : robberState.locationTileIndex);
@@ -4121,7 +4121,7 @@
         snapshot.chatLog = normalizeChatLog(messages, [...knownPlayers.values()]);
         return snapshot;
     }
-    function storageAvailable$2() {
+    function storageAvailable$3() {
         var _a;
         return typeof chrome !== 'undefined' && !!((_a = chrome === null || chrome === void 0 ? void 0 : chrome.storage) === null || _a === void 0 ? void 0 : _a.local);
     }
@@ -4156,7 +4156,7 @@
             seenIndices.clear();
             seenTransportCaptureIds.clear();
             currentTransportCaptureDataLength = 0;
-            if (storageAvailable$2()) {
+            if (storageAvailable$3()) {
                 try {
                     const key = STORAGE_KEY_PREFIX + gameId;
                     const stored = yield chrome.storage.local.get(key);
@@ -4277,7 +4277,7 @@
         log.spatialCapture = withNormalizedChat(spatialGameTracker.snapshot(), log.messages, log.players);
     }
     function schedulePersist() {
-        if (!storageAvailable$2())
+        if (!storageAvailable$3())
             return;
         if (persistTimer !== null)
             clearTimeout(persistTimer);
@@ -4288,7 +4288,7 @@
     }
     function persistCurrentLog() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!currentLog || !storageAvailable$2())
+            if (!currentLog || !storageAvailable$3())
                 return;
             snapshotMetadata(currentLog);
             try {
@@ -4340,7 +4340,7 @@
      */
     function exportAllGameLogs() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!storageAvailable$2()) {
+            if (!storageAvailable$3()) {
                 console.warn('📼 chrome.storage is not available');
                 return [];
             }
@@ -5735,14 +5735,14 @@
         }
         return repairLayout(layout);
     }
-    function storageAvailable$1() {
+    function storageAvailable$2() {
         var _a;
         return typeof chrome !== 'undefined' && !!((_a = chrome === null || chrome === void 0 ? void 0 : chrome.storage) === null || _a === void 0 ? void 0 : _a.local);
     }
     function readLayout() {
         return __awaiter(this, void 0, void 0, function* () {
             var _a;
-            if (!storageAvailable$1())
+            if (!storageAvailable$2())
                 return cloneLayout(DEFAULT_LAYOUT);
             try {
                 const stored = yield chrome.storage.local.get(LAYOUT_STORAGE_KEY);
@@ -5756,7 +5756,7 @@
     }
     function writeLayout(layout) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!storageAvailable$1())
+            if (!storageAvailable$2())
                 return;
             try {
                 yield chrome.storage.local.set({ [LAYOUT_STORAGE_KEY]: layout });
@@ -8454,14 +8454,14 @@
     function isUiMode(value) {
         return value === 'v1' || value === 'v2';
     }
-    function storageAvailable() {
+    function storageAvailable$1() {
         var _a;
         return typeof chrome !== 'undefined' && !!((_a = chrome === null || chrome === void 0 ? void 0 : chrome.storage) === null || _a === void 0 ? void 0 : _a.local);
     }
     /** Read the stored mode, falling back to the default on anything unexpected. */
     function readUiMode() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!storageAvailable())
+            if (!storageAvailable$1())
                 return DEFAULT_UI_MODE;
             try {
                 const stored = yield chrome.storage.local.get(UI_MODE_STORAGE_KEY);
@@ -9320,7 +9320,7 @@
     const EXTENSION_BRIDGE_SOURCE = 'catan-counter-extension-bridge-v1';
     const TRANSPORT_CAPTURE_VERSION = 1;
     const MAX_BRIDGED_DATA_LENGTH = 350000;
-    function isRecord(value) {
+    function isRecord$1(value) {
         return typeof value === 'object' && value !== null;
     }
     /**
@@ -9329,9 +9329,9 @@
      * blindly persist arbitrary objects.
      */
     function parsePageTransportEnvelope(value) {
-        if (!isRecord(value) || value.source !== PAGE_TRANSPORT_SOURCE)
+        if (!isRecord$1(value) || value.source !== PAGE_TRANSPORT_SOURCE)
             return null;
-        if (!isRecord(value.capture))
+        if (!isRecord$1(value.capture))
             return null;
         const capture = value.capture;
         const directions = [
@@ -9403,10 +9403,204 @@
         return () => window.removeEventListener('message', listener);
     }
 
+    /**
+     * Types and bridge code for capturing Colonist's replay payload.
+     *
+     * A replay is not played over the WebSocket the live game uses. Colonist
+     * requests the whole game in one shot:
+     *
+     *     GET /api/replay/data-from-game-id?gameId=<id>&playerColor=<seat>
+     *
+     * and it is an XMLHttpRequest, not fetch. That request can only be observed as
+     * the page makes it: asking for the same URL again from page script is refused
+     * by Cloudflare with 403 and `cf-mitigated: token`, so there is no re-fetching
+     * it later and no fetching it from the extension's own world. The MAIN-world
+     * hook in pageReplayHook.ts therefore tees the response at document_start, and
+     * this module validates what crosses the postMessage boundary.
+     *
+     * Payloads are far larger than a chat line, so they cross in chunks and are
+     * reassembled here.
+     */
+    const PAGE_REPLAY_SOURCE = 'catan-counter-page-replay-v1';
+    const REPLAY_CAPTURE_VERSION = 1;
+    /** postMessage copies structured data; keep each hop modest. */
+    const REPLAY_CHUNK_LENGTH = 262144;
+    /** Refuse a payload large enough to suggest something other than a replay. */
+    const MAX_REPLAY_DATA_LENGTH = 32 * 1024 * 1024;
+    function isRecord(value) {
+        return typeof value === 'object' && value !== null;
+    }
+    /**
+     * Validate one untrusted chunk from the page's MAIN world. Colonist can post
+     * to the same window, so nothing here may be taken on trust.
+     */
+    function parseReplayChunk(value) {
+        if (!isRecord(value) || value.source !== PAGE_REPLAY_SOURCE)
+            return null;
+        if (typeof value.captureId !== 'string' || value.captureId.length > 200)
+            return null;
+        if (typeof value.index !== 'number' ||
+            !Number.isSafeInteger(value.index) ||
+            value.index < 0)
+            return null;
+        if (typeof value.total !== 'number' ||
+            !Number.isSafeInteger(value.total) ||
+            value.total <= 0 ||
+            value.index >= value.total)
+            return null;
+        if (typeof value.chunk !== 'string' ||
+            value.chunk.length > REPLAY_CHUNK_LENGTH * 2)
+            return null;
+        if (value.meta !== undefined) {
+            const meta = value.meta;
+            if (!isRecord(meta))
+                return null;
+            if (meta.captureVersion !== REPLAY_CAPTURE_VERSION)
+                return null;
+            if (typeof meta.capturedAt !== 'string')
+                return null;
+            if (typeof meta.url !== 'string' || meta.url.length > 2000)
+                return null;
+            if (meta.gameId !== null &&
+                (typeof meta.gameId !== 'string' || meta.gameId.length > 64))
+                return null;
+            if (meta.playerColor !== null &&
+                (typeof meta.playerColor !== 'number' ||
+                    !Number.isSafeInteger(meta.playerColor)))
+                return null;
+            if (typeof meta.status !== 'number')
+                return null;
+            if (meta.contentType !== null &&
+                (typeof meta.contentType !== 'string' || meta.contentType.length > 200))
+                return null;
+            if (typeof meta.byteLength !== 'number' ||
+                !Number.isSafeInteger(meta.byteLength) ||
+                meta.byteLength < 0 ||
+                meta.byteLength > MAX_REPLAY_DATA_LENGTH)
+                return null;
+        }
+        return value;
+    }
+    /**
+     * Collect chunks until a payload is whole.
+     *
+     * The final chunk carries the metadata, so a payload is only complete once
+     * every index has arrived AND the metadata has: a capture missing either is
+     * still in flight, not broken.
+     */
+    class ReplayAssembler {
+        constructor() {
+            this.pending = new Map();
+        }
+        /** Returns the finished capture on the chunk that completes it. */
+        accept(envelope) {
+            let entry = this.pending.get(envelope.captureId);
+            if (!entry) {
+                entry = { chunks: new Array(envelope.total).fill(undefined) };
+                this.pending.set(envelope.captureId, entry);
+            }
+            if (entry.chunks.length !== envelope.total)
+                return null;
+            entry.chunks[envelope.index] = envelope.chunk;
+            if (envelope.meta)
+                entry.meta = envelope.meta;
+            if (!entry.meta)
+                return null;
+            if (entry.chunks.some(chunk => chunk === undefined))
+                return null;
+            this.pending.delete(envelope.captureId);
+            return Object.assign(Object.assign({}, entry.meta), { base64: entry.chunks.join('') });
+        }
+    }
+    /** Start the isolated-world half of the bridge. */
+    function startReplayCaptureBridge(onCapture) {
+        const assembler = new ReplayAssembler();
+        const listener = (event) => {
+            if (event.source !== window || event.origin !== window.location.origin)
+                return;
+            const envelope = parseReplayChunk(event.data);
+            if (!envelope)
+                return;
+            const capture = assembler.accept(envelope);
+            if (capture)
+                onCapture(capture);
+        };
+        window.addEventListener('message', listener);
+        return () => window.removeEventListener('message', listener);
+    }
+
+    // replayStore.ts
+    const REPLAY_STORAGE_PREFIX = 'catanReplay:';
+    function storageAvailable() {
+        var _a;
+        return typeof chrome !== 'undefined' && !!((_a = chrome === null || chrome === void 0 ? void 0 : chrome.storage) === null || _a === void 0 ? void 0 : _a.local);
+    }
+    function isStoredReplay(value) {
+        const replay = value;
+        return (!!replay &&
+            typeof replay.gameId === 'string' &&
+            typeof replay.capturedAt === 'string' &&
+            typeof replay.json === 'string' &&
+            typeof replay.byteLength === 'number');
+    }
+    /** Decode a capture's base64 body back into the text Colonist sent. */
+    function captureToText(capture) {
+        const binary = atob(capture.base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index++) {
+            bytes[index] = binary.charCodeAt(index);
+        }
+        return new TextDecoder().decode(bytes);
+    }
+    /**
+     * Keep a capture, if it is one worth keeping.
+     *
+     * Colonist's first request for a replay is answered 403 and retried, so most
+     * page loads produce a failure alongside the real thing; only the successful
+     * one is worth storing, and only if it names a game.
+     */
+    function storeReplayCapture(capture) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (capture.status !== 200 || !capture.gameId || capture.byteLength === 0) {
+                return 'ignored';
+            }
+            if (!storageAvailable())
+                return 'ignored';
+            const key = REPLAY_STORAGE_PREFIX + capture.gameId;
+            try {
+                const existing = yield chrome.storage.local.get(key);
+                const replaced = isStoredReplay(existing[key]);
+                const record = {
+                    gameId: capture.gameId,
+                    playerColor: capture.playerColor,
+                    capturedAt: capture.capturedAt,
+                    byteLength: capture.byteLength,
+                    json: captureToText(capture),
+                };
+                yield chrome.storage.local.set({ [key]: record });
+                return replaced ? 'replaced' : 'stored';
+            }
+            catch (error) {
+                console.warn('📼 Could not store the replay:', error);
+                return 'ignored';
+            }
+        });
+    }
+
     // content.ts
     // Start listening immediately so the MAIN-world hook can replay WebSocket
     // traffic captured before Colonist rendered the chat or board.
     startTransportCaptureBridge(logTransportCapture);
+    // Replays arrive whole, over XHR, once per page load — see pageReplayHook.ts.
+    // Holding them here rather than downloading one per game is what lets a harvest
+    // of any size end in a single export from the popup.
+    startReplayCaptureBridge(capture => {
+        void storeReplayCapture(capture).then(outcome => {
+            if (outcome !== 'ignored') {
+                console.info(`📼 Replay ${capture.gameId} ${outcome} (${capture.byteLength} bytes) — export from the extension popup`);
+            }
+        });
+    });
     // All chat rows flow through this buffer so the parser always sees them in
     // strict data-index order — the parser's dedup is a monotonic high-water mark,
     // so an out-of-order row would permanently lock out everything before it.
