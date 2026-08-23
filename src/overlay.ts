@@ -1,13 +1,7 @@
 import { game, setYouPlayer, markYouPlayerAsked } from './gameState.js';
 import { downloadCurrentGameLog } from './messageLogger.js';
 import { ResourceObjectType } from './types.js';
-
-// Chrome extension API type declaration
-declare const chrome: {
-  runtime: {
-    getURL: (path: string) => string;
-  };
-};
+import { assetUrl } from './ui/assetUrl.js';
 
 // =============================================================================
 // UTILITY FUNCTIONS
@@ -86,7 +80,7 @@ function formatResourceName(resource: string): string {
  * Get resource icon URL
  */
 function getResourceIconUrl(resource: keyof typeof RESOURCE_ICONS): string {
-  return chrome.runtime.getURL(`assets/${RESOURCE_ICONS[resource]}`);
+  return assetUrl(`assets/${RESOURCE_ICONS[resource]}`);
 }
 
 /**
@@ -418,7 +412,7 @@ function generateDevCardsDisplay(): string {
    * Get dev card icon URL
    */
   const getDevCardIconUrl = (icon: string): string =>
-    chrome.runtime.getURL(`assets/${icon}`);
+    assetUrl(`assets/${icon}`);
 
   let display = '<div style="margin: 15px 0;">';
   display += `<h4 style="margin: 0 0 10px 0; text-align: center;">Development Cards Remaining: ${game.devCards}</h4>`;

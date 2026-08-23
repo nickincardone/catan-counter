@@ -4377,6 +4377,50 @@
         });
     }
 
+    // ui/assetUrl.ts
+    // Absolute URLs for the extension's own image files.
+    //
+    // The base is resolved once, at load, and kept. chrome.runtime.getURL stops
+    // working the moment the extension is reloaded while a page is still open —
+    // the page's content script is left with an invalidated context, and every
+    // later call throws. That happens routinely during development, and the old
+    // behaviour was to quietly fall back to a relative path, which the browser
+    // resolved against colonist.io: every icon 404'd and rendered as its alt text
+    // while the rest of the interface carried on working.
+    //
+    // A resolved base survives that, because the extension keeps its id across a
+    // reload and the files are still where the URL says they are. Holding the
+    // string means no API call is needed once the page is running.
+    /**
+     * Resolved while the context is certainly valid: this module is imported by
+     * the content script at document_start, long before anything can invalidate it.
+     */
+    const BASE = (() => {
+        var _a, _b;
+        try {
+            const base = (_b = (_a = chrome === null || chrome === void 0 ? void 0 : chrome.runtime) === null || _a === void 0 ? void 0 : _a.getURL) === null || _b === void 0 ? void 0 : _b.call(_a, '');
+            return typeof base === 'string' && base.length > 0 ? base : null;
+        }
+        catch (_c) {
+            return null;
+        }
+    })();
+    let warned = false;
+    /**
+     * An extension file's URL. Falls back to the bare path outside the extension
+     * (the tests and the dev preview harness both run there), and says so once
+     * rather than leaving a page full of broken images unexplained.
+     */
+    function assetUrl(path) {
+        if (BASE)
+            return BASE + path;
+        if (!warned) {
+            warned = true;
+            console.warn(`🖼️ Extension assets could not be resolved; "${path}" and others will not load.`);
+        }
+        return path;
+    }
+
     // =============================================================================
     // UTILITY FUNCTIONS
     // =============================================================================
@@ -4450,7 +4494,7 @@
      * Get resource icon URL
      */
     function getResourceIconUrl(resource) {
-        return chrome.runtime.getURL(`assets/${RESOURCE_ICONS[resource]}`);
+        return assetUrl(`assets/${RESOURCE_ICONS[resource]}`);
     }
     /**
      * Create a modal backdrop element
@@ -4691,7 +4735,7 @@
         /**
          * Get dev card icon URL
          */
-        const getDevCardIconUrl = (icon) => chrome.runtime.getURL(`assets/${icon}`);
+        const getDevCardIconUrl = (icon) => assetUrl(`assets/${icon}`);
         let display = '<div style="margin: 15px 0;">';
         display += `<h4 style="margin: 0 0 10px 0; text-align: center;">Development Cards Remaining: ${game.devCards}</h4>`;
         display +=
@@ -6868,16 +6912,6 @@
         top: 'horizontal',
         bottom: 'horizontal',
     };
-    /** Extension assets need an absolute URL; tests run without the API. */
-    function assetUrl(path) {
-        var _a, _b, _c;
-        try {
-            return (_c = (_b = (_a = chrome === null || chrome === void 0 ? void 0 : chrome.runtime) === null || _a === void 0 ? void 0 : _a.getURL) === null || _b === void 0 ? void 0 : _b.call(_a, path)) !== null && _c !== void 0 ? _c : path;
-        }
-        catch (_d) {
-            return path;
-        }
-    }
     /** Drawn rather than an emoji, so it scales and recolors with the UI. */
     function gearIcon(size) {
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

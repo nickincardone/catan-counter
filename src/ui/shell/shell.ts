@@ -42,8 +42,7 @@ import {
   refreshPageFrame,
   releasePageFrame,
 } from './pageFrame.js';
-
-declare const chrome: { runtime?: { getURL?: (path: string) => string } };
+import { assetUrl } from '../assetUrl.js';
 
 export const ROOT_ID = 'catan-v2-root';
 
@@ -53,15 +52,6 @@ const AXIS: Record<GutterName, GutterAxis> = {
   top: 'horizontal',
   bottom: 'horizontal',
 };
-
-/** Extension assets need an absolute URL; tests run without the API. */
-function assetUrl(path: string): string {
-  try {
-    return chrome?.runtime?.getURL?.(path) ?? path;
-  } catch {
-    return path;
-  }
-}
 
 /** Drawn rather than an emoji, so it scales and recolors with the UI. */
 function gearIcon(size: number): SVGElement {
