@@ -34,33 +34,33 @@ describe('placing sections', () => {
   });
 
   it('knows where each section sits', () => {
-    expect(zoneOf(layout, 'hands')).toBe('left');
+    expect(zoneOf(layout, 'hands')).toBe('right');
     expect(zoneOf(layout, 'dice')).toBe('bottom');
     expect(zoneOf(layout, 'players')).toBe('off');
   });
 
   it('moves a section between gutters, leaving the old one', () => {
-    const next = placeSection(layout, 'dice', 'right');
+    const next = placeSection(layout, 'dice', 'left');
 
-    expect(zoneOf(next, 'dice')).toBe('right');
+    expect(zoneOf(next, 'dice')).toBe('left');
     expect(next.bottom.sections.some(s => s.id === 'dice')).toBe(false);
-    expect(next.right.sections.map(s => s.id)).toEqual(['dice']);
+    expect(next.left.sections.map(s => s.id)).toEqual(['dice']);
   });
 
   it('switches a section off and back on again', () => {
     const off = placeSection(layout, 'hands', 'off');
     expect(zoneOf(off, 'hands')).toBe('off');
-    expect(off.left.sections.some(s => s.id === 'hands')).toBe(false);
+    expect(off.right.sections.some(s => s.id === 'hands')).toBe(false);
 
-    const on = placeSection(off, 'hands', 'left');
-    expect(zoneOf(on, 'hands')).toBe('left');
+    const on = placeSection(off, 'hands', 'right');
+    expect(zoneOf(on, 'hands')).toBe('right');
     expect(on.off?.some(s => s.id === 'hands')).toBe(false);
   });
 
   it('leaves the layout alone when a section is already there', () => {
-    const next = placeSection(layout, 'hands', 'left');
-    expect(next.left.sections.map(s => s.id)).toEqual(
-      layout.left.sections.map(s => s.id)
+    const next = placeSection(layout, 'hands', 'right');
+    expect(next.right.sections.map(s => s.id)).toEqual(
+      layout.right.sections.map(s => s.id)
     );
   });
 
@@ -76,7 +76,7 @@ describe('placing sections', () => {
       ].filter(list => list.some(placement => placement.id === id)).length;
 
     let next = layout;
-    for (const zone of ['top', 'bottom', 'right', 'off', 'left'] as const) {
+    for (const zone of ['top', 'bottom', 'left', 'off', 'right'] as const) {
       next = placeSection(next, 'hands', zone);
       expect(appearances(next, 'hands')).toBe(1);
       expect(zoneOf(next, 'hands')).toBe(zone);
@@ -96,7 +96,7 @@ describe('reordering within a zone', () => {
     const layout = cloneLayout(DEFAULT_LAYOUT);
     const next = reorderSection(layout, 'unknown-steals', -1);
 
-    expect(next.left.sections.map(s => s.id)).toEqual([
+    expect(next.right.sections.map(s => s.id)).toEqual([
       'unknown-steals',
       'hands',
       'card-flow',
@@ -106,13 +106,13 @@ describe('reordering within a zone', () => {
 
   it('stops at the ends rather than wrapping', () => {
     const layout = cloneLayout(DEFAULT_LAYOUT);
-    const order = layout.left.sections.map(s => s.id);
+    const order = layout.right.sections.map(s => s.id);
 
     expect(
-      reorderSection(layout, 'hands', -1).left.sections.map(s => s.id)
+      reorderSection(layout, 'hands', -1).right.sections.map(s => s.id)
     ).toEqual(order);
     expect(
-      reorderSection(layout, 'blocked-robber', 1).left.sections.map(s => s.id)
+      reorderSection(layout, 'blocked-robber', 1).right.sections.map(s => s.id)
     ).toEqual(order);
   });
 
@@ -138,10 +138,10 @@ describe('listing sections for the settings menu', () => {
       'players',
     ]);
     expect(rows.map(r => r.zone)).toEqual([
-      'left',
-      'left',
-      'left',
-      'left',
+      'right',
+      'right',
+      'right',
+      'right',
       'bottom',
       'bottom',
       'off',
@@ -160,7 +160,7 @@ describe('a layout stored before a section existed', () => {
   /** What a stored layout looked like before card flow was added. */
   function oldLayout(): V2Layout {
     const layout = cloneLayout(DEFAULT_LAYOUT);
-    layout.left.sections = [{ id: 'hands' }, { id: 'unknown-steals' }];
+    layout.right.sections = [{ id: 'hands' }, { id: 'unknown-steals' }];
     layout.off = [];
     return layout;
   }
@@ -168,8 +168,8 @@ describe('a layout stored before a section existed', () => {
   it('adopts the new section at the place it was designed for', () => {
     const merged = withKnownSections(oldLayout(), ALL);
 
-    // card-flow is in the default left rail, so it appears there...
-    expect(zoneOf(merged, 'card-flow')).toBe('left');
+    // card-flow is in the default rail, so it appears there...
+    expect(zoneOf(merged, 'card-flow')).toBe('right');
     // ...and one that defaults to off stays off rather than barging in.
     expect(zoneOf(merged, 'players')).toBe('off');
   });
@@ -242,71 +242,59 @@ describe('a gutter being switched on', () => {
 
   it('takes no room while it is empty, but keeps a size ready', () => {
     const layout = cloneLayout(DEFAULT_LAYOUT);
-    expect(gutterThickness(layout.right)).toBe(0);
+    expect(gutterThickness(layout.left)).toBe(0);
     expect(gutterThickness(layout.top)).toBe(0);
     // Emptiness is what hides them — not a flag that means something else.
-    expect(layout.right.size).toBeGreaterThan(0);
-    expect(layout.right.collapsed).toBe(false);
+    expect(layout.left.size).toBeGreaterThan(0);
+    expect(layout.left.collapsed).toBe(false);
   });
 });
 
 describe('repairing a layout', () => {
   it('gives a gutter with no usable size one', () => {
     const broken = cloneLayout(DEFAULT_LAYOUT);
-    broken.right = { size: 0, collapsed: false, sections: [{ id: 'players' }] };
+    broken.left = { size: 0, collapsed: false, sections: [{ id: 'players' }] };
 
     const fixed = repairLayout(broken);
-    expect(fixed.right.size).toBeGreaterThan(0);
-    expect(gutterThickness(fixed.right)).toBeGreaterThan(0);
+    expect(fixed.left.size).toBeGreaterThan(0);
+    expect(gutterThickness(fixed.left)).toBeGreaterThan(0);
   });
 
-  it('uncollapses a gutter with no header, since nothing could reopen it', () => {
+  it('uncollapses a bar, since only a rail can carry the header', () => {
     const broken = cloneLayout(DEFAULT_LAYOUT);
-    broken.right = {
-      size: 365,
-      collapsed: true,
-      sections: [{ id: 'players' }],
-    };
+    broken.bottom.collapsed = true;
 
-    // The header is on the left here, so the right rail has no chevron.
-    expect(headerGutterOf(broken)).toBe('left');
-    expect(repairLayout(broken).right.collapsed).toBe(false);
+    // The header lives on a rail, so a collapsed bar has no chevron to reopen
+    // it and would strand everything inside.
+    expect(headerGutterOf(broken)).toBe('right');
+    expect(repairLayout(broken).bottom.collapsed).toBe(false);
   });
 
   it('leaves the header rail collapsed, because its chevron can undo it', () => {
     const collapsed = cloneLayout(DEFAULT_LAYOUT);
-    collapsed.left.collapsed = true;
+    collapsed.right.collapsed = true;
 
-    expect(headerGutterOf(collapsed)).toBe('left');
-    expect(repairLayout(collapsed).left.collapsed).toBe(true);
+    expect(headerGutterOf(collapsed)).toBe('right');
+    expect(repairLayout(collapsed).right.collapsed).toBe(true);
   });
 
-  it('moves the header to the right rail when the left is empty', () => {
-    const layout = placeSection(cloneLayout(DEFAULT_LAYOUT), 'hands', 'right');
-    const emptyLeft = cloneLayout(layout);
-    for (const id of [
-      'unknown-steals',
-      'card-flow',
-      'blocked-robber',
-    ] as const) {
-      emptyLeft.left.sections = emptyLeft.left.sections.filter(
-        s => s.id !== id
-      );
-      emptyLeft.off = [...(emptyLeft.off ?? []), { id }];
-    }
+  it('uncollapses the rail that did not get the header', () => {
+    // Both rails hold something, so the left one takes the header and the
+    // right is left without a chevron to reopen it.
+    const layout = placeSection(cloneLayout(DEFAULT_LAYOUT), 'players', 'left');
+    layout.right.collapsed = true;
 
-    expect(headerGutterOf(emptyLeft)).toBe('right');
-    // ...so the right rail may now hold a collapse.
-    emptyLeft.right.collapsed = true;
-    expect(repairLayout(emptyLeft).right.collapsed).toBe(true);
+    expect(headerGutterOf(layout)).toBe('left');
+    expect(repairLayout(layout).right.collapsed).toBe(false);
   });
 
   it('repairs a layout as it is read back from storage', () => {
     const stored = cloneLayout(DEFAULT_LAYOUT) as any;
-    stored.right = { size: 0, collapsed: true, sections: [{ id: 'players' }] };
+    // Both faults at once, on a bar that can never hold the header.
+    stored.bottom = { size: 0, collapsed: true, sections: [{ id: 'dice' }] };
 
     const parsed = parseLayout(stored)!;
-    expect(parsed.right.size).toBeGreaterThan(0);
-    expect(parsed.right.collapsed).toBe(false);
+    expect(parsed.bottom.size).toBeGreaterThan(0);
+    expect(parsed.bottom.collapsed).toBe(false);
   });
 });

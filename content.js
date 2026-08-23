@@ -5667,8 +5667,11 @@
 
     // shell/layoutStore.ts
     const GUTTER_NAMES = ['left', 'right', 'top', 'bottom'];
-    /** Zone order, which is also the order the settings menu lists sections in. */
-    const ZONES = ['left', 'top', 'bottom', 'right', 'off'];
+    /**
+     * Zone order, which is also the order the settings menu lists sections in.
+     * The rail comes first because that is where most sections live by default.
+     */
+    const ZONES = ['right', 'left', 'top', 'bottom', 'off'];
     /** Width the rail collapses to — enough for the reopen chevron. */
     const COLLAPSED_SIZE = 28;
     /** Fallback thickness for a gutter stored without a usable one. */
@@ -5683,7 +5686,9 @@
     const LAYOUT_STORAGE_KEY = 'catanUiLayout';
     const DEFAULT_LAYOUT = {
         version: 1,
-        left: {
+        // The rail sits on the right, beside colonist's own chat and player panels,
+        // so everything worth reading during a turn is on one side of the screen.
+        right: {
             size: 365,
             collapsed: false,
             sections: [
@@ -5705,7 +5710,7 @@
         // Emptiness is what makes a gutter take no room (see gutterThickness) —
         // marking one collapsed instead would make it a 28px sliver the moment a
         // section landed in it, with no chevron to open it.
-        right: { size: 365, collapsed: false, sections: [] },
+        left: { size: 365, collapsed: false, sections: [] },
         top: { size: 210, collapsed: false, sections: [] },
         off: [{ id: 'card-flow-ledger' }, { id: 'players' }],
     };
@@ -5724,8 +5729,8 @@
             note: 'Dice and card flow, bottom bar only',
             build: () => ({
                 version: 1,
-                left: Object.assign(Object.assign({}, DEFAULT_LAYOUT.left), { sections: [] }),
                 right: Object.assign(Object.assign({}, DEFAULT_LAYOUT.right), { sections: [] }),
+                left: Object.assign(Object.assign({}, DEFAULT_LAYOUT.left), { sections: [] }),
                 top: Object.assign(Object.assign({}, DEFAULT_LAYOUT.top), { sections: [] }),
                 bottom: Object.assign(Object.assign({}, DEFAULT_LAYOUT.bottom), { sections: [{ id: 'dice' }, { id: 'card-flow' }] }),
                 off: [

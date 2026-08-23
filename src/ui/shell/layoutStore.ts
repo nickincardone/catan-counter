@@ -44,8 +44,11 @@ export const GUTTER_NAMES: GutterName[] = ['left', 'right', 'top', 'bottom'];
 /** Where a section can be put. 'off' is a real choice, not the absence of one. */
 export type Zone = GutterName | 'off';
 
-/** Zone order, which is also the order the settings menu lists sections in. */
-export const ZONES: Zone[] = ['left', 'top', 'bottom', 'right', 'off'];
+/**
+ * Zone order, which is also the order the settings menu lists sections in.
+ * The rail comes first because that is where most sections live by default.
+ */
+export const ZONES: Zone[] = ['right', 'left', 'top', 'bottom', 'off'];
 
 /** Width the rail collapses to — enough for the reopen chevron. */
 export const COLLAPSED_SIZE = 28;
@@ -64,7 +67,9 @@ export const LAYOUT_STORAGE_KEY = 'catanUiLayout';
 
 export const DEFAULT_LAYOUT: V2Layout = {
   version: 1,
-  left: {
+  // The rail sits on the right, beside colonist's own chat and player panels,
+  // so everything worth reading during a turn is on one side of the screen.
+  right: {
     size: 365,
     collapsed: false,
     sections: [
@@ -86,7 +91,7 @@ export const DEFAULT_LAYOUT: V2Layout = {
   // Emptiness is what makes a gutter take no room (see gutterThickness) —
   // marking one collapsed instead would make it a 28px sliver the moment a
   // section landed in it, with no chevron to open it.
-  right: { size: 365, collapsed: false, sections: [] },
+  left: { size: 365, collapsed: false, sections: [] },
   top: { size: 210, collapsed: false, sections: [] },
   off: [{ id: 'card-flow-ledger' }, { id: 'players' }],
 };
@@ -112,8 +117,8 @@ export const PRESETS: LayoutPreset[] = [
     note: 'Dice and card flow, bottom bar only',
     build: () => ({
       version: 1,
-      left: { ...DEFAULT_LAYOUT.left, sections: [] },
       right: { ...DEFAULT_LAYOUT.right, sections: [] },
+      left: { ...DEFAULT_LAYOUT.left, sections: [] },
       top: { ...DEFAULT_LAYOUT.top, sections: [] },
       bottom: {
         ...DEFAULT_LAYOUT.bottom,

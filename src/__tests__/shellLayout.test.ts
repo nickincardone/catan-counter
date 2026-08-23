@@ -73,6 +73,10 @@ function layoutWith(left: SectionId[], bottom: SectionId[] = []): V2Layout {
   const layout = cloneLayout(DEFAULT_LAYOUT);
   layout.left.sections = left.map(id => ({ id }));
   layout.bottom.sections = bottom.map(id => ({ id }));
+  // The default fills the right rail, and these tests name their own placement
+  // exhaustively; leaving it would mount the same section in two gutters.
+  layout.right.sections = [];
+  layout.top.sections = [];
   return layout;
 }
 
