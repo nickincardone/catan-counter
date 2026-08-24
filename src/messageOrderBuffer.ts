@@ -13,11 +13,32 @@
 // held reference may be rewritten to show a different message by the time the
 // gap before it fills.
 
+/**
+ * A row that carries nothing: no text, no icons.
+ *
+ * Two very different things look like this. A turn separator, which colonist
+ * renders between turns and never fills because there is nothing to put in it;
+ * and a row the virtual scroller has minted but not yet filled in. They are
+ * told apart by circumstance rather than by looks — see drain().
+ */
+export function isEmptyChatRow(element: HTMLElement): boolean {
+  return !element.textContent?.trim() && element.querySelector('img') === null;
+}
+
 export class MessageOrderBuffer {
   private pending = new Map<number, HTMLElement>();
   private lastProcessed = -1;
 
-  constructor(private processRow: (element: HTMLElement) => void) {}
+  /**
+   * @param processRow  hand a row to the parser.
+   * @param resolveRow  look an index up in the live chat, so drain can tell a
+   *   gap that will never close from one that simply has not arrived. Optional:
+   *   without it the buffer behaves as it always did and waits for every gap.
+   */
+  constructor(
+    private processRow: (element: HTMLElement) => void,
+    private resolveRow?: (index: number) => HTMLElement | null
+  ) {}
 
   /**
    * Buffer one rendered chat row. Safe to call repeatedly with the same row
@@ -34,15 +55,44 @@ export class MessageOrderBuffer {
 
   /**
    * Process the contiguous run of buffered rows starting right after the last
-   * processed index. Stops at the first gap. Returns how many were processed.
+   * processed index. Returns how many were processed.
+   *
+   * A gap stops it, unless the live chat can account for the missing index:
+   *
+   *  - the row is on screen and carries nothing, and something later is already
+   *    waiting. The scroller has rendered past it, so it is a turn separator
+   *    and there is nothing to read. Step over it.
+   *  - the row is on screen with content the observer never handed over, which
+   *    happens when the scroller replaces a subtree wholesale. Read it now.
+   *  - the row is not on screen at all. Its message may still be coming, so
+   *    wait, and let the blocked flush give up on it eventually.
+   *
+   * The "something later is waiting" condition is what keeps this safe. An
+   * unfilled row is only stepped over when a message after it has already
+   * arrived, and it is re-checked against the DOM at that moment rather than
+   * assumed from when it was first seen.
    */
   drain(): number {
     let count = 0;
-    while (this.pending.has(this.lastProcessed + 1)) {
-      const element = this.pending.get(this.lastProcessed + 1)!;
-      this.pending.delete(this.lastProcessed + 1);
-      this.lastProcessed++;
-      this.processRow(element);
+    for (;;) {
+      const next = this.lastProcessed + 1;
+
+      const buffered = this.pending.get(next);
+      if (buffered) {
+        this.pending.delete(next);
+        this.lastProcessed = next;
+        this.processRow(buffered);
+        count++;
+        continue;
+      }
+
+      if (!this.resolveRow || this.pending.size === 0) break;
+      const element = this.resolveRow(next);
+      if (!element) break;
+
+      this.lastProcessed = next;
+      if (isEmptyChatRow(element)) continue;
+      this.processRow(element.cloneNode(true) as HTMLElement);
       count++;
     }
     return count;

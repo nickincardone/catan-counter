@@ -16,7 +16,7 @@ import {
   logTransportCapture,
   exportAllGameLogs,
 } from './messageLogger.js';
-import { MessageOrderBuffer } from './messageOrderBuffer.js';
+import { MessageOrderBuffer, isEmptyChatRow } from './messageOrderBuffer.js';
 import { startTransportCaptureBridge } from './transportCapture.js';
 import { startReplayCaptureBridge } from './replayCapture.js';
 import { storeReplayCapture } from './replayStore.js';
@@ -38,10 +38,31 @@ startReplayCaptureBridge(capture => {
   });
 });
 
+/** The chat container, once found, so a gap can be checked against the DOM. */
+let chatRoot: HTMLElement | null = null;
+
+/**
+ * Look a chat index up on screen, for drain() to decide what a gap means.
+ *
+ * Logging happens here because a row adopted this way never went through
+ * captureRow: the observer missed it, and the log would otherwise have a hole
+ * where the parser does not. The logger dedups by index, so saying it twice is
+ * harmless.
+ */
+function resolveChatRow(index: number): HTMLElement | null {
+  const row = chatRoot?.querySelector<HTMLElement>(`[data-index="${index}"]`);
+  if (!row) return null;
+  if (!isEmptyChatRow(row)) logChatMessage(row);
+  return row;
+}
+
 // All chat rows flow through this buffer so the parser always sees them in
 // strict data-index order — the parser's dedup is a monotonic high-water mark,
 // so an out-of-order row would permanently lock out everything before it.
-const messageBuffer = new MessageOrderBuffer(updateGameFromChat);
+const messageBuffer = new MessageOrderBuffer(
+  updateGameFromChat,
+  resolveChatRow
+);
 let blockedFlushTimer: number | null = null;
 
 /**
@@ -52,7 +73,7 @@ let blockedFlushTimer: number | null = null;
  * icons, so there is nothing to read yet.
  */
 function isPlaceholderRow(element: HTMLElement): boolean {
-  return !element.textContent?.trim() && element.querySelector('img') === null;
+  return isEmptyChatRow(element);
 }
 
 /**
@@ -193,6 +214,8 @@ function tryFindChat(): void {
 
   if (chatContainer) {
     console.log('✅ Chat container found!');
+    // Gap resolution reads the live chat, so it needs to know where it is.
+    chatRoot = chatContainer;
 
     // Stop polling now that we've located the chat.
     clearInterval(intervalId);
