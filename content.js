@@ -5769,7 +5769,11 @@
         // section landed in it, with no chevron to open it.
         left: { size: 365, collapsed: false, sections: [] },
         top: { size: 210, collapsed: false, sections: [] },
-        off: [{ id: 'card-flow-ledger' }, { id: 'players' }],
+        off: [
+            { id: 'card-flow-extended' },
+            { id: 'card-flow-ledger' },
+            { id: 'players' },
+        ],
     };
     /**
      * Presets set placement only. Gutter sizes are deliberately left alone, so
@@ -5795,6 +5799,7 @@
                     { id: 'unknown-steals' },
                     { id: 'blocked-robber' },
                     { id: 'dev-deck' },
+                    { id: 'card-flow-extended' },
                     { id: 'card-flow-ledger' },
                     { id: 'players' },
                 ],
@@ -7546,7 +7551,7 @@
     const STYLES$6 = `
   .flow-grid {
     display: grid;
-    grid-template-columns: minmax(78px, 1.2fr) repeat(6, minmax(26px, 1fr));
+    /* Columns are set when the table is built; see createCardFlow. */
     gap: 3px;
     align-items: center;
     min-width: 0;
@@ -7580,91 +7585,147 @@
   /* A column that never happened should not read as a number worth weighing. */
   .flow-cell--none { color: var(--cc-zero); }
 `;
-    const NOTE$1 = 'GOT is everything picked up: production, trades and steals. ROBD is what ' +
-        'the robber or a monopoly took. SPENT covers building, buying and trading away.';
-    /** Column definitions, in display order. */
-    const COLUMNS = [
-        { label: 'GOT', tone: 'gain', dimZero: false, value: r => r.got },
-        { label: 'DEV', tone: 'gain', dimZero: true, value: r => r.devGain },
-        { label: 'ROBD', tone: 'loss', dimZero: true, value: r => r.robbed },
-        { label: '7s', tone: 'loss', dimZero: true, value: r => r.sevens },
-        {
-            label: 'SPENT',
-            tone: 'spend',
-            dimZero: false,
-            value: r => r.spentAndTraded,
-        },
-        { label: 'HAND', tone: 'hand', dimZero: false, value: r => r.hand },
-    ];
-    const cardFlowSection = {
+    const GOT = {
+        label: 'GOT',
+        tone: 'gain',
+        dimZero: false,
+        value: r => r.got,
+    };
+    const DEV = {
+        label: 'DEV',
+        tone: 'gain',
+        dimZero: true,
+        value: r => r.devGain,
+    };
+    const ROBD = {
+        label: 'ROBD',
+        tone: 'loss',
+        dimZero: true,
+        value: r => r.robbed,
+    };
+    const SEVENS = {
+        label: '7s',
+        tone: 'loss',
+        dimZero: true,
+        value: r => r.sevens,
+    };
+    const SPENT = {
+        label: 'SPENT',
+        tone: 'spend',
+        dimZero: false,
+        value: r => r.spentAndTraded,
+    };
+    const HAND = {
+        label: 'HAND',
+        tone: 'hand',
+        dimZero: false,
+        value: r => r.hand,
+    };
+    /** What happened to a player, which is what gets read mid-turn. */
+    const COMPACT_COLUMNS = [GOT, ROBD, SEVENS];
+    /** Everything, so the row adds up. */
+    const FULL_COLUMNS = [GOT, DEV, ROBD, SEVENS, SPENT, HAND];
+    const COMPACT_NOTE = 'GOT is everything picked up: production, trades and steals. ROBD is what ' +
+        'the robber or a monopoly took. 7s is what a seven made them discard.';
+    const FULL_NOTE = 'GOT is everything picked up: production, trades and steals. ROBD is what ' +
+        'the robber or a monopoly took. SPENT covers building, buying and trading ' +
+        'away. GOT plus DEV, less ROBD, 7s and SPENT, is HAND.';
+    /**
+     * Both tables are the same code with a different column list; nothing about
+     * the rendering depends on which columns it was handed.
+     */
+    function createCardFlow(options) {
+        const COLUMNS = options.columns;
+        return {
+            id: options.id,
+            title: options.title,
+            note: options.note,
+            supports: ['vertical', 'horizontal'],
+            min: { width: options.minWidth, height: 120 },
+            styles: STYLES$6,
+            mount(host, view) {
+                const { head } = sectionHead(options.heading, 'whole game');
+                const grid = el('div', 'flow-grid');
+                const empty = el('div', 'section-empty', 'Nothing has moved yet.');
+                const note = el('div', 'section-note', options.bodyNote);
+                // The grid is sized to whatever columns this table was built with.
+                grid.style.gridTemplateColumns = `minmax(78px, 1.2fr) repeat(${COLUMNS.length}, minmax(26px, 1fr))`;
+                grid.appendChild(el('div')); // spacer above the player-name column
+                for (const column of COLUMNS) {
+                    grid.appendChild(el('div', 'flow-head', column.label));
+                }
+                host.append(head, grid, empty, note);
+                let rows = new Map();
+                let seating = '';
+                function render(next) {
+                    var _a;
+                    const names = next.cardFlow.map(row => row.name).join(' ');
+                    if (names !== seating) {
+                        seating = names;
+                        // Rebuild the body but keep the header cells that lead the grid.
+                        while (grid.children.length > COLUMNS.length + 1) {
+                            (_a = grid.lastElementChild) === null || _a === void 0 ? void 0 : _a.remove();
+                        }
+                        rows = new Map();
+                        for (const row of next.cardFlow) {
+                            const name = el('div', 'flow-name');
+                            grid.appendChild(name);
+                            const cells = COLUMNS.map(column => {
+                                const cell = el('div', column.tone === 'hand'
+                                    ? 'flow-cell flow-cell--hand'
+                                    : `flow-cell flow-cell--${column.tone}`);
+                                grid.appendChild(cell);
+                                return cell;
+                            });
+                            rows.set(row.name, { name, cells });
+                        }
+                    }
+                    for (const row of next.cardFlow) {
+                        const nodes = rows.get(row.name);
+                        if (!nodes)
+                            continue;
+                        nodes.name.textContent = row.name;
+                        nodes.name.style.color = row.color;
+                        COLUMNS.forEach((column, index) => {
+                            const value = column.value(row);
+                            const cell = nodes.cells[index];
+                            cell.textContent = String(value);
+                            cell.classList.toggle('flow-cell--none', column.dimZero && value === 0);
+                        });
+                    }
+                    const hasPlayers = next.cardFlow.length > 0;
+                    empty.style.display = hasPlayers ? 'none' : '';
+                    note.style.display = hasPlayers ? '' : 'none';
+                    grid.style.display = hasPlayers ? 'grid' : 'none';
+                }
+                render(view);
+                return {
+                    update: render,
+                    destroy: () => {
+                        host.textContent = '';
+                    },
+                };
+            },
+        };
+    }
+    const cardFlowSection = createCardFlow({
         id: 'card-flow',
         title: 'Card flow',
-        note: 'Gained, robbed, discarded and spent per player',
-        supports: ['vertical', 'horizontal'],
-        min: { width: 260, height: 120 },
-        styles: STYLES$6,
-        mount(host, view) {
-            const { head } = sectionHead('Card flow', 'whole game');
-            const grid = el('div', 'flow-grid');
-            const empty = el('div', 'section-empty', 'Nothing has moved yet.');
-            const note = el('div', 'section-note', NOTE$1);
-            grid.appendChild(el('div')); // spacer above the player-name column
-            for (const column of COLUMNS) {
-                grid.appendChild(el('div', 'flow-head', column.label));
-            }
-            host.append(head, grid, empty, note);
-            let rows = new Map();
-            let seating = '';
-            function render(next) {
-                var _a;
-                const names = next.cardFlow.map(row => row.name).join(' ');
-                if (names !== seating) {
-                    seating = names;
-                    // Rebuild the body but keep the header cells that lead the grid.
-                    while (grid.children.length > COLUMNS.length + 1) {
-                        (_a = grid.lastElementChild) === null || _a === void 0 ? void 0 : _a.remove();
-                    }
-                    rows = new Map();
-                    for (const row of next.cardFlow) {
-                        const name = el('div', 'flow-name');
-                        grid.appendChild(name);
-                        const cells = COLUMNS.map(column => {
-                            const cell = el('div', column.tone === 'hand'
-                                ? 'flow-cell flow-cell--hand'
-                                : `flow-cell flow-cell--${column.tone}`);
-                            grid.appendChild(cell);
-                            return cell;
-                        });
-                        rows.set(row.name, { name, cells });
-                    }
-                }
-                for (const row of next.cardFlow) {
-                    const nodes = rows.get(row.name);
-                    if (!nodes)
-                        continue;
-                    nodes.name.textContent = row.name;
-                    nodes.name.style.color = row.color;
-                    COLUMNS.forEach((column, index) => {
-                        const value = column.value(row);
-                        const cell = nodes.cells[index];
-                        cell.textContent = String(value);
-                        cell.classList.toggle('flow-cell--none', column.dimZero && value === 0);
-                    });
-                }
-                const hasPlayers = next.cardFlow.length > 0;
-                empty.style.display = hasPlayers ? 'none' : '';
-                note.style.display = hasPlayers ? '' : 'none';
-                grid.style.display = hasPlayers ? 'grid' : 'none';
-            }
-            render(view);
-            return {
-                update: render,
-                destroy: () => {
-                    host.textContent = '';
-                },
-            };
-        },
-    };
+        note: 'Picked up, robbed and discarded per player',
+        heading: 'Card flow',
+        columns: COMPACT_COLUMNS,
+        bodyNote: COMPACT_NOTE,
+        minWidth: 200,
+    });
+    const cardFlowExtendedSection = createCardFlow({
+        id: 'card-flow-extended',
+        title: 'Card flow (extended)',
+        note: 'Every column, so the row adds up to the hand',
+        heading: 'Card flow · extended',
+        columns: FULL_COLUMNS,
+        bodyNote: FULL_NOTE,
+        minWidth: 260,
+    });
 
     // sections/cardFlowLedger.ts
     const STYLES$5 = `
@@ -8177,7 +8238,7 @@
         min: { width: 220, height: 0 },
         styles: STYLES$2,
         mount(host, view, ctx) {
-            const { head, hintNode } = sectionHead('Hands', 'bank left');
+            const { head } = sectionHead('Hands');
             const body = el('div', 'hands-body');
             const bank = el('div', 'hands-bank');
             bank.appendChild(el('div')); // spacer above the player-name column
@@ -8220,7 +8281,6 @@
                 const hasPlayers = next.players.length > 0;
                 empty.style.display = hasPlayers ? 'none' : '';
                 note.style.display = hasPlayers ? '' : 'none';
-                hintNode.style.display = hasPlayers ? '' : 'none';
             }
             render(view);
             return {
@@ -8503,6 +8563,7 @@
     registerSection(handsSection);
     registerSection(unknownStealsSection);
     registerSection(cardFlowSection);
+    registerSection(cardFlowExtendedSection);
     registerSection(cardFlowLedgerSection);
     registerSection(blockedRobberSection);
     registerSection(diceSection);

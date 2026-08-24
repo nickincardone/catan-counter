@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from '@jest/globals';
 import { blockedRobberSection } from '../ui/sections/blockedRobber';
-import { cardFlowSection } from '../ui/sections/cardFlow';
+import {
+  cardFlowExtendedSection,
+  cardFlowSection,
+} from '../ui/sections/cardFlow';
 import { cardFlowLedgerSection } from '../ui/sections/cardFlowLedger';
 import { devDeckSection } from '../ui/sections/devDeck';
 import { diceSection } from '../ui/sections/dice';
@@ -538,47 +541,42 @@ describe('card flow section', () => {
       ],
     });
 
-  it('shows a row per player under the six columns', () => {
+  it('shows only what happened to each player, not what they chose', () => {
     mount(cardFlowSection, busy());
 
+    // Spending and the resulting hand belong to the extended table; this one
+    // answers what a player picked up and what was taken off them.
     expect(all('.flow-head').map(n => n.textContent)).toEqual([
       'GOT',
-      'DEV',
       'ROBD',
       '7s',
-      'SPENT',
-      'HAND',
     ]);
     expect(all('.flow-name').map(n => n.textContent)).toEqual(['Alice', 'Bob']);
     expect(text('.section-hint')).toBe('whole game');
   });
 
-  it('renders a row that reads as arithmetic that checks out', () => {
+  it('reads the right figures into its three columns', () => {
     mount(cardFlowSection, busy());
     const values = all('.flow-cell')
-      .slice(0, 6)
+      .slice(0, 3)
       .map(n => Number(n.textContent));
-
-    expect(values).toEqual([34, 5, 4, 6, 22, 7]);
-    const [got, dev, robbed, sevens, spent, hand] = values;
-    expect(got + dev - robbed - sevens - spent).toBe(hand);
+    expect(values).toEqual([34, 4, 6]);
   });
 
   it('dims a column that never happened', () => {
     mount(cardFlowSection, busy());
-    // Bob's DEV and 7s are zero; his GOT is not.
-    const bobCells = all('.flow-cell').slice(6, 12);
+    // Bob's 7s is zero; his GOT is not.
+    const bobCells = all('.flow-cell').slice(3, 6);
     expect(bobCells[0].classList.contains('flow-cell--none')).toBe(false);
-    expect(bobCells[1].classList.contains('flow-cell--none')).toBe(true);
-    expect(bobCells[3].classList.contains('flow-cell--none')).toBe(true);
+    expect(bobCells[2].classList.contains('flow-cell--none')).toBe(true);
   });
 
-  it('explains the three columns whose meaning is not obvious', () => {
+  it('explains its columns, and does not mention ones it does not show', () => {
     mount(cardFlowSection, busy());
     const note = text('.section-note');
     expect(note).toContain('GOT');
     expect(note).toContain('ROBD');
-    expect(note).toContain('SPENT');
+    expect(note).not.toContain('SPENT');
   });
 
   it('says so before anything has moved', () => {
@@ -593,6 +591,58 @@ describe('card flow section', () => {
     const first = host.querySelector('.flow-name');
     section.update(busy());
     expect(host.querySelector('.flow-name')).toBe(first);
+  });
+});
+
+describe('card flow (extended) section', () => {
+  const busy = () =>
+    view({
+      cardFlow: [
+        flow('Alice', {
+          got: 34,
+          devGain: 5,
+          robbed: 4,
+          sevens: 6,
+          spentAndTraded: 22,
+          hand: 7,
+        }),
+        flow('Bob', {
+          got: 29,
+          devGain: 0,
+          robbed: 2,
+          sevens: 0,
+          spentAndTraded: 18,
+          hand: 9,
+        }),
+      ],
+    });
+
+  it('keeps every column, including the ones the compact table drops', () => {
+    mount(cardFlowExtendedSection, busy());
+    expect(all('.flow-head').map(n => n.textContent)).toEqual([
+      'GOT',
+      'DEV',
+      'ROBD',
+      '7s',
+      'SPENT',
+      'HAND',
+    ]);
+  });
+
+  it('renders a row that reads as arithmetic that checks out', () => {
+    mount(cardFlowExtendedSection, busy());
+    const values = all('.flow-cell')
+      .slice(0, 6)
+      .map(n => Number(n.textContent));
+
+    expect(values).toEqual([34, 5, 4, 6, 22, 7]);
+    const [got, dev, robbed, sevens, spent, hand] = values;
+    expect(got + dev - robbed - sevens - spent).toBe(hand);
+  });
+
+  it('is a separate section, so both can be placed at once', () => {
+    expect(cardFlowExtendedSection.id).not.toBe(cardFlowSection.id);
+    expect(cardFlowExtendedSection.id).toBe('card-flow-extended');
   });
 });
 

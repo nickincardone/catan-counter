@@ -21,6 +21,7 @@ export type SectionId =
   | 'hands'
   | 'unknown-steals'
   | 'card-flow'
+  | 'card-flow-extended'
   | 'card-flow-ledger'
   | 'blocked-robber'
   | 'dice'

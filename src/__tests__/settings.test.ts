@@ -20,6 +20,7 @@ const ALL: SectionId[] = [
   'hands',
   'unknown-steals',
   'card-flow',
+  'card-flow-extended',
   'card-flow-ledger',
   'blocked-robber',
   'dice',
@@ -134,6 +135,7 @@ describe('listing sections for the settings menu', () => {
       'blocked-robber',
       'dice',
       'dev-deck',
+      'card-flow-extended',
       'card-flow-ledger',
       'players',
     ]);
@@ -144,6 +146,7 @@ describe('listing sections for the settings menu', () => {
       'right',
       'bottom',
       'bottom',
+      'off',
       'off',
       'off',
     ]);

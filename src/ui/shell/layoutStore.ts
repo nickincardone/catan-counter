@@ -93,7 +93,11 @@ export const DEFAULT_LAYOUT: V2Layout = {
   // section landed in it, with no chevron to open it.
   left: { size: 365, collapsed: false, sections: [] },
   top: { size: 210, collapsed: false, sections: [] },
-  off: [{ id: 'card-flow-ledger' }, { id: 'players' }],
+  off: [
+    { id: 'card-flow-extended' },
+    { id: 'card-flow-ledger' },
+    { id: 'players' },
+  ],
 };
 
 export interface LayoutPreset {
@@ -129,6 +133,7 @@ export const PRESETS: LayoutPreset[] = [
         { id: 'unknown-steals' },
         { id: 'blocked-robber' },
         { id: 'dev-deck' },
+        { id: 'card-flow-extended' },
         { id: 'card-flow-ledger' },
         { id: 'players' },
       ],

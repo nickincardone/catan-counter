@@ -142,7 +142,7 @@ export const handsSection: SectionDefinition = {
   styles: STYLES,
 
   mount(host: HTMLElement, view: GameView, ctx: SectionContext) {
-    const { head, hintNode } = sectionHead('Hands', 'bank left');
+    const { head } = sectionHead('Hands');
     const body = el('div', 'hands-body');
     const bank = el('div', 'hands-bank');
     bank.appendChild(el('div')); // spacer above the player-name column
@@ -194,7 +194,6 @@ export const handsSection: SectionDefinition = {
       const hasPlayers = next.players.length > 0;
       empty.style.display = hasPlayers ? 'none' : '';
       note.style.display = hasPlayers ? '' : 'none';
-      hintNode.style.display = hasPlayers ? '' : 'none';
     }
 
     render(view);
