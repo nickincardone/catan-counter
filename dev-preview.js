@@ -93,6 +93,27 @@
         'ore',
     ];
     /**
+     * A stable identity for a game state, for grouping identical ones.
+     *
+     * Built by hand rather than with JSON.stringify: the resource order is fixed
+     * here, so two states that agree cannot key differently because their objects
+     * were built in a different order, and player names are sorted for the same
+     * reason. It also avoids the punctuation and key names a JSON encoding would
+     * repeat for every player of every variant.
+     */
+    function gameStateKey(state) {
+        const names = Object.keys(state).sort();
+        let key = '';
+        for (const name of names) {
+            key += name + ':';
+            const resources = state[name].resources;
+            for (const resource of RESOURCE_TYPES)
+                key += resources[resource] + ',';
+            key += ';';
+        }
+        return key;
+    }
+    /**
      * Represents a single possible game state with its probability
      */
     class Variant {
@@ -219,19 +240,27 @@
                 }
                 variants.push(new Variant(probability, node.gameState));
             }
-            // Merge variants with identical game states
-            const mergedVariants = [];
+            // Merge variants with identical game states.
+            //
+            // Keyed rather than searched. This used to scan the merged list for each
+            // variant and JSON.stringify both sides of every comparison, which is
+            // quadratic in the number of variants and stringifies the same states over
+            // and over. Unresolved steals multiply variants fast — six open steals
+            // reached 2500 — and at that size the old merge took over ten seconds, once
+            // per player, which is what made the interface crawl mid-game.
+            const merged = new Map();
             for (const variant of variants) {
-                const existing = mergedVariants.find(v => JSON.stringify(v.gameState) === JSON.stringify(variant.gameState));
+                const key = gameStateKey(variant.gameState);
+                const existing = merged.get(key);
                 if (existing) {
                     existing.probability += variant.probability;
                 }
                 else {
-                    mergedVariants.push(variant);
+                    merged.set(key, variant);
                 }
             }
             // Sort by probability (highest first)
-            return mergedVariants.sort((a, b) => b.probability - a.probability);
+            return [...merged.values()].sort((a, b) => b.probability - a.probability);
         }
         /**
          * Collapse the tree to a single node when every leaf agrees on the current
@@ -1217,7 +1246,27 @@
          * Returns minimum guaranteed resources and probability of additional resources
          */
         getPlayerResourceProbabilities(playerName) {
+            return this.probabilitiesFrom(this.variantTree.getCurrentVariants(), playerName);
+        }
+        /**
+         * The same figures for several players at once, from a single pass.
+         *
+         * Building the view asks for every player in turn, and each ask used to
+         * rebuild and merge the whole variant list again. Collecting the variants
+         * once and reading each player out of them is the same work divided by the
+         * number of players, and the saving grows with the number of variants
+         * rather than staying flat.
+         */
+        getPlayerResourceProbabilitiesFor(playerNames) {
             const variants = this.variantTree.getCurrentVariants();
+            const out = new Map();
+            for (const playerName of playerNames) {
+                out.set(playerName, this.probabilitiesFrom(variants, playerName));
+            }
+            return out;
+        }
+        /** One player's figures, from a variant list the caller already holds. */
+        probabilitiesFrom(variants, playerName) {
             if (variants.length === 0) {
                 // No variants - return all zeros
                 const emptyResources = {
@@ -2954,8 +3003,7 @@
         const seconds = String(date.getSeconds()).padStart(2, '0');
         return `${hours}:${minutes}:${seconds} ${hours24 < 12 ? 'AM' : 'PM'}`;
     }
-    function buildPlayer(player, game, youPlayerName) {
-        const probabilities = game.probableGameState.getPlayerResourceProbabilities(player.name);
+    function buildPlayer(player, probabilities, game, youPlayerName) {
         const cells = RESOURCE_ORDER.map(resource => {
             var _a, _b;
             const known = (_a = probabilities.minimumResources[resource]) !== null && _a !== void 0 ? _a : 0;
@@ -3161,8 +3209,17 @@
         const { blocked, blockedTotal } = buildBlocked(game);
         const steals = buildSteals(game);
         const ordered = orderPlayers(game.players, game.youPlayerName);
+        // One pass over the variants for the whole table, rather than one per player.
+        const probabilities = game.probableGameState.getPlayerResourceProbabilitiesFor(ordered.map(player => player.name));
+        const zero = { tree: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 };
         return {
-            players: ordered.map(player => buildPlayer(player, game, game.youPlayerName)),
+            players: ordered.map(player => {
+                var _a;
+                return buildPlayer(player, (_a = probabilities.get(player.name)) !== null && _a !== void 0 ? _a : {
+                    minimumResources: Object.assign({}, zero),
+                    additionalResourceProbabilities: Object.assign({}, zero),
+                }, game, game.youPlayerName);
+            }),
             cardFlow: buildCardFlow(ordered),
             bank: buildBank(game.gameResources),
             steals,

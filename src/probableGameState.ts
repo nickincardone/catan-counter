@@ -1,6 +1,7 @@
 import {
   VariantTree,
   VariantNode,
+  Variant,
   GameState,
   PlayerState,
   RESOURCE_TYPES,
@@ -657,8 +658,50 @@ export class PropbableGameState {
     minimumResources: ResourceObjectType;
     additionalResourceProbabilities: ResourceObjectType;
   } {
-    const variants = this.variantTree.getCurrentVariants();
+    return this.probabilitiesFrom(
+      this.variantTree.getCurrentVariants(),
+      playerName
+    );
+  }
 
+  /**
+   * The same figures for several players at once, from a single pass.
+   *
+   * Building the view asks for every player in turn, and each ask used to
+   * rebuild and merge the whole variant list again. Collecting the variants
+   * once and reading each player out of them is the same work divided by the
+   * number of players, and the saving grows with the number of variants
+   * rather than staying flat.
+   */
+  getPlayerResourceProbabilitiesFor(playerNames: string[]): Map<
+    string,
+    {
+      minimumResources: ResourceObjectType;
+      additionalResourceProbabilities: ResourceObjectType;
+    }
+  > {
+    const variants = this.variantTree.getCurrentVariants();
+    const out = new Map<
+      string,
+      {
+        minimumResources: ResourceObjectType;
+        additionalResourceProbabilities: ResourceObjectType;
+      }
+    >();
+    for (const playerName of playerNames) {
+      out.set(playerName, this.probabilitiesFrom(variants, playerName));
+    }
+    return out;
+  }
+
+  /** One player's figures, from a variant list the caller already holds. */
+  private probabilitiesFrom(
+    variants: Variant[],
+    playerName: string
+  ): {
+    minimumResources: ResourceObjectType;
+    additionalResourceProbabilities: ResourceObjectType;
+  } {
     if (variants.length === 0) {
       // No variants - return all zeros
       const emptyResources: ResourceObjectType = {

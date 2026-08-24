@@ -19,6 +19,27 @@ export const RESOURCE_TYPES: (keyof ResourceObjectType)[] = [
 ];
 
 /**
+ * A stable identity for a game state, for grouping identical ones.
+ *
+ * Built by hand rather than with JSON.stringify: the resource order is fixed
+ * here, so two states that agree cannot key differently because their objects
+ * were built in a different order, and player names are sorted for the same
+ * reason. It also avoids the punctuation and key names a JSON encoding would
+ * repeat for every player of every variant.
+ */
+export function gameStateKey(state: GameState): string {
+  const names = Object.keys(state).sort();
+  let key = '';
+  for (const name of names) {
+    key += name + ':';
+    const resources = state[name].resources;
+    for (const resource of RESOURCE_TYPES) key += resources[resource] + ',';
+    key += ';';
+  }
+  return key;
+}
+
+/**
  * Represents a single possible game state with its probability
  */
 export class Variant {
@@ -175,22 +196,27 @@ export class VariantTree {
       variants.push(new Variant(probability, node.gameState));
     }
 
-    // Merge variants with identical game states
-    const mergedVariants: Variant[] = [];
+    // Merge variants with identical game states.
+    //
+    // Keyed rather than searched. This used to scan the merged list for each
+    // variant and JSON.stringify both sides of every comparison, which is
+    // quadratic in the number of variants and stringifies the same states over
+    // and over. Unresolved steals multiply variants fast — six open steals
+    // reached 2500 — and at that size the old merge took over ten seconds, once
+    // per player, which is what made the interface crawl mid-game.
+    const merged = new Map<string, Variant>();
     for (const variant of variants) {
-      const existing = mergedVariants.find(
-        v => JSON.stringify(v.gameState) === JSON.stringify(variant.gameState)
-      );
-
+      const key = gameStateKey(variant.gameState);
+      const existing = merged.get(key);
       if (existing) {
         existing.probability += variant.probability;
       } else {
-        mergedVariants.push(variant);
+        merged.set(key, variant);
       }
     }
 
     // Sort by probability (highest first)
-    return mergedVariants.sort((a, b) => b.probability - a.probability);
+    return [...merged.values()].sort((a, b) => b.probability - a.probability);
   }
 
   /**

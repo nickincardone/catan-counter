@@ -96,13 +96,13 @@ export function formatStealTime(timestamp: number): string {
 
 function buildPlayer(
   player: PlayerType,
+  probabilities: {
+    minimumResources: ResourceObjectType;
+    additionalResourceProbabilities: ResourceObjectType;
+  },
   game: GameType,
   youPlayerName: string | null
 ): PlayerView {
-  const probabilities = game.probableGameState.getPlayerResourceProbabilities(
-    player.name
-  );
-
   const cells: ResourceCellView[] = RESOURCE_ORDER.map(resource => {
     const known = probabilities.minimumResources[resource] ?? 0;
     const probability =
@@ -351,10 +351,24 @@ export function buildGameView(
   const { blocked, blockedTotal } = buildBlocked(game);
   const steals = buildSteals(game);
   const ordered = orderPlayers(game.players, game.youPlayerName);
+  // One pass over the variants for the whole table, rather than one per player.
+  const probabilities =
+    game.probableGameState.getPlayerResourceProbabilitiesFor(
+      ordered.map(player => player.name)
+    );
+  const zero = { tree: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 };
 
   return {
     players: ordered.map(player =>
-      buildPlayer(player, game, game.youPlayerName)
+      buildPlayer(
+        player,
+        probabilities.get(player.name) ?? {
+          minimumResources: { ...zero },
+          additionalResourceProbabilities: { ...zero },
+        },
+        game,
+        game.youPlayerName
+      )
     ),
     cardFlow: buildCardFlow(ordered),
     bank: buildBank(game.gameResources),
