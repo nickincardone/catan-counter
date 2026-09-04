@@ -37,7 +37,21 @@ test-results/
 # Local-only working files (agent skills, planning docs)
 .agents/
 .claude/
+.codex/
 data-collection.md
+/private/
+
+# Private services belong in a separate repository, not this public client.
+/backend/
+/server/
+
+# Local credentials; example files must contain placeholders only.
+.env
+.env.*
+!.env.example
+*.key
+credentials.json
+service-account*.json
 
 # Harvested replay data: contains usernames and chat.
 data/
