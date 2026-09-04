@@ -1,36 +1,6 @@
 (function () {
     'use strict';
 
-    /******************************************************************************
-    Copyright (c) Microsoft Corporation.
-
-    Permission to use, copy, modify, and/or distribute this software for any
-    purpose with or without fee is hereby granted.
-
-    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-    REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
-    AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-    INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
-    LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
-    OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-    PERFORMANCE OF THIS SOFTWARE.
-    ***************************************************************************** */
-
-    function __awaiter(thisArg, _arguments, P, generator) {
-        function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-        return new (P || (P = Promise))(function (resolve, reject) {
-            function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-            function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-            function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-            step((generator = generator.apply(thisArg, _arguments || [])).next());
-        });
-    }
-
-    typeof SuppressedError === "function" ? SuppressedError : function (error, suppressed, message) {
-        var e = new Error(message);
-        return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
-    };
-
     const RESOURCE_STRING = 'img[alt="grain"], img[alt="wool"], img[alt="lumber"], img[alt="brick"], img[alt="ore"], img[alt="Grain"], img[alt="Wool"], img[alt="Lumber"], img[alt="Brick"], img[alt="Ore"]';
     function findChatContainer() {
         // Colonist renders the chat log as a virtual scroller whose children are the
@@ -1888,6 +1858,36 @@
             }
         });
     }
+
+    /******************************************************************************
+    Copyright (c) Microsoft Corporation.
+
+    Permission to use, copy, modify, and/or distribute this software for any
+    purpose with or without fee is hereby granted.
+
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+    REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+    AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+    INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+    LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+    OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+    PERFORMANCE OF THIS SOFTWARE.
+    ***************************************************************************** */
+
+    function __awaiter(thisArg, _arguments, P, generator) {
+        function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+        return new (P || (P = Promise))(function (resolve, reject) {
+            function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+            function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+            function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+            step((generator = generator.apply(thisArg, _arguments || [])).next());
+        });
+    }
+
+    typeof SuppressedError === "function" ? SuppressedError : function (error, suppressed, message) {
+        var e = new Error(message);
+        return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
+    };
 
     function utf8Count(str) {
         const strLength = str.length;
@@ -4617,6 +4617,7 @@
     // True while content.ts is scrolling the chat to rebuild history after a page
     // load/refresh. The overlay shows a loader instead of (stale/partial) counts.
     let isLoadingHistory = false;
+    let historyError$1 = false;
     function createGameStateOverlay() {
         const overlay = document.createElement('div');
         overlay.id = 'catan-game-state-overlay';
@@ -5064,11 +5065,13 @@
     }
     function updateOverlayContent(overlay) {
         const contentDisplay = isMinimized ? 'none' : 'block';
-        const mainContent = isLoadingHistory
-            ? generateLoadingContent()
-            : game.hasRolledFirstDice
-                ? generateMainContent()
-                : generateWaitingContent();
+        const mainContent = historyError$1
+            ? '<div style="padding: 20px; color: #eee;">Game history incomplete. Some chat messages could not be recovered. Counts are unavailable.</div>'
+            : isLoadingHistory
+                ? generateLoadingContent()
+                : game.hasRolledFirstDice
+                    ? generateMainContent()
+                    : generateWaitingContent();
         overlay.innerHTML = `
     <div id="overlay-header" style="
       background: #2c3e50; 
@@ -5178,8 +5181,9 @@
      * spinner instead of the resource tables, since the counts are still being
      * rebuilt by scrolling the chat (see content.ts loadChatHistory).
      */
-    function setHistoryLoading$1(loading) {
+    function setHistoryLoading$1(loading, error = '') {
         isLoadingHistory = loading;
+        historyError$1 = !!error;
         if (gameStateOverlay) {
             updateOverlayContent(gameStateOverlay);
         }
@@ -5918,7 +5922,10 @@
             if (index >= 0)
                 list.splice(index, 1);
         }
-        listFor(next, zone).push({ id });
+        const placement = current
+            ? listFor(layout, current).find(item => item.id === id)
+            : undefined;
+        listFor(next, zone).push(placement ? Object.assign({}, placement) : { id });
         // A gutter being switched on must be usable, or the section vanishes into it.
         return repairLayout(next);
     }
@@ -5969,7 +5976,7 @@
         }
         return rows;
     }
-    /** Which gutter carries the header — the only one with a collapse chevron. */
+    /** Which gutter carries the branded header and settings gear. */
     function headerGutterOf(layout) {
         if (layout.left.sections.length > 0)
             return 'left';
@@ -5980,26 +5987,20 @@
     /**
      * Make a layout renderable, whatever state it arrived in.
      *
-     * Two ways a gutter can be unreachable, both of which stranded sections:
-     *
-     *  - a size of zero, so it renders as nothing however much is in it;
-     *  - collapsed, on a gutter with no header and therefore no chevron to undo
-     *    it. Only the header rail can be collapsed, because only it can be opened
-     *    again.
+     * Older layouts used zero size plus collapsed to mean unused. Repair those
+     * gutters, but preserve deliberate collapse choices on all four edges.
      *
      * Applied when a layout is read and after anything is placed, so a layout
      * already stored in the broken shape repairs itself rather than needing a reset.
      */
     function repairLayout(layout) {
         const next = cloneLayout(layout);
-        const header = headerGutterOf(next);
         for (const name of GUTTER_NAMES) {
             const gutter = next[name];
             if (!Number.isFinite(gutter.size) || gutter.size <= 0) {
                 gutter.size = DEFAULT_SIZE[name];
-            }
-            if (gutter.collapsed && name !== header)
                 gutter.collapsed = false;
+            }
         }
         return next;
     }
@@ -6125,6 +6126,23 @@
   .gutter--right  { right: 0; top: 0; bottom: 0; border-left: 1px solid var(--cc-hairline); }
   .gutter--top    { top: 0; border-bottom: 1px solid var(--cc-hairline); }
   .gutter--bottom { bottom: 0; border-top: 1px solid var(--cc-hairline); }
+  .gutter-controls {
+    flex: none;
+    height: 28px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 0 8px;
+  }
+  .gutter--collapsed .gutter-controls { padding: 0; justify-content: center; }
+  .gutter--horizontal { flex-direction: row; }
+  .gutter--horizontal .gutter-controls {
+    width: 28px;
+    height: auto;
+    padding: 0;
+    justify-content: center;
+  }
+  .gutter--horizontal.gutter--collapsed .gutter-controls { width: 100%; }
 
   /* Body scrolls in a column gutter; a strip gutter lays sections side by side. */
   .gutter-body {
@@ -6232,6 +6250,7 @@
     cursor: pointer;
   }
   .rail-collapse:hover { color: var(--cc-text); }
+  .rail-collapse:focus-visible { outline: 2px solid var(--cc-accent); outline-offset: -2px; }
 
   /* ---- resize handle ---- */
   .gutter-resize { position: absolute; z-index: 2; }
@@ -6891,6 +6910,12 @@
     margin-top: ${inset.top}px;
     width: ${width}px;
     height: ${height}px;
+  }
+  /* Colonist writes the canvas's viewport-space top onto #ui-game. Body
+     already supplies the top gutter offset, so subtract that origin once.
+     Keep native sizing and transforms intact for menus and pointer targets. */
+  html > body > #ui-game {
+    margin-top: ${-inset.top}px;
   }`;
     }
     function removePageBox() {
@@ -7004,7 +7029,9 @@
      * replay the counts are still being rebuilt, and before the first roll the
      * tracker deliberately discards and rebuilds its variant tree.
      */
-    function statusFor(view) {
+    function statusFor(view, error = '') {
+        if (error)
+            return { text: 'Game history incomplete', detail: error, spinner: false };
         if (view.isLoadingHistory) {
             return {
                 text: 'Rebuilding game history',
@@ -7050,6 +7077,7 @@
             this.gutters = new Map();
             this.mounted = new Map();
             this.historyLoading = false;
+            this.historyError = '';
             /** Status text currently rendered, so update() can notice a transition. */
             this.status = '';
             this.disposers = [];
@@ -7126,10 +7154,11 @@
             unloadFonts();
             void releasePageFrame();
         }
-        setHistoryLoading(loading) {
-            if (this.historyLoading === loading)
+        setHistoryLoading(loading, error = '') {
+            if (this.historyLoading === loading && this.historyError === error)
                 return;
             this.historyLoading = loading;
+            this.historyError = error;
             this.render();
         }
         update() {
@@ -7139,7 +7168,7 @@
             const view = this.currentView();
             // Crossing into or out of a status state swaps what the gutters hold, so it
             // needs a full render rather than an update of sections that aren't mounted.
-            const status = (_b = (_a = statusFor(view)) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : '';
+            const status = (_b = (_a = statusFor(view, this.historyError)) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : '';
             if (status !== this.status) {
                 this.render();
                 return;
@@ -7170,7 +7199,7 @@
                 .forEach(node => node.remove());
             const view = this.currentView();
             const headerGutter = this.headerGutter();
-            this.status = (_b = (_a = statusFor(view)) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : '';
+            this.status = (_b = (_a = statusFor(view, this.historyError)) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : '';
             for (const name of GUTTER_NAMES) {
                 const config = this.layout[name];
                 if (config.sections.length === 0)
@@ -7187,12 +7216,17 @@
                     .join(' ');
                 this.sizeGutter(gutter, name);
                 if (name === headerGutter)
-                    gutter.appendChild(this.buildHeader(collapsed));
+                    gutter.appendChild(this.buildHeader(name, collapsed));
+                else {
+                    const controls = el('div', 'gutter-controls');
+                    controls.appendChild(this.buildCollapseButton(name, collapsed));
+                    gutter.appendChild(controls);
+                }
                 if (!collapsed) {
                     const body = document.createElement('div');
                     body.className = 'gutter-body';
                     gutter.appendChild(body);
-                    const status = statusFor(view);
+                    const status = statusFor(view, this.historyError);
                     // While the counts are being rebuilt, or before tracking has begun,
                     // showing the tables would show numbers that are about to change.
                     if (status) {
@@ -7217,8 +7251,6 @@
          * carry it, so when neither rail is in use there is no header at all and the
          * gear floats over the page instead.
          *
-         * Shared with the layout repair, which relies on the same answer to decide
-         * which gutter may be left collapsed.
          */
         headerGutter() {
             return headerGutterOf(this.layout);
@@ -7245,7 +7277,22 @@
                 bottom: gutterThickness(this.layout.bottom),
             };
         }
-        buildHeader(collapsed) {
+        buildCollapseButton(name, collapsed) {
+            const arrows = {
+                left: ['‹', '›'],
+                right: ['›', '‹'],
+                top: ['⌃', '⌄'],
+                bottom: ['⌄', '⌃'],
+            };
+            const toggle = el('button', 'rail-collapse', arrows[name][collapsed ? 1 : 0]);
+            toggle.type = 'button';
+            toggle.title = `${collapsed ? 'Expand' : 'Collapse'} ${name} gutter`;
+            toggle.setAttribute('aria-label', toggle.title);
+            toggle.setAttribute('aria-expanded', String(!collapsed));
+            toggle.addEventListener('click', () => this.toggleCollapse(name));
+            return toggle;
+        }
+        buildHeader(name, collapsed) {
             const header = document.createElement('div');
             header.className = 'rail-header';
             const brand = document.createElement('div');
@@ -7259,13 +7306,7 @@
             title.textContent = 'Counter';
             titles.appendChild(title);
             brand.append(logo, titles);
-            const toggle = document.createElement('button');
-            toggle.className = 'rail-collapse';
-            toggle.type = 'button';
-            toggle.textContent = collapsed ? '›' : '‹';
-            toggle.title = collapsed ? 'Expand the counter' : 'Collapse the counter';
-            toggle.setAttribute('aria-label', collapsed ? 'Expand the counter' : 'Collapse the counter');
-            toggle.addEventListener('click', () => this.toggleCollapse());
+            const toggle = this.buildCollapseButton(name, collapsed);
             if (collapsed) {
                 header.append(toggle);
                 return header;
@@ -7283,13 +7324,14 @@
         buildFloatingGear() {
             return this.buildGearButton(18, 'floating-gear');
         }
-        toggleCollapse() {
-            const name = this.headerGutter();
-            if (!name)
-                return;
+        toggleCollapse(name) {
+            var _a, _b;
+            this.layoutChosen = true;
             this.layout[name].collapsed = !this.layout[name].collapsed;
             void writeLayout(this.layout);
             this.render();
+            (_b = (_a = this.gutters
+                .get(name)) === null || _a === void 0 ? void 0 : _a.querySelector('.rail-collapse')) === null || _b === void 0 ? void 0 : _b.focus();
         }
         /** Mount each section the layout puts in this gutter. */
         fillGutter(body, name, view) {
@@ -7325,6 +7367,12 @@
                         axis,
                         assetUrl,
                         emit: action => this.options.onAction(action),
+                        collapsed: placement.collapsed === true,
+                        onCollapse: collapsed => {
+                            this.layoutChosen = true;
+                            placement.collapsed = collapsed;
+                            void writeLayout(this.layout);
+                        },
                     });
                     this.mounted.set(placement.id, { instance, host });
                 }
@@ -8394,6 +8442,17 @@
 
     // sections/unknownSteals.ts
     const STYLES = `
+  .steals-toggle {
+    width: 100%;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+  }
+  .steals-toggle:hover { background: rgba(255,255,255,.04); }
+  .steals-toggle:focus-visible { outline: 2px solid var(--cc-accent); outline-offset: -2px; }
+  .steals-chevron { color: var(--cc-chevron); margin-left: auto; }
   .steal {
     background: var(--cc-accent-tint);
     border: 1px solid var(--cc-accent-border);
@@ -8516,10 +8575,24 @@
             const { head, labelNode, hintNode } = sectionHead('Unknown steals', 'click to resolve');
             const rows = el('div', 'section-rows');
             const empty = el('div', 'section-empty', 'Nothing unaccounted for right now.');
-            host.append(head, rows, empty);
+            const toggle = el('button', 'section-head steals-toggle');
+            toggle.type = 'button';
+            const chevron = el('span', 'steals-chevron');
+            chevron.setAttribute('aria-hidden', 'true');
+            toggle.append(...Array.from(head.childNodes), chevron);
+            host.append(toggle, rows, empty);
+            let collapsed = ctx.collapsed === true;
+            let latest = view;
             // Delegated from the host, so a full re-render can never orphan a handler.
             const onClick = (event) => {
+                var _a;
                 const target = event.target;
+                if (target === null || target === void 0 ? void 0 : target.closest('.steals-toggle')) {
+                    collapsed = !collapsed;
+                    (_a = ctx.onCollapse) === null || _a === void 0 ? void 0 : _a.call(ctx, collapsed);
+                    render(latest);
+                    return;
+                }
                 const chip = target === null || target === void 0 ? void 0 : target.closest('[data-resource]');
                 if ((chip === null || chip === void 0 ? void 0 : chip.dataset.stealId) && chip.dataset.resource) {
                     ctx.emit({
@@ -8537,9 +8610,16 @@
             host.addEventListener('click', onClick);
             let rendered = '';
             function render(next) {
+                latest = next;
                 labelNode.textContent = `Unknown steals · ${next.openStealCount}`;
-                hintNode.style.display = next.openStealCount > 0 ? '' : 'none';
-                empty.style.display = next.steals.length === 0 ? '' : 'none';
+                toggle.setAttribute('aria-expanded', String(!collapsed));
+                toggle.title = `${collapsed ? 'Expand' : 'Collapse'} pending steals`;
+                chevron.textContent = collapsed ? '›' : '⌄';
+                rows.style.display = collapsed ? 'none' : '';
+                hintNode.style.display =
+                    !collapsed && next.openStealCount > 0 ? '' : 'none';
+                empty.style.display =
+                    !collapsed && next.steals.length === 0 ? '' : 'none';
                 const current = signature(next);
                 if (current === rendered)
                     return;
@@ -8595,7 +8675,7 @@
         mount: () => shell.mount(),
         unmount: () => shell.unmount(),
         update: () => shell.update(),
-        setHistoryLoading: loading => shell.setHistoryLoading(loading),
+        setHistoryLoading: (loading, error) => shell.setHistoryLoading(loading, error),
         // The seat-picker is a modal rather than a gutter, and v1's works in either
         // mode. Giving it a v2 treatment is deliberately left for later.
         showYouPlayerDialog: showYouPlayerDialog$1,
@@ -8656,6 +8736,7 @@
     let mounted = false;
     /** Remembered so a mode switch mid-replay doesn't drop the loading state. */
     let historyLoading = false;
+    let historyError = '';
     function active() {
         return IMPLS[mode];
     }
@@ -8671,7 +8752,10 @@
         mode = next;
         if (mounted) {
             active().mount();
-            active().setHistoryLoading(historyLoading);
+            if (historyError)
+                active().setHistoryLoading(historyLoading, historyError);
+            else
+                active().setHistoryLoading(historyLoading);
             active().update();
         }
     }
@@ -8694,10 +8778,15 @@
         if (mounted)
             active().update();
     }
-    function setHistoryLoading(loading) {
+    function setHistoryLoading(loading, error = '') {
         historyLoading = loading;
-        if (mounted)
-            active().setHistoryLoading(loading);
+        historyError = error;
+        if (mounted) {
+            if (error)
+                active().setHistoryLoading(loading, error);
+            else
+                active().setHistoryLoading(loading);
+        }
     }
     function showYouPlayerDialog() {
         active().showYouPlayerDialog();
@@ -9416,11 +9505,17 @@
      * Two very different things look like this. A turn separator, which colonist
      * renders between turns and never fills because there is nothing to put in it;
      * and a row the virtual scroller has minted but not yet filled in. They are
-     * told apart by circumstance rather than by looks — see drain().
+     * distinguished by the HR element inside a real turn separator.
      */
     function isEmptyChatRow(element) {
         var _a;
         return !((_a = element.textContent) === null || _a === void 0 ? void 0 : _a.trim()) && element.querySelector('img') === null;
+    }
+    /** Separators contain HR; bare empty rows are unfinished placeholders. */
+    function isChatRowReady(element) {
+        var _a;
+        return (!!((_a = element.textContent) === null || _a === void 0 ? void 0 : _a.trim()) ||
+            element.querySelector('hr, img:not([alt="Player avatar"])') !== null);
     }
     class MessageOrderBuffer {
         /**
@@ -9444,6 +9539,8 @@
             if (dataIndexAttr === null)
                 return;
             const index = parseInt(dataIndexAttr, 10);
+            if (!isChatRowReady(element))
+                return;
             if (isNaN(index) || index <= this.lastProcessed || this.pending.has(index))
                 return;
             this.pending.set(index, element.cloneNode(true));
@@ -9454,18 +9551,13 @@
          *
          * A gap stops it, unless the live chat can account for the missing index:
          *
-         *  - the row is on screen and carries nothing, and something later is already
-         *    waiting. The scroller has rendered past it, so it is a turn separator
-         *    and there is nothing to read. Step over it.
+         *  - the row is on screen and contains an HR: a real turn separator.
          *  - the row is on screen with content the observer never handed over, which
          *    happens when the scroller replaces a subtree wholesale. Read it now.
          *  - the row is not on screen at all. Its message may still be coming, so
          *    wait, and let the blocked flush give up on it eventually.
          *
-         * The "something later is waiting" condition is what keeps this safe. An
-         * unfilled row is only stepped over when a message after it has already
-         * arrived, and it is re-checked against the DOM at that moment rather than
-         * assumed from when it was first seen.
+         * Unfilled rows still wait even if later messages have already arrived.
          */
         drain() {
             let count = 0;
@@ -9482,7 +9574,7 @@
                 if (!this.resolveRow || this.pending.size === 0)
                     break;
                 const element = this.resolveRow(next);
-                if (!element)
+                if (!element || !isChatRowReady(element))
                     break;
                 this.lastProcessed = next;
                 if (isEmptyChatRow(element))
@@ -9511,6 +9603,73 @@
         hasPending() {
             return this.pending.size > 0;
         }
+    }
+
+    /** Collect the entire virtualized log before advancing the parser's watermark. */
+    function loadChatHistory(container_1, processRow_1) {
+        return __awaiter(this, arguments, void 0, function* (container, processRow, options = {}) {
+            var _a, _b, _c, _d;
+            const wait = (_a = options.wait) !== null && _a !== void 0 ? _a : (ms => new Promise(resolve => setTimeout(resolve, ms)));
+            const scroll = container.parentElement;
+            const rows = new Map();
+            let lastIndex = -1;
+            const capture = () => {
+                var _a;
+                for (const row of container.querySelectorAll('[data-index]')) {
+                    const index = Number(row.dataset.index);
+                    if (!Number.isInteger(index) || index < 0)
+                        continue;
+                    lastIndex = Math.max(lastIndex, index);
+                    // HR is a real separator. An empty div is still waiting to render.
+                    if (isChatRowReady(row)) {
+                        rows.set(index, row.cloneNode(true));
+                        (_a = options.onCapture) === null || _a === void 0 ? void 0 : _a.call(options, row);
+                    }
+                }
+            };
+            const complete = () => lastIndex >= 0 && rows.size === lastIndex + 1;
+            const observer = new MutationObserver(capture);
+            observer.observe(container, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+                attributes: true,
+                attributeFilter: ['data-index', 'alt', 'src'],
+            });
+            capture(); // Remember the current tail, even before jumping to the beginning.
+            try {
+                for (let sweep = 0; sweep < ((_b = options.maxSweeps) !== null && _b !== void 0 ? _b : 3); sweep++) {
+                    let target = 0;
+                    for (let step = 0; step < ((_c = options.maxSteps) !== null && _c !== void 0 ? _c : 1000); step++) {
+                        if (scroll)
+                            scroll.scrollTop = target;
+                        yield wait(step === 0 ? 120 : 90);
+                        capture();
+                        const maxScroll = scroll
+                            ? Math.max(0, scroll.scrollHeight - scroll.clientHeight)
+                            : 0;
+                        // Do not mistake an automatic jump to the live tail for scan progress.
+                        // Only our commanded position can end a pass; coverage must also agree.
+                        if (target >= maxScroll - 2) {
+                            if (complete()) {
+                                for (let index = 0; index <= lastIndex; index++)
+                                    processRow(rows.get(index));
+                                return;
+                            }
+                            break;
+                        }
+                        const distance = Math.max(1, Math.floor(((_d = scroll === null || scroll === void 0 ? void 0 : scroll.clientHeight) !== null && _d !== void 0 ? _d : 100) * 0.5));
+                        target = Math.min(target + distance, maxScroll);
+                    }
+                }
+                throw new Error(`Chat history incomplete: captured ${rows.size} of ${lastIndex + 1} rows`);
+            }
+            finally {
+                observer.disconnect();
+                if (scroll)
+                    scroll.scrollTop = scroll.scrollHeight;
+            }
+        });
     }
 
     /**
@@ -9820,7 +9979,7 @@
         const row = chatRoot === null || chatRoot === void 0 ? void 0 : chatRoot.querySelector(`[data-index="${index}"]`);
         if (!row)
             return null;
-        if (!isEmptyChatRow(row))
+        if (isChatRowReady(row))
             logChatMessage(row);
         return row;
     }
@@ -9837,7 +9996,7 @@
      * icons, so there is nothing to read yet.
      */
     function isPlaceholderRow(element) {
-        return isEmptyChatRow(element);
+        return !isChatRowReady(element);
     }
     /**
      * Capture one rendered chat row: log it verbatim (the logger dedups by index
@@ -9882,9 +10041,21 @@
     const chatMutationCallback = (mutationsList) => {
         let sawRows = false;
         for (const mutation of mutationsList) {
+            // Rows can be populated/recycled without adding a new direct child.
+            const target = mutation.target.nodeType === Node.ELEMENT_NODE
+                ? mutation.target
+                : mutation.target.parentElement;
+            const changedRow = target === null || target === void 0 ? void 0 : target.closest('[data-index]');
+            if (changedRow) {
+                captureRow(changedRow);
+                sawRows = true;
+            }
             mutation.addedNodes.forEach(addedNode => {
                 if (addedNode.nodeType === Node.ELEMENT_NODE) {
                     captureRow(addedNode);
+                    addedNode
+                        .querySelectorAll('[data-index]')
+                        .forEach(captureRow);
                     sawRows = true;
                 }
             });
@@ -9901,67 +10072,6 @@
             });
         }
     };
-    /** Capture all currently-rendered rows and parse the contiguous prefix. */
-    function captureRenderedMessages(chatContainer) {
-        chatContainer
-            .querySelectorAll('[data-index]')
-            .forEach(row => captureRow(row));
-        messageBuffer.drain();
-    }
-    /**
-     * Rebuild full game history after a page load/refresh.
-     *
-     * Colonist renders the chat as a virtual scroller that only keeps ~15 message
-     * rows in the DOM at once, so on refresh the extension would otherwise see only
-     * the most recent messages and miscount. We scroll from top to bottom capturing
-     * each rendered window; the MessageOrderBuffer feeds the parser in data-index
-     * order regardless of render order.
-     *
-     * The sweep reads scrollTop/scrollHeight live on every step — the scroller
-     * corrects its estimated height as rows render, and re-pins to the bottom when
-     * a live message arrives mid-sweep, so a precomputed position would jump over
-     * whole stretches of the log (seen in practice as rows 68–243 never rendering).
-     * If a sweep ends with rows still stuck behind a gap, it re-sweeps up to two
-     * more times, then flushes whatever was captured.
-     */
-    function loadChatHistory(chatContainer) {
-        return __awaiter(this, void 0, void 0, function* () {
-            // The scrollable element is the chat container's parent (the virtual scroller
-            // itself has full height; its parent has overflow-y:auto).
-            const scrollEl = chatContainer.parentElement;
-            const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-            // Not virtualized (or everything already fits): just process what's rendered.
-            if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight + 5) {
-                captureRenderedMessages(chatContainer);
-                messageBuffer.flush();
-                return;
-            }
-            const MAX_SWEEPS = 3;
-            for (let sweep = 1; sweep <= MAX_SWEEPS; sweep++) {
-                scrollEl.scrollTop = 0;
-                yield sleep(120); // let the scroller render the top of the log
-                let guard = 0;
-                while (guard++ < 1000) {
-                    captureRenderedMessages(chatContainer);
-                    const maxScroll = scrollEl.scrollHeight - scrollEl.clientHeight;
-                    if (scrollEl.scrollTop >= maxScroll - 2)
-                        break;
-                    // Step by ~half a viewport so consecutive windows overlap (no skipped
-                    // rows), advancing from wherever the scroller ACTUALLY is right now.
-                    const step = Math.max(50, Math.floor(scrollEl.clientHeight * 0.5));
-                    scrollEl.scrollTop = Math.min(scrollEl.scrollTop + step, maxScroll);
-                    yield sleep(90); // wait for the next window of rows to render
-                }
-                // Final pass at the bottom in case the last window rendered after the loop.
-                captureRenderedMessages(chatContainer);
-                if (!messageBuffer.hasPending())
-                    return; // no gaps — history is complete
-                console.warn(`⚠️ History sweep ${sweep}/${MAX_SWEEPS} left a gap in the chat log, ${sweep < MAX_SWEEPS ? 'retrying...' : 'giving up on the gap'}`);
-            }
-            // Gap rows never rendered; process everything captured after the gap anyway.
-            messageBuffer.flush();
-        });
-    }
     function tryFindChat() {
         const chatContainer = findChatContainer();
         if (chatContainer) {
@@ -9974,7 +10084,7 @@
             // Start recording chat messages for this game (resumes any stored log for
             // the same game id, e.g. after a refresh). History replay below will feed
             // every message through the logger via captureRow.
-            void initMessageLogger();
+            const loggerReady = initMessageLogger();
             // Show the game state overlay
             showGameStateOverlay();
             // Scroll through and process the full chat history (handles page refresh,
@@ -9982,19 +10092,32 @@
             // for new messages.
             console.log('📜 Loading chat history...');
             setHistoryLoading(true);
-            loadChatHistory(chatContainer)
+            loggerReady
+                .then(() => loadChatHistory(chatContainer, captureRow, {
+                onCapture: logChatMessage,
+            }))
                 .then(() => {
+                messageBuffer.drain();
                 console.log('✅ Finished processing chat history');
                 // The replay just caught up to the present, so the live hand counts in
                 // colonist's player panel are valid evidence against the rebuilt tree
                 // (this is what resolves post-monopoly ambiguity after a refresh).
                 applyHandCountResolution();
+                setHistoryLoading(false);
+            })
+                .catch(error => {
+                console.error('Could not rebuild complete chat history:', error);
+                setHistoryLoading(false, 'Some chat messages could not be recovered. Counts are unavailable.');
             })
                 .finally(() => {
-                // Calculations done: drop the loader and show the rebuilt counts.
-                setHistoryLoading(false);
                 const observer = new MutationObserver(chatMutationCallback);
-                observer.observe(chatContainer, { childList: true });
+                observer.observe(chatContainer, {
+                    childList: true,
+                    subtree: true,
+                    characterData: true,
+                    attributes: true,
+                    attributeFilter: ['data-index', 'alt', 'src'],
+                });
             });
         }
         else {

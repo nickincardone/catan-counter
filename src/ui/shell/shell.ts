@@ -99,7 +99,9 @@ interface ShellStatus {
  * replay the counts are still being rebuilt, and before the first roll the
  * tracker deliberately discards and rebuilds its variant tree.
  */
-function statusFor(view: GameView): ShellStatus | null {
+function statusFor(view: GameView, error = ''): ShellStatus | null {
+  if (error)
+    return { text: 'Game history incomplete', detail: error, spinner: false };
   if (view.isLoadingHistory) {
     return {
       text: 'Rebuilding game history',
@@ -150,6 +152,7 @@ export class Shell {
   private gutters = new Map<GutterName, HTMLElement>();
   private mounted = new Map<string, MountedSection>();
   private historyLoading = false;
+  private historyError = '';
   /** Status text currently rendered, so update() can notice a transition. */
   private status = '';
   private disposers: Array<() => void> = [];
@@ -235,9 +238,10 @@ export class Shell {
     void releasePageFrame();
   }
 
-  setHistoryLoading(loading: boolean): void {
-    if (this.historyLoading === loading) return;
+  setHistoryLoading(loading: boolean, error = ''): void {
+    if (this.historyLoading === loading && this.historyError === error) return;
     this.historyLoading = loading;
+    this.historyError = error;
     this.render();
   }
 
@@ -247,7 +251,7 @@ export class Shell {
 
     // Crossing into or out of a status state swaps what the gutters hold, so it
     // needs a full render rather than an update of sections that aren't mounted.
-    const status = statusFor(view)?.text ?? '';
+    const status = statusFor(view, this.historyError)?.text ?? '';
     if (status !== this.status) {
       this.render();
       return;
@@ -279,7 +283,7 @@ export class Shell {
 
     const view = this.currentView();
     const headerGutter = this.headerGutter();
-    this.status = statusFor(view)?.text ?? '';
+    this.status = statusFor(view, this.historyError)?.text ?? '';
 
     for (const name of GUTTER_NAMES) {
       const config = this.layout[name];
@@ -298,13 +302,18 @@ export class Shell {
       this.sizeGutter(gutter, name);
 
       if (name === headerGutter)
-        gutter.appendChild(this.buildHeader(collapsed));
+        gutter.appendChild(this.buildHeader(name, collapsed));
+      else {
+        const controls = el('div', 'gutter-controls');
+        controls.appendChild(this.buildCollapseButton(name, collapsed));
+        gutter.appendChild(controls);
+      }
 
       if (!collapsed) {
         const body = document.createElement('div');
         body.className = 'gutter-body';
         gutter.appendChild(body);
-        const status = statusFor(view);
+        const status = statusFor(view, this.historyError);
         // While the counts are being rebuilt, or before tracking has begun,
         // showing the tables would show numbers that are about to change.
         if (status) {
@@ -331,8 +340,6 @@ export class Shell {
    * carry it, so when neither rail is in use there is no header at all and the
    * gear floats over the page instead.
    *
-   * Shared with the layout repair, which relies on the same answer to decide
-   * which gutter may be left collapsed.
    */
   private headerGutter(): GutterName | null {
     return headerGutterOf(this.layout);
@@ -361,7 +368,30 @@ export class Shell {
     };
   }
 
-  private buildHeader(collapsed: boolean): HTMLElement {
+  private buildCollapseButton(
+    name: GutterName,
+    collapsed: boolean
+  ): HTMLButtonElement {
+    const arrows = {
+      left: ['‹', '›'],
+      right: ['›', '‹'],
+      top: ['⌃', '⌄'],
+      bottom: ['⌄', '⌃'],
+    };
+    const toggle = el(
+      'button',
+      'rail-collapse',
+      arrows[name][collapsed ? 1 : 0]
+    );
+    toggle.type = 'button';
+    toggle.title = `${collapsed ? 'Expand' : 'Collapse'} ${name} gutter`;
+    toggle.setAttribute('aria-label', toggle.title);
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+    toggle.addEventListener('click', () => this.toggleCollapse(name));
+    return toggle;
+  }
+
+  private buildHeader(name: GutterName, collapsed: boolean): HTMLElement {
     const header = document.createElement('div');
     header.className = 'rail-header';
 
@@ -377,16 +407,7 @@ export class Shell {
     titles.appendChild(title);
     brand.append(logo, titles);
 
-    const toggle = document.createElement('button');
-    toggle.className = 'rail-collapse';
-    toggle.type = 'button';
-    toggle.textContent = collapsed ? '›' : '‹';
-    toggle.title = collapsed ? 'Expand the counter' : 'Collapse the counter';
-    toggle.setAttribute(
-      'aria-label',
-      collapsed ? 'Expand the counter' : 'Collapse the counter'
-    );
-    toggle.addEventListener('click', () => this.toggleCollapse());
+    const toggle = this.buildCollapseButton(name, collapsed);
 
     if (collapsed) {
       header.append(toggle);
@@ -408,12 +429,15 @@ export class Shell {
     return this.buildGearButton(18, 'floating-gear');
   }
 
-  private toggleCollapse(): void {
-    const name = this.headerGutter();
-    if (!name) return;
+  private toggleCollapse(name: GutterName): void {
+    this.layoutChosen = true;
     this.layout[name].collapsed = !this.layout[name].collapsed;
     void writeLayout(this.layout);
     this.render();
+    this.gutters
+      .get(name)
+      ?.querySelector<HTMLButtonElement>('.rail-collapse')
+      ?.focus();
   }
 
   /** Mount each section the layout puts in this gutter. */
@@ -461,6 +485,12 @@ export class Shell {
           axis,
           assetUrl,
           emit: action => this.options.onAction(action),
+          collapsed: placement.collapsed === true,
+          onCollapse: collapsed => {
+            this.layoutChosen = true;
+            placement.collapsed = collapsed;
+            void writeLayout(this.layout);
+          },
         });
         this.mounted.set(placement.id, { instance, host });
       } catch (error) {

@@ -196,6 +196,7 @@ let youPlayerSelectedCallback: (() => void) | null = null;
 // True while content.ts is scrolling the chat to rebuild history after a page
 // load/refresh. The overlay shows a loader instead of (stale/partial) counts.
 let isLoadingHistory = false;
+let historyError = false;
 
 function createGameStateOverlay(): HTMLDivElement {
   const overlay = document.createElement('div');
@@ -769,11 +770,13 @@ function generateWaitingContent(): string {
 
 function updateOverlayContent(overlay: HTMLDivElement): void {
   const contentDisplay = isMinimized ? 'none' : 'block';
-  const mainContent = isLoadingHistory
-    ? generateLoadingContent()
-    : game.hasRolledFirstDice
-      ? generateMainContent()
-      : generateWaitingContent();
+  const mainContent = historyError
+    ? '<div style="padding: 20px; color: #eee;">Game history incomplete. Some chat messages could not be recovered. Counts are unavailable.</div>'
+    : isLoadingHistory
+      ? generateLoadingContent()
+      : game.hasRolledFirstDice
+        ? generateMainContent()
+        : generateWaitingContent();
 
   overlay.innerHTML = `
     <div id="overlay-header" style="
@@ -901,8 +904,9 @@ export function setYouPlayerSelectedCallback(callback: () => void): void {
  * spinner instead of the resource tables, since the counts are still being
  * rebuilt by scrolling the chat (see content.ts loadChatHistory).
  */
-export function setHistoryLoading(loading: boolean): void {
+export function setHistoryLoading(loading: boolean, error = ''): void {
   isLoadingHistory = loading;
+  historyError = !!error;
   if (gameStateOverlay) {
     updateOverlayContent(gameStateOverlay);
   }

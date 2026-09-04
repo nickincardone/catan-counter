@@ -42,6 +42,9 @@ export interface SectionContext {
   assetUrl(path: string): string;
   /** Report a user intent. What happens next is the shell's business. */
   emit(action: SectionAction): void;
+  /** Optional section disclosure state, owned and persisted by the shell. */
+  collapsed?: boolean;
+  onCollapse?(collapsed: boolean): void;
 }
 
 export interface SectionInstance {

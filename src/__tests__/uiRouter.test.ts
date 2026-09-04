@@ -84,4 +84,17 @@ describe('ui mode router', () => {
     // v1 renders the spinner whenever it is loading; the flag survived the trip.
     expect(document.querySelector('.catan-spinner')).toBeTruthy();
   });
+
+  it('keeps an incomplete-history warning when switching interfaces', () => {
+    ui.showGameStateOverlay();
+    ui.setHistoryLoading(false, 'Some chat messages could not be recovered.');
+    ui.setUiMode('v1');
+    expect(
+      document.getElementById('catan-game-state-overlay')!.textContent
+    ).toContain('Game history incomplete');
+    ui.setUiMode('v2');
+    expect(
+      document.getElementById('catan-v2-root')!.shadowRoot!.textContent
+    ).toContain('Game history incomplete');
+  });
 });

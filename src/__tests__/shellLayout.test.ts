@@ -20,6 +20,7 @@ import {
   gutterThickness,
   parseLayout,
   COLLAPSED_SIZE,
+  GUTTER_NAMES,
 } from '../ui/shell/layoutStore';
 import type { V2Layout } from '../ui/shell/layoutStore';
 import type {
@@ -232,6 +233,67 @@ describe('shell layout', () => {
     expect(dice.log.updates).toBe(2);
   });
 
+  it('collapses every gutter independently and restores its saved size', () => {
+    const layout = layoutWith(['hands'], ['dice']);
+    layout.right.sections = [{ id: 'players' }];
+    layout.top.sections = [{ id: 'dev-deck' }];
+    const registry: SectionRegistry = {};
+    for (const name of GUTTER_NAMES) {
+      const id = layout[name].sections[0].id;
+      registry[id] = fakeSection(id).definition;
+    }
+    mountShell(layout, registry);
+    for (const name of GUTTER_NAMES) {
+      (
+        gutter(shell, name)!.querySelector(
+          '.rail-collapse'
+        ) as HTMLButtonElement
+      ).click();
+      expect(shell.getLayout()[name].collapsed).toBe(true);
+      expect(gutter(shell, name)!.querySelector('.gutter-body')).toBeNull();
+      expect(
+        gutter(shell, name)!
+          .querySelector('button')!
+          .getAttribute('aria-expanded')
+      ).toBe('false');
+    }
+    expect(parseLayout(shell.getLayout())).toEqual(shell.getLayout());
+    for (const name of GUTTER_NAMES) {
+      (
+        gutter(shell, name)!.querySelector(
+          '.rail-collapse'
+        ) as HTMLButtonElement
+      ).click();
+      expect(shell.getLayout()[name].collapsed).toBe(false);
+      expect(shell.getLayout()[name].size).toBe(layout[name].size);
+      expect(gutter(shell, name)!.querySelector('.gutter-body')).toBeTruthy();
+    }
+  });
+
+  it('keeps a section disclosure choice through gutter remounts', () => {
+    let context: import('../ui/sections/types').SectionContext;
+    const definition = fakeSection('unknown-steals').definition;
+    const originalMount = definition.mount;
+    definition.mount = (host, view, ctx) => {
+      context = ctx;
+      return originalMount(host, view, ctx);
+    };
+    mountShell(layoutWith(['unknown-steals']), {
+      'unknown-steals': definition,
+    });
+    context!.onCollapse!(true);
+    const toggle = () =>
+      gutter(shell, 'left')!.querySelector(
+        '.rail-collapse'
+      ) as HTMLButtonElement;
+    toggle().click();
+    toggle().click();
+    expect(context!.collapsed).toBe(true);
+    expect(parseLayout(shell.getLayout())!.left.sections[0].collapsed).toBe(
+      true
+    );
+  });
+
   it('keeps rendering when one section throws', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const good = fakeSection('hands');
@@ -316,6 +378,20 @@ describe('shell layout', () => {
     shell.setHistoryLoading(true);
 
     expect(shadow(shell).querySelector('.rail-collapse')).toBeTruthy();
+  });
+
+  it('shows incomplete history instead of presenting partial counts', () => {
+    const hands = fakeSection('hands');
+    mountShell(layoutWith(['hands']), { hands: hands.definition });
+    shell.setHistoryLoading(false, 'Some messages could not be recovered.');
+    shell.update();
+    expect(sectionHost(shell, 'hands')).toBeNull();
+    expect(shadow(shell).querySelector('.rail-status')!.textContent).toContain(
+      'Game history incomplete'
+    );
+    expect(shadow(shell).querySelector('.rail-spinner')).toBeNull();
+    shell.setHistoryLoading(false);
+    expect(sectionHost(shell, 'hands')).toBeTruthy();
   });
 
   it('hands sections a view built from live game state', () => {
@@ -892,6 +968,38 @@ describe('the order the page frame is applied in', () => {
     observer.disconnect();
 
     expect(order[0]).toBe('box');
+  });
+
+  it('subtracts the body origin from the chat UI viewport-space top', async () => {
+    document.body.innerHTML =
+      '<div id="ui-game" style="top: 210px; height: 550px"></div>';
+    const pending = applyPageFrame({
+      left: 330,
+      right: 330,
+      top: 210,
+      bottom: 240,
+    });
+    const ui = document.getElementById('ui-game')!;
+    // Colonist copies the canvas's viewport top (210) to the absolutely
+    // positioned UI; the body's own 210px margin must not be added again.
+    const bodyTop = parseFloat(getComputedStyle(document.body).marginTop);
+    const uiTop = parseFloat(ui.style.top);
+    // jsdom drops negative margins from computed styles; inspect the applied
+    // rule here. The dev preview exercises real browser layout geometry.
+    const sheet = (
+      document.getElementById('catan-v2-page-frame') as HTMLStyleElement
+    ).sheet!;
+    const rule = Array.from(sheet.cssRules).find(
+      rule => (rule as CSSStyleRule).selectorText === 'html > body > #ui-game'
+    ) as CSSStyleRule;
+    const correction = parseFloat(rule.style.getPropertyValue('margin-top'));
+    expect(getComputedStyle(document.body).marginTop).toBe('210px');
+    expect(correction).toBe(-210);
+    expect(bodyTop + uiTop + correction).toBe(210);
+    expect(ui.style.top).toBe('210px');
+    await pending;
+    await releasePageFrame();
+    expect(document.getElementById('catan-v2-page-frame')).toBeNull();
   });
 
   it('leaves the page unshrunken when the page world never answers', async () => {

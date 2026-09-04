@@ -27,6 +27,7 @@ function row(index: number, text: string): HTMLElement {
 function separator(index: number): HTMLElement {
   const node = document.createElement('div');
   node.setAttribute('data-index', String(index));
+  node.appendChild(document.createElement('hr'));
   return node;
 }
 

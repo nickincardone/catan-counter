@@ -122,6 +122,12 @@ function applyPageBox(
     margin-top: ${inset.top}px;
     width: ${width}px;
     height: ${height}px;
+  }
+  /* Colonist writes the canvas's viewport-space top onto #ui-game. Body
+     already supplies the top gutter offset, so subtract that origin once.
+     Keep native sizing and transforms intact for menus and pointer targets. */
+  html > body > #ui-game {
+    margin-top: ${-inset.top}px;
   }`;
 }
 

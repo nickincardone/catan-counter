@@ -39,7 +39,8 @@ export const v2Ui: UiImpl = {
   mount: () => shell.mount(),
   unmount: () => shell.unmount(),
   update: () => shell.update(),
-  setHistoryLoading: loading => shell.setHistoryLoading(loading),
+  setHistoryLoading: (loading, error) =>
+    shell.setHistoryLoading(loading, error),
   // The seat-picker is a modal rather than a gutter, and v1's works in either
   // mode. Giving it a v2 treatment is deliberately left for later.
   showYouPlayerDialog: showV1YouPlayerDialog,

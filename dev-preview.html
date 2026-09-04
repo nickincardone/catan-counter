@@ -11,13 +11,14 @@
         height: 100%;
         overflow: hidden;
       }
-      /* Stands in for the colonist page, so the gutters have something to sit
-         against. It fills the window rather than guessing at insets: the real
-         page is squeezed by pageViewport.ts, which needs a real page to
-         squeeze, so here the gutters simply overlay it. */
-      #fake-page {
-        position: fixed;
-        inset: 0;
+      /* Match the canvas and UI coordinate systems used by Colonist. */
+      #game-canvas {
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 100%;
+        height: 100%;
         background: #2b80bd;
         background-image: repeating-linear-gradient(
           135deg,
@@ -34,10 +35,32 @@
         text-transform: uppercase;
         color: rgba(255, 255, 255, 0.6);
       }
+      #ui-game {
+        position: absolute;
+        left: 0;
+        pointer-events: none;
+      }
+      .preview-chat {
+        position: absolute;
+        right: 8px;
+        top: 8px;
+        bottom: 8px;
+        width: 200px;
+        padding: 12px;
+        background: #eee5d4;
+        color: #333;
+        font: 13px/1.5 sans-serif;
+        border: 2px solid #fff;
+      }
     </style>
   </head>
   <body>
-    <div id="fake-page">colonist.io page</div>
+    <div id="game-canvas">colonist.io page</div>
+    <div id="ui-game">
+      <div class="preview-chat">
+        Game chat preview<br />Aligned with the board
+      </div>
+    </div>
     <script src="dev-preview.js"></script>
   </body>
 </html>

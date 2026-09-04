@@ -16,6 +16,17 @@ import type {
 } from './types.js';
 
 const STYLES = `
+  .steals-toggle {
+    width: 100%;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+  }
+  .steals-toggle:hover { background: rgba(255,255,255,.04); }
+  .steals-toggle:focus-visible { outline: 2px solid var(--cc-accent); outline-offset: -2px; }
+  .steals-chevron { color: var(--cc-chevron); margin-left: auto; }
   .steal {
     background: var(--cc-accent-tint);
     border: 1px solid var(--cc-accent-border);
@@ -164,11 +175,24 @@ export const unknownStealsSection: SectionDefinition = {
       'section-empty',
       'Nothing unaccounted for right now.'
     );
-    host.append(head, rows, empty);
+    const toggle = el('button', 'section-head steals-toggle');
+    toggle.type = 'button';
+    const chevron = el('span', 'steals-chevron');
+    chevron.setAttribute('aria-hidden', 'true');
+    toggle.append(...Array.from(head.childNodes), chevron);
+    host.append(toggle, rows, empty);
+    let collapsed = ctx.collapsed === true;
+    let latest = view;
 
     // Delegated from the host, so a full re-render can never orphan a handler.
     const onClick = (event: Event) => {
       const target = event.target as HTMLElement | null;
+      if (target?.closest('.steals-toggle')) {
+        collapsed = !collapsed;
+        ctx.onCollapse?.(collapsed);
+        render(latest);
+        return;
+      }
       const chip = target?.closest<HTMLElement>('[data-resource]');
       if (chip?.dataset.stealId && chip.dataset.resource) {
         ctx.emit({
@@ -188,9 +212,16 @@ export const unknownStealsSection: SectionDefinition = {
     let rendered = '';
 
     function render(next: GameView): void {
+      latest = next;
       labelNode.textContent = `Unknown steals · ${next.openStealCount}`;
-      hintNode.style.display = next.openStealCount > 0 ? '' : 'none';
-      empty.style.display = next.steals.length === 0 ? '' : 'none';
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      toggle.title = `${collapsed ? 'Expand' : 'Collapse'} pending steals`;
+      chevron.textContent = collapsed ? '›' : '⌄';
+      rows.style.display = collapsed ? 'none' : '';
+      hintNode.style.display =
+        !collapsed && next.openStealCount > 0 ? '' : 'none';
+      empty.style.display =
+        !collapsed && next.steals.length === 0 ? '' : 'none';
 
       const current = signature(next);
       if (current === rendered) return;

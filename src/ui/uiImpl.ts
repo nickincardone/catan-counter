@@ -10,7 +10,7 @@ export interface UiImpl {
   /** Re-render from current game state. */
   update(): void;
   /** Show or hide the "rebuilding history" state. */
-  setHistoryLoading(loading: boolean): void;
+  setHistoryLoading(loading: boolean, error?: string): void;
   /** Ask the player which seat is theirs. */
   showYouPlayerDialog(): void;
 }

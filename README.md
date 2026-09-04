@@ -53,6 +53,11 @@ wide and only fits a bar. With every section in the bottom bar there is no rail
 to hold the header, so the gear floats over the page instead. Drag-and-drop
 rearrangement is still not built; the settings menu is how sections move.
 
+Each gutter has its own directional collapse button and remembers its expanded
+size and collapsed state. Click the Unknown steals header to hide or reopen its
+rows; the pending count stays visible and updates while collapsed. That choice
+also survives moving the section or reopening its gutter.
+
 In the gutter interface, unknown steals are resolved **inline**: click the
 resource you know was taken, and `UNDO` to take it back. Undo is exact — the
 tracker replays the whole game and re-applies the resolutions that remain, so
@@ -90,7 +95,7 @@ believes they were holding.
 ### 📊 **Real-time Monitoring**
 
 - **Live Updates**: Game state updates automatically as chat messages appear
-- **Page Refresh / Reconnect Recovery**: colonist renders the chat as a virtual scroller that only keeps ~15 messages in the DOM, so on refresh the extension scrolls the chat from top to bottom to rebuild the **entire** game history. The sweep reads the scroller's live position each step (the scroller corrects its estimated height as rows render and re-pins to the bottom when live messages arrive) and re-sweeps if any rows were missed. All rows flow through a `MessageOrderBuffer` that feeds the parser in strict `data-index` order — rows rendered out of order wait behind the gap instead of being lost. A spinner is shown in the overlay while this runs and is replaced by the resource tables once the counts are rebuilt.
+- **Page Refresh / Reconnect Recovery**: colonist renders the chat as a virtual scroller that only keeps ~15 messages in the DOM. Recovery scans it using its own scroll cursor, so automatic jumps to the latest message cannot skip the middle of the game. A subtree observer captures rows as they fill in, including real turn separators (`hr`). The extension verifies every index from zero through the tail before passing the ordered history to the parser. If three scans still leave gaps, it shows an incomplete-history warning instead of partial counts. Live tracking also watches row content changes, including recycled rows.
 - **Contradiction tolerance**: chat messages are ground truth — if an observed trade/steal/monopoly is impossible in every tracked variant (e.g. some messages were still missed), the tracker force-applies the observation with clamping and warns, instead of eliminating every variant and crashing mid-prune.
 - **Intelligent Processing**: Pauses during setup, then reprocesses for accuracy
 - **Comprehensive Logging**: Detailed console output for debugging

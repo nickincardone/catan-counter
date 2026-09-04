@@ -263,14 +263,12 @@ describe('repairing a layout', () => {
     expect(gutterThickness(fixed.left)).toBeGreaterThan(0);
   });
 
-  it('uncollapses a bar, since only a rail can carry the header', () => {
+  it('preserves a collapsed bar, which now has its own toggle', () => {
     const broken = cloneLayout(DEFAULT_LAYOUT);
     broken.bottom.collapsed = true;
 
-    // The header lives on a rail, so a collapsed bar has no chevron to reopen
-    // it and would strand everything inside.
     expect(headerGutterOf(broken)).toBe('right');
-    expect(repairLayout(broken).bottom.collapsed).toBe(false);
+    expect(repairLayout(broken).bottom.collapsed).toBe(true);
   });
 
   it('leaves the header rail collapsed, because its chevron can undo it', () => {
@@ -281,14 +279,12 @@ describe('repairing a layout', () => {
     expect(repairLayout(collapsed).right.collapsed).toBe(true);
   });
 
-  it('uncollapses the rail that did not get the header', () => {
-    // Both rails hold something, so the left one takes the header and the
-    // right is left without a chevron to reopen it.
+  it('preserves a collapsed rail without the branded header', () => {
     const layout = placeSection(cloneLayout(DEFAULT_LAYOUT), 'players', 'left');
     layout.right.collapsed = true;
 
     expect(headerGutterOf(layout)).toBe('left');
-    expect(repairLayout(layout).right.collapsed).toBe(false);
+    expect(repairLayout(layout).right.collapsed).toBe(true);
   });
 
   it('repairs a layout as it is read back from storage', () => {

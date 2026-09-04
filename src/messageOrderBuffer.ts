@@ -19,10 +19,18 @@
  * Two very different things look like this. A turn separator, which colonist
  * renders between turns and never fills because there is nothing to put in it;
  * and a row the virtual scroller has minted but not yet filled in. They are
- * told apart by circumstance rather than by looks — see drain().
+ * distinguished by the HR element inside a real turn separator.
  */
 export function isEmptyChatRow(element: HTMLElement): boolean {
   return !element.textContent?.trim() && element.querySelector('img') === null;
+}
+
+/** Separators contain HR; bare empty rows are unfinished placeholders. */
+export function isChatRowReady(element: HTMLElement): boolean {
+  return (
+    !!element.textContent?.trim() ||
+    element.querySelector('hr, img:not([alt="Player avatar"])') !== null
+  );
 }
 
 export class MessageOrderBuffer {
@@ -48,6 +56,7 @@ export class MessageOrderBuffer {
     const dataIndexAttr = element.getAttribute('data-index');
     if (dataIndexAttr === null) return;
     const index = parseInt(dataIndexAttr, 10);
+    if (!isChatRowReady(element)) return;
     if (isNaN(index) || index <= this.lastProcessed || this.pending.has(index))
       return;
     this.pending.set(index, element.cloneNode(true) as HTMLElement);
@@ -59,18 +68,13 @@ export class MessageOrderBuffer {
    *
    * A gap stops it, unless the live chat can account for the missing index:
    *
-   *  - the row is on screen and carries nothing, and something later is already
-   *    waiting. The scroller has rendered past it, so it is a turn separator
-   *    and there is nothing to read. Step over it.
+   *  - the row is on screen and contains an HR: a real turn separator.
    *  - the row is on screen with content the observer never handed over, which
    *    happens when the scroller replaces a subtree wholesale. Read it now.
    *  - the row is not on screen at all. Its message may still be coming, so
    *    wait, and let the blocked flush give up on it eventually.
    *
-   * The "something later is waiting" condition is what keeps this safe. An
-   * unfilled row is only stepped over when a message after it has already
-   * arrived, and it is re-checked against the DOM at that moment rather than
-   * assumed from when it was first seen.
+   * Unfilled rows still wait even if later messages have already arrived.
    */
   drain(): number {
     let count = 0;
@@ -88,7 +92,7 @@ export class MessageOrderBuffer {
 
       if (!this.resolveRow || this.pending.size === 0) break;
       const element = this.resolveRow(next);
-      if (!element) break;
+      if (!element || !isChatRowReady(element)) break;
 
       this.lastProcessed = next;
       if (isEmptyChatRow(element)) continue;

@@ -19,6 +19,7 @@ let mode: UiMode = DEFAULT_UI_MODE;
 let mounted = false;
 /** Remembered so a mode switch mid-replay doesn't drop the loading state. */
 let historyLoading = false;
+let historyError = '';
 
 function active(): UiImpl {
   return IMPLS[mode];
@@ -34,7 +35,8 @@ export function setUiMode(next: UiMode): void {
   mode = next;
   if (mounted) {
     active().mount();
-    active().setHistoryLoading(historyLoading);
+    if (historyError) active().setHistoryLoading(historyLoading, historyError);
+    else active().setHistoryLoading(historyLoading);
     active().update();
   }
 }
@@ -68,9 +70,13 @@ export function updateGameStateDisplay(): void {
   if (mounted) active().update();
 }
 
-export function setHistoryLoading(loading: boolean): void {
+export function setHistoryLoading(loading: boolean, error = ''): void {
   historyLoading = loading;
-  if (mounted) active().setHistoryLoading(loading);
+  historyError = error;
+  if (mounted) {
+    if (error) active().setHistoryLoading(loading, error);
+    else active().setHistoryLoading(loading);
+  }
 }
 
 export function showYouPlayerDialog(): void {

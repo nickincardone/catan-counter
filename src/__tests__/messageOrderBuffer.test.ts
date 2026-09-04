@@ -91,4 +91,23 @@ describe('MessageOrderBuffer', () => {
     b.drain();
     expect(spy).toHaveBeenCalledTimes(1);
   });
+
+  it('does not skip an unfinished row just because a later row is ready', () => {
+    const first = row(0, '');
+    const second = row(1, 'later');
+    const feed = document.createElement('div');
+    feed.append(first, second);
+    const seen: string[] = [];
+    const buffer = new MessageOrderBuffer(
+      row => seen.push(row.textContent!),
+      index => feed.querySelector(`[data-index="${index}"]`)
+    );
+    buffer.capture(first);
+    buffer.capture(second);
+    buffer.drain();
+    expect(seen).toEqual([]);
+    first.textContent = 'now ready';
+    buffer.drain();
+    expect(seen).toEqual(['now ready', 'later']);
+  });
 });

@@ -16,7 +16,8 @@ import {
   logTransportCapture,
   exportAllGameLogs,
 } from './messageLogger.js';
-import { MessageOrderBuffer, isEmptyChatRow } from './messageOrderBuffer.js';
+import { MessageOrderBuffer, isChatRowReady } from './messageOrderBuffer.js';
+import { loadChatHistory } from './chatHistory.js';
 import { startTransportCaptureBridge } from './transportCapture.js';
 import { startReplayCaptureBridge } from './replayCapture.js';
 import { storeReplayCapture } from './replayStore.js';
@@ -52,7 +53,7 @@ let chatRoot: HTMLElement | null = null;
 function resolveChatRow(index: number): HTMLElement | null {
   const row = chatRoot?.querySelector<HTMLElement>(`[data-index="${index}"]`);
   if (!row) return null;
-  if (!isEmptyChatRow(row)) logChatMessage(row);
+  if (isChatRowReady(row)) logChatMessage(row);
   return row;
 }
 
@@ -73,7 +74,7 @@ let blockedFlushTimer: number | null = null;
  * icons, so there is nothing to read yet.
  */
 function isPlaceholderRow(element: HTMLElement): boolean {
-  return isEmptyChatRow(element);
+  return !isChatRowReady(element);
 }
 
 /**
@@ -121,9 +122,22 @@ function scheduleBlockedFlush(): void {
 const chatMutationCallback = (mutationsList: MutationRecord[]) => {
   let sawRows = false;
   for (const mutation of mutationsList) {
+    // Rows can be populated/recycled without adding a new direct child.
+    const target =
+      mutation.target.nodeType === Node.ELEMENT_NODE
+        ? (mutation.target as HTMLElement)
+        : mutation.target.parentElement;
+    const changedRow = target?.closest<HTMLElement>('[data-index]');
+    if (changedRow) {
+      captureRow(changedRow);
+      sawRows = true;
+    }
     mutation.addedNodes.forEach(addedNode => {
       if (addedNode.nodeType === Node.ELEMENT_NODE) {
         captureRow(addedNode as HTMLElement);
+        (addedNode as HTMLElement)
+          .querySelectorAll<HTMLElement>('[data-index]')
+          .forEach(captureRow);
         sawRows = true;
       }
     });
@@ -142,73 +156,6 @@ const chatMutationCallback = (mutationsList: MutationRecord[]) => {
   }
 };
 
-/** Capture all currently-rendered rows and parse the contiguous prefix. */
-function captureRenderedMessages(chatContainer: HTMLElement): void {
-  chatContainer
-    .querySelectorAll<HTMLElement>('[data-index]')
-    .forEach(row => captureRow(row));
-  messageBuffer.drain();
-}
-
-/**
- * Rebuild full game history after a page load/refresh.
- *
- * Colonist renders the chat as a virtual scroller that only keeps ~15 message
- * rows in the DOM at once, so on refresh the extension would otherwise see only
- * the most recent messages and miscount. We scroll from top to bottom capturing
- * each rendered window; the MessageOrderBuffer feeds the parser in data-index
- * order regardless of render order.
- *
- * The sweep reads scrollTop/scrollHeight live on every step — the scroller
- * corrects its estimated height as rows render, and re-pins to the bottom when
- * a live message arrives mid-sweep, so a precomputed position would jump over
- * whole stretches of the log (seen in practice as rows 68–243 never rendering).
- * If a sweep ends with rows still stuck behind a gap, it re-sweeps up to two
- * more times, then flushes whatever was captured.
- */
-async function loadChatHistory(chatContainer: HTMLElement): Promise<void> {
-  // The scrollable element is the chat container's parent (the virtual scroller
-  // itself has full height; its parent has overflow-y:auto).
-  const scrollEl = chatContainer.parentElement;
-  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-  // Not virtualized (or everything already fits): just process what's rendered.
-  if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight + 5) {
-    captureRenderedMessages(chatContainer);
-    messageBuffer.flush();
-    return;
-  }
-
-  const MAX_SWEEPS = 3;
-  for (let sweep = 1; sweep <= MAX_SWEEPS; sweep++) {
-    scrollEl.scrollTop = 0;
-    await sleep(120); // let the scroller render the top of the log
-
-    let guard = 0;
-    while (guard++ < 1000) {
-      captureRenderedMessages(chatContainer);
-      const maxScroll = scrollEl.scrollHeight - scrollEl.clientHeight;
-      if (scrollEl.scrollTop >= maxScroll - 2) break;
-      // Step by ~half a viewport so consecutive windows overlap (no skipped
-      // rows), advancing from wherever the scroller ACTUALLY is right now.
-      const step = Math.max(50, Math.floor(scrollEl.clientHeight * 0.5));
-      scrollEl.scrollTop = Math.min(scrollEl.scrollTop + step, maxScroll);
-      await sleep(90); // wait for the next window of rows to render
-    }
-    // Final pass at the bottom in case the last window rendered after the loop.
-    captureRenderedMessages(chatContainer);
-
-    if (!messageBuffer.hasPending()) return; // no gaps — history is complete
-    console.warn(
-      `⚠️ History sweep ${sweep}/${MAX_SWEEPS} left a gap in the chat log, ${
-        sweep < MAX_SWEEPS ? 'retrying...' : 'giving up on the gap'
-      }`
-    );
-  }
-  // Gap rows never rendered; process everything captured after the gap anyway.
-  messageBuffer.flush();
-}
-
 function tryFindChat(): void {
   const chatContainer = findChatContainer();
 
@@ -225,7 +172,7 @@ function tryFindChat(): void {
     // Start recording chat messages for this game (resumes any stored log for
     // the same game id, e.g. after a refresh). History replay below will feed
     // every message through the logger via captureRow.
-    void initMessageLogger();
+    const loggerReady = initMessageLogger();
 
     // Show the game state overlay
     showGameStateOverlay();
@@ -235,19 +182,37 @@ function tryFindChat(): void {
     // for new messages.
     console.log('📜 Loading chat history...');
     setHistoryLoading(true);
-    loadChatHistory(chatContainer)
+    loggerReady
+      .then(() =>
+        loadChatHistory(chatContainer, captureRow, {
+          onCapture: logChatMessage,
+        })
+      )
       .then(() => {
+        messageBuffer.drain();
         console.log('✅ Finished processing chat history');
         // The replay just caught up to the present, so the live hand counts in
         // colonist's player panel are valid evidence against the rebuilt tree
         // (this is what resolves post-monopoly ambiguity after a refresh).
         applyHandCountResolution();
+        setHistoryLoading(false);
+      })
+      .catch(error => {
+        console.error('Could not rebuild complete chat history:', error);
+        setHistoryLoading(
+          false,
+          'Some chat messages could not be recovered. Counts are unavailable.'
+        );
       })
       .finally(() => {
-        // Calculations done: drop the loader and show the rebuilt counts.
-        setHistoryLoading(false);
         const observer = new MutationObserver(chatMutationCallback);
-        observer.observe(chatContainer, { childList: true });
+        observer.observe(chatContainer, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+          attributes: true,
+          attributeFilter: ['data-index', 'alt', 'src'],
+        });
       });
   } else {
     console.log('⏳ Chat container not found, retrying...');

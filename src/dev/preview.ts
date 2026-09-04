@@ -30,6 +30,40 @@ import { game, resetGameState, setYouPlayerForTesting } from '../gameState.js';
 import { PropbableGameState } from '../probableGameState.js';
 import { Shell } from '../ui/shell/shell.js';
 import '../ui/sections/index.js';
+import { isViewportCommand, PAGE_VIEWPORT_SOURCE } from '../pageViewport.js';
+
+// Emulate Colonist's DOM placement without overriding window.innerHeight in
+// this single-world harness (the extension and page have separate worlds).
+window.addEventListener('message', event => {
+  if (
+    event.source !== window ||
+    event.origin !== window.location.origin ||
+    !isViewportCommand(event.data)
+  )
+    return;
+  const canvas = document.getElementById('game-canvas')!;
+  const ui = document.getElementById('ui-game')!;
+  const rect = canvas.getBoundingClientRect();
+  ui.style.top = `${rect.top}px`;
+  ui.style.width = `${rect.width}px`;
+  ui.style.height = `${rect.height}px`;
+  window.postMessage(
+    {
+      source: PAGE_VIEWPORT_SOURCE,
+      type: 'report',
+      nonce: event.data.nonce,
+      real: { width: window.innerWidth, height: window.innerHeight },
+      reported: { width: rect.width, height: rect.height },
+      content: {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+      },
+    },
+    window.location.origin
+  );
+});
 
 // The sections resolve bundled assets through chrome.runtime.getURL; outside
 // the extension they are just relative paths.

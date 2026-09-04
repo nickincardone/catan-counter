@@ -14,6 +14,8 @@ export interface Placement {
   id: SectionId;
   /** Share of the gutter's long axis, for gutters holding several sections. */
   weight?: number;
+  /** Keep the section header available while hiding its contents. */
+  collapsed?: boolean;
 }
 
 export interface GutterConfig {
@@ -279,7 +281,10 @@ export function placeSection(
     const index = list.findIndex(placement => placement.id === id);
     if (index >= 0) list.splice(index, 1);
   }
-  listFor(next, zone).push({ id });
+  const placement = current
+    ? listFor(layout, current).find(item => item.id === id)
+    : undefined;
+  listFor(next, zone).push(placement ? { ...placement } : { id });
   // A gutter being switched on must be usable, or the section vanishes into it.
   return repairLayout(next);
 }
@@ -343,7 +348,7 @@ export function listSections(
   return rows;
 }
 
-/** Which gutter carries the header — the only one with a collapse chevron. */
+/** Which gutter carries the branded header and settings gear. */
 export function headerGutterOf(layout: V2Layout): GutterName | null {
   if (layout.left.sections.length > 0) return 'left';
   if (layout.right.sections.length > 0) return 'right';
@@ -353,26 +358,21 @@ export function headerGutterOf(layout: V2Layout): GutterName | null {
 /**
  * Make a layout renderable, whatever state it arrived in.
  *
- * Two ways a gutter can be unreachable, both of which stranded sections:
- *
- *  - a size of zero, so it renders as nothing however much is in it;
- *  - collapsed, on a gutter with no header and therefore no chevron to undo
- *    it. Only the header rail can be collapsed, because only it can be opened
- *    again.
+ * Older layouts used zero size plus collapsed to mean unused. Repair those
+ * gutters, but preserve deliberate collapse choices on all four edges.
  *
  * Applied when a layout is read and after anything is placed, so a layout
  * already stored in the broken shape repairs itself rather than needing a reset.
  */
 export function repairLayout(layout: V2Layout): V2Layout {
   const next = cloneLayout(layout);
-  const header = headerGutterOf(next);
 
   for (const name of GUTTER_NAMES) {
     const gutter = next[name];
     if (!Number.isFinite(gutter.size) || gutter.size <= 0) {
       gutter.size = DEFAULT_SIZE[name];
+      gutter.collapsed = false;
     }
-    if (gutter.collapsed && name !== header) gutter.collapsed = false;
   }
   return next;
 }

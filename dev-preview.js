@@ -2152,6 +2152,7 @@
     // True while content.ts is scrolling the chat to rebuild history after a page
     // load/refresh. The overlay shows a loader instead of (stale/partial) counts.
     let isLoadingHistory = false;
+    let historyError = false;
     function createGameStateOverlay() {
         const overlay = document.createElement('div');
         overlay.id = 'catan-game-state-overlay';
@@ -2599,11 +2600,13 @@
     }
     function updateOverlayContent(overlay) {
         const contentDisplay = isMinimized ? 'none' : 'block';
-        const mainContent = isLoadingHistory
-            ? generateLoadingContent()
-            : game.hasRolledFirstDice
-                ? generateMainContent()
-                : generateWaitingContent();
+        const mainContent = historyError
+            ? '<div style="padding: 20px; color: #eee;">Game history incomplete. Some chat messages could not be recovered. Counts are unavailable.</div>'
+            : isLoadingHistory
+                ? generateLoadingContent()
+                : game.hasRolledFirstDice
+                    ? generateMainContent()
+                    : generateWaitingContent();
         overlay.innerHTML = `
     <div id="overlay-header" style="
       background: #2c3e50; 
@@ -2713,8 +2716,9 @@
      * spinner instead of the resource tables, since the counts are still being
      * rebuilt by scrolling the chat (see content.ts loadChatHistory).
      */
-    function setHistoryLoading(loading) {
+    function setHistoryLoading(loading, error = '') {
         isLoadingHistory = loading;
+        historyError = !!error;
         if (gameStateOverlay) {
             updateOverlayContent(gameStateOverlay);
         }
@@ -3451,7 +3455,10 @@
             if (index >= 0)
                 list.splice(index, 1);
         }
-        listFor(next, zone).push({ id });
+        const placement = current
+            ? listFor(layout, current).find(item => item.id === id)
+            : undefined;
+        listFor(next, zone).push(placement ? Object.assign({}, placement) : { id });
         // A gutter being switched on must be usable, or the section vanishes into it.
         return repairLayout(next);
     }
@@ -3502,7 +3509,7 @@
         }
         return rows;
     }
-    /** Which gutter carries the header — the only one with a collapse chevron. */
+    /** Which gutter carries the branded header and settings gear. */
     function headerGutterOf(layout) {
         if (layout.left.sections.length > 0)
             return 'left';
@@ -3513,26 +3520,20 @@
     /**
      * Make a layout renderable, whatever state it arrived in.
      *
-     * Two ways a gutter can be unreachable, both of which stranded sections:
-     *
-     *  - a size of zero, so it renders as nothing however much is in it;
-     *  - collapsed, on a gutter with no header and therefore no chevron to undo
-     *    it. Only the header rail can be collapsed, because only it can be opened
-     *    again.
+     * Older layouts used zero size plus collapsed to mean unused. Repair those
+     * gutters, but preserve deliberate collapse choices on all four edges.
      *
      * Applied when a layout is read and after anything is placed, so a layout
      * already stored in the broken shape repairs itself rather than needing a reset.
      */
     function repairLayout(layout) {
         const next = cloneLayout(layout);
-        const header = headerGutterOf(next);
         for (const name of GUTTER_NAMES) {
             const gutter = next[name];
             if (!Number.isFinite(gutter.size) || gutter.size <= 0) {
                 gutter.size = DEFAULT_SIZE[name];
-            }
-            if (gutter.collapsed && name !== header)
                 gutter.collapsed = false;
+            }
         }
         return next;
     }
@@ -3658,6 +3659,23 @@
   .gutter--right  { right: 0; top: 0; bottom: 0; border-left: 1px solid var(--cc-hairline); }
   .gutter--top    { top: 0; border-bottom: 1px solid var(--cc-hairline); }
   .gutter--bottom { bottom: 0; border-top: 1px solid var(--cc-hairline); }
+  .gutter-controls {
+    flex: none;
+    height: 28px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 0 8px;
+  }
+  .gutter--collapsed .gutter-controls { padding: 0; justify-content: center; }
+  .gutter--horizontal { flex-direction: row; }
+  .gutter--horizontal .gutter-controls {
+    width: 28px;
+    height: auto;
+    padding: 0;
+    justify-content: center;
+  }
+  .gutter--horizontal.gutter--collapsed .gutter-controls { width: 100%; }
 
   /* Body scrolls in a column gutter; a strip gutter lays sections side by side. */
   .gutter-body {
@@ -3765,6 +3783,7 @@
     cursor: pointer;
   }
   .rail-collapse:hover { color: var(--cc-text); }
+  .rail-collapse:focus-visible { outline: 2px solid var(--cc-accent); outline-offset: -2px; }
 
   /* ---- resize handle ---- */
   .gutter-resize { position: absolute; z-index: 2; }
@@ -4344,6 +4363,14 @@
         top: 0,
         bottom: 0,
     };
+    function isViewportCommand(value) {
+        const command = value;
+        return (!!command &&
+            command.source === PAGE_VIEWPORT_SOURCE &&
+            (command.type === 'set-inset' ||
+                command.type === 'release' ||
+                command.type === 'measure'));
+    }
 
     // shell/pageFrame.ts
     const STYLE_ID = 'catan-v2-page-frame';
@@ -4424,6 +4451,12 @@
     margin-top: ${inset.top}px;
     width: ${width}px;
     height: ${height}px;
+  }
+  /* Colonist writes the canvas's viewport-space top onto #ui-game. Body
+     already supplies the top gutter offset, so subtract that origin once.
+     Keep native sizing and transforms intact for menus and pointer targets. */
+  html > body > #ui-game {
+    margin-top: ${-inset.top}px;
   }`;
     }
     function removePageBox() {
@@ -4537,7 +4570,9 @@
      * replay the counts are still being rebuilt, and before the first roll the
      * tracker deliberately discards and rebuilds its variant tree.
      */
-    function statusFor(view) {
+    function statusFor(view, error = '') {
+        if (error)
+            return { text: 'Game history incomplete', detail: error, spinner: false };
         if (view.isLoadingHistory) {
             return {
                 text: 'Rebuilding game history',
@@ -4583,6 +4618,7 @@
             this.gutters = new Map();
             this.mounted = new Map();
             this.historyLoading = false;
+            this.historyError = '';
             /** Status text currently rendered, so update() can notice a transition. */
             this.status = '';
             this.disposers = [];
@@ -4659,10 +4695,11 @@
             unloadFonts();
             void releasePageFrame();
         }
-        setHistoryLoading(loading) {
-            if (this.historyLoading === loading)
+        setHistoryLoading(loading, error = '') {
+            if (this.historyLoading === loading && this.historyError === error)
                 return;
             this.historyLoading = loading;
+            this.historyError = error;
             this.render();
         }
         update() {
@@ -4672,7 +4709,7 @@
             const view = this.currentView();
             // Crossing into or out of a status state swaps what the gutters hold, so it
             // needs a full render rather than an update of sections that aren't mounted.
-            const status = (_b = (_a = statusFor(view)) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : '';
+            const status = (_b = (_a = statusFor(view, this.historyError)) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : '';
             if (status !== this.status) {
                 this.render();
                 return;
@@ -4703,7 +4740,7 @@
                 .forEach(node => node.remove());
             const view = this.currentView();
             const headerGutter = this.headerGutter();
-            this.status = (_b = (_a = statusFor(view)) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : '';
+            this.status = (_b = (_a = statusFor(view, this.historyError)) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : '';
             for (const name of GUTTER_NAMES) {
                 const config = this.layout[name];
                 if (config.sections.length === 0)
@@ -4720,12 +4757,17 @@
                     .join(' ');
                 this.sizeGutter(gutter, name);
                 if (name === headerGutter)
-                    gutter.appendChild(this.buildHeader(collapsed));
+                    gutter.appendChild(this.buildHeader(name, collapsed));
+                else {
+                    const controls = el('div', 'gutter-controls');
+                    controls.appendChild(this.buildCollapseButton(name, collapsed));
+                    gutter.appendChild(controls);
+                }
                 if (!collapsed) {
                     const body = document.createElement('div');
                     body.className = 'gutter-body';
                     gutter.appendChild(body);
-                    const status = statusFor(view);
+                    const status = statusFor(view, this.historyError);
                     // While the counts are being rebuilt, or before tracking has begun,
                     // showing the tables would show numbers that are about to change.
                     if (status) {
@@ -4750,8 +4792,6 @@
          * carry it, so when neither rail is in use there is no header at all and the
          * gear floats over the page instead.
          *
-         * Shared with the layout repair, which relies on the same answer to decide
-         * which gutter may be left collapsed.
          */
         headerGutter() {
             return headerGutterOf(this.layout);
@@ -4778,7 +4818,22 @@
                 bottom: gutterThickness(this.layout.bottom),
             };
         }
-        buildHeader(collapsed) {
+        buildCollapseButton(name, collapsed) {
+            const arrows = {
+                left: ['‹', '›'],
+                right: ['›', '‹'],
+                top: ['⌃', '⌄'],
+                bottom: ['⌄', '⌃'],
+            };
+            const toggle = el('button', 'rail-collapse', arrows[name][collapsed ? 1 : 0]);
+            toggle.type = 'button';
+            toggle.title = `${collapsed ? 'Expand' : 'Collapse'} ${name} gutter`;
+            toggle.setAttribute('aria-label', toggle.title);
+            toggle.setAttribute('aria-expanded', String(!collapsed));
+            toggle.addEventListener('click', () => this.toggleCollapse(name));
+            return toggle;
+        }
+        buildHeader(name, collapsed) {
             const header = document.createElement('div');
             header.className = 'rail-header';
             const brand = document.createElement('div');
@@ -4792,13 +4847,7 @@
             title.textContent = 'Counter';
             titles.appendChild(title);
             brand.append(logo, titles);
-            const toggle = document.createElement('button');
-            toggle.className = 'rail-collapse';
-            toggle.type = 'button';
-            toggle.textContent = collapsed ? '›' : '‹';
-            toggle.title = collapsed ? 'Expand the counter' : 'Collapse the counter';
-            toggle.setAttribute('aria-label', collapsed ? 'Expand the counter' : 'Collapse the counter');
-            toggle.addEventListener('click', () => this.toggleCollapse());
+            const toggle = this.buildCollapseButton(name, collapsed);
             if (collapsed) {
                 header.append(toggle);
                 return header;
@@ -4816,13 +4865,14 @@
         buildFloatingGear() {
             return this.buildGearButton(18, 'floating-gear');
         }
-        toggleCollapse() {
-            const name = this.headerGutter();
-            if (!name)
-                return;
+        toggleCollapse(name) {
+            var _a, _b;
+            this.layoutChosen = true;
             this.layout[name].collapsed = !this.layout[name].collapsed;
             void writeLayout(this.layout);
             this.render();
+            (_b = (_a = this.gutters
+                .get(name)) === null || _a === void 0 ? void 0 : _a.querySelector('.rail-collapse')) === null || _b === void 0 ? void 0 : _b.focus();
         }
         /** Mount each section the layout puts in this gutter. */
         fillGutter(body, name, view) {
@@ -4858,6 +4908,12 @@
                         axis,
                         assetUrl,
                         emit: action => this.options.onAction(action),
+                        collapsed: placement.collapsed === true,
+                        onCollapse: collapsed => {
+                            this.layoutChosen = true;
+                            placement.collapsed = collapsed;
+                            void writeLayout(this.layout);
+                        },
                     });
                     this.mounted.set(placement.id, { instance, host });
                 }
@@ -5927,6 +5983,17 @@
 
     // sections/unknownSteals.ts
     const STYLES = `
+  .steals-toggle {
+    width: 100%;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+  }
+  .steals-toggle:hover { background: rgba(255,255,255,.04); }
+  .steals-toggle:focus-visible { outline: 2px solid var(--cc-accent); outline-offset: -2px; }
+  .steals-chevron { color: var(--cc-chevron); margin-left: auto; }
   .steal {
     background: var(--cc-accent-tint);
     border: 1px solid var(--cc-accent-border);
@@ -6049,10 +6116,24 @@
             const { head, labelNode, hintNode } = sectionHead('Unknown steals', 'click to resolve');
             const rows = el('div', 'section-rows');
             const empty = el('div', 'section-empty', 'Nothing unaccounted for right now.');
-            host.append(head, rows, empty);
+            const toggle = el('button', 'section-head steals-toggle');
+            toggle.type = 'button';
+            const chevron = el('span', 'steals-chevron');
+            chevron.setAttribute('aria-hidden', 'true');
+            toggle.append(...Array.from(head.childNodes), chevron);
+            host.append(toggle, rows, empty);
+            let collapsed = ctx.collapsed === true;
+            let latest = view;
             // Delegated from the host, so a full re-render can never orphan a handler.
             const onClick = (event) => {
+                var _a;
                 const target = event.target;
+                if (target === null || target === void 0 ? void 0 : target.closest('.steals-toggle')) {
+                    collapsed = !collapsed;
+                    (_a = ctx.onCollapse) === null || _a === void 0 ? void 0 : _a.call(ctx, collapsed);
+                    render(latest);
+                    return;
+                }
                 const chip = target === null || target === void 0 ? void 0 : target.closest('[data-resource]');
                 if ((chip === null || chip === void 0 ? void 0 : chip.dataset.stealId) && chip.dataset.resource) {
                     ctx.emit({
@@ -6070,9 +6151,16 @@
             host.addEventListener('click', onClick);
             let rendered = '';
             function render(next) {
+                latest = next;
                 labelNode.textContent = `Unknown steals · ${next.openStealCount}`;
-                hintNode.style.display = next.openStealCount > 0 ? '' : 'none';
-                empty.style.display = next.steals.length === 0 ? '' : 'none';
+                toggle.setAttribute('aria-expanded', String(!collapsed));
+                toggle.title = `${collapsed ? 'Expand' : 'Collapse'} pending steals`;
+                chevron.textContent = collapsed ? '›' : '⌄';
+                rows.style.display = collapsed ? 'none' : '';
+                hintNode.style.display =
+                    !collapsed && next.openStealCount > 0 ? '' : 'none';
+                empty.style.display =
+                    !collapsed && next.steals.length === 0 ? '' : 'none';
                 const current = signature(next);
                 if (current === rendered)
                     return;
@@ -6128,7 +6216,7 @@
         mount: () => shell$1.mount(),
         unmount: () => shell$1.unmount(),
         update: () => shell$1.update(),
-        setHistoryLoading: loading => shell$1.setHistoryLoading(loading),
+        setHistoryLoading: (loading, error) => shell$1.setHistoryLoading(loading, error),
         // The seat-picker is a modal rather than a gutter, and v1's works in either
         // mode. Giving it a v2 treatment is deliberately left for later.
         showYouPlayerDialog: showYouPlayerDialog$1,
@@ -6522,6 +6610,33 @@
     }
 
     // dev/preview.ts
+    // Emulate Colonist's DOM placement without overriding window.innerHeight in
+    // this single-world harness (the extension and page have separate worlds).
+    window.addEventListener('message', event => {
+        if (event.source !== window ||
+            event.origin !== window.location.origin ||
+            !isViewportCommand(event.data))
+            return;
+        const canvas = document.getElementById('game-canvas');
+        const ui = document.getElementById('ui-game');
+        const rect = canvas.getBoundingClientRect();
+        ui.style.top = `${rect.top}px`;
+        ui.style.width = `${rect.width}px`;
+        ui.style.height = `${rect.height}px`;
+        window.postMessage({
+            source: PAGE_VIEWPORT_SOURCE,
+            type: 'report',
+            nonce: event.data.nonce,
+            real: { width: window.innerWidth, height: window.innerHeight },
+            reported: { width: rect.width, height: rect.height },
+            content: {
+                left: rect.left,
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.bottom,
+            },
+        }, window.location.origin);
+    });
     // The sections resolve bundled assets through chrome.runtime.getURL; outside
     // the extension they are just relative paths.
     globalThis.chrome = {

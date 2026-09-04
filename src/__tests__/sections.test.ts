@@ -295,6 +295,33 @@ describe('hands section', () => {
 });
 
 describe('unknown steals section', () => {
+  it('keeps a live count while collapsed and restores updated candidates', () => {
+    const section = mount(
+      unknownStealsSection,
+      view({ steals: [steal()], openStealCount: 1 })
+    );
+    const toggle = host.querySelector('.steals-toggle') as HTMLButtonElement;
+    toggle.click();
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(
+      (host.querySelector('.section-rows') as HTMLElement).style.display
+    ).toBe('none');
+    section.update(
+      view({ steals: [steal(), steal({ id: 'steal-2' })], openStealCount: 2 })
+    );
+    expect(text('.section-label')).toBe('Unknown steals · 2');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    toggle.click();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      (host.querySelector('.section-rows') as HTMLElement).style.display
+    ).toBe('');
+    expect(all('.steal')).toHaveLength(2);
+    expect(actions).toEqual([]);
+    (all('.chip')[0] as HTMLButtonElement).click();
+    expect(actions).toHaveLength(1);
+  });
+
   it('names both players and lists every candidate', () => {
     mount(unknownStealsSection, view({ steals: [steal()], openStealCount: 1 }));
 

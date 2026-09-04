@@ -76,6 +76,23 @@ const FRAME = `
   .gutter--right  { right: 0; top: 0; bottom: 0; border-left: 1px solid var(--cc-hairline); }
   .gutter--top    { top: 0; border-bottom: 1px solid var(--cc-hairline); }
   .gutter--bottom { bottom: 0; border-top: 1px solid var(--cc-hairline); }
+  .gutter-controls {
+    flex: none;
+    height: 28px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 0 8px;
+  }
+  .gutter--collapsed .gutter-controls { padding: 0; justify-content: center; }
+  .gutter--horizontal { flex-direction: row; }
+  .gutter--horizontal .gutter-controls {
+    width: 28px;
+    height: auto;
+    padding: 0;
+    justify-content: center;
+  }
+  .gutter--horizontal.gutter--collapsed .gutter-controls { width: 100%; }
 
   /* Body scrolls in a column gutter; a strip gutter lays sections side by side. */
   .gutter-body {
@@ -183,6 +200,7 @@ const FRAME = `
     cursor: pointer;
   }
   .rail-collapse:hover { color: var(--cc-text); }
+  .rail-collapse:focus-visible { outline: 2px solid var(--cc-accent); outline-offset: -2px; }
 
   /* ---- resize handle ---- */
   .gutter-resize { position: absolute; z-index: 2; }
