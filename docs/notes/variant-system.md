@@ -1,18 +1,24 @@
-# Catan Counter - Variant Node System & Unknown Transactions
-I created this file to help AI agents quickly understand the Variant Node System, if I need their help debugging issues
+# Variant system: historical debugging notes
+
+These notes preserve the original debugging context, not a current API contract.
+Start with [How tracking works](../tracking.md) and [Architecture](../architecture.md).
+Source paths below are relative to the repository root.
 
 ## Overview
+
 This system tracks probabilistic game states in Settlers of Catan by maintaining a tree of possible game variants when information is uncertain (e.g., when a player steals an unknown resource). It includes both automatic resolution and manual resolution capabilities.
 
 ## Key Concepts
 
 ### Variant Nodes (`src/variants.ts`)
+
 - **VariantNode**: Represents a possible game state with parent/child relationships
 - **VariantTree**: Manages the complete tree of possible game states
 - **GameState**: Object mapping player names to their resource states
 - **Variant**: A specific game state with its probability
 
 ### Unknown Transactions (`src/types.ts`)
+
 - **UnknownTransaction**: Tracks steal transactions where the stolen resource is unknown
 - Contains: id, timestamp, thief, victim, isResolved, resolvedResource
 - Can be resolved automatically by the system or manually by the user
@@ -20,6 +26,7 @@ This system tracks probabilistic game states in Settlers of Catan by maintaining
 ## Architecture
 
 ### Core Files
+
 1. **`src/variants.ts`**: Variant tree structure and node management
 2. **`src/variantTransactions.ts`**: Transaction processing and probability calculations
 3. **`src/probableGameState.ts`**: Main interface for game state management
@@ -28,6 +35,7 @@ This system tracks probabilistic game states in Settlers of Catan by maintaining
 6. **`src/overlay.ts`**: UI layer with manual resolution interface
 
 ### Key Classes
+
 - **PropbableGameState**: Main orchestrator, processes transactions and resolves unknowns
 - **VariantTransactionProcessor**: Handles transaction-specific logic
 - **VariantTree**: Manages the tree structure and pruning
@@ -36,7 +44,9 @@ This system tracks probabilistic game states in Settlers of Catan by maintaining
 ## Transaction Chain System
 
 ### Problem Solved
+
 When multiple unknown steals happen in sequence, older transaction IDs were being overwritten. Example:
+
 1. Alice steals from Bob → transaction ID 1
 2. Bob steals from Alice → transaction ID 2 (overwrites 1)
 3. Charlie steals from Bob → transaction ID 3 (overwrites 2)
@@ -44,6 +54,7 @@ When multiple unknown steals happen in sequence, older transaction IDs were bein
 All final nodes ended up with only the last transaction ID, making resolution impossible.
 
 ### Solution: Transaction Chains
+
 Each VariantNode maintains a chain of all transactions that led to it:
 
 ```typescript
@@ -55,22 +66,27 @@ hasTransactionId(transactionId: string): boolean // Checks if transaction is in 
 ## Manual Resolution System
 
 ### Overview
+
 Users can manually resolve unknown transactions through the UI when they know what resource was actually stolen. This is useful when:
+
 - The automatic resolution can't determine the resource
 - Multiple possibilities exist and the user has knowledge of the actual steal
 - Testing specific scenarios
 
 ### UI Components (`src/overlay.ts`)
+
 - **Resolve Buttons**: Blue "Resolve" buttons appear on each unknown transaction
 - **Resolution Modal**: Shows possible resources with probabilities and icons
 - **Resource Selection**: Users click on the actual resource that was stolen
 
 ### Key Functions
+
 - **`generateUnknownTransactionsDisplay()`**: Renders unknown transactions with resolve buttons
 - **`showTransactionResolutionModal(transactionId)`**: Opens modal for resource selection
 - **`resolveTransaction(transactionId, resource)`**: Calls the resolution API and updates display
 
 ### Resolution Flow
+
 1. User clicks "Resolve" button on unknown transaction
 2. Modal opens showing only possible resources (probability > 0)
 3. Resources displayed with icons, names, and probability percentages
@@ -81,12 +97,14 @@ Users can manually resolve unknown transactions through the UI when they know wh
 ## Key Functions
 
 ### `src/variants.ts`
+
 - **`VariantNode.getTransactionChain()`**: Returns chronological list of transaction IDs
 - **`VariantNode.hasTransactionId()`**: Checks if node was affected by a transaction
 - **`VariantTree.getNodesWithTransactionId()`**: Finds all nodes with a transaction in their chain
 - **`VariantTree.getCurrentVariantNodes()`**: Gets all leaf nodes (final game states)
 
 ### `src/probableGameState.ts`
+
 - **`resolveAllUnknownTransactions()`**: Main automatic resolution logic
 - **`resolveUnknownTransaction(id, resource)`**: Manual resolution API
 - **`findStolenResourceInChain()`**: Traverses parent chain to find stolen resource
@@ -95,11 +113,13 @@ Users can manually resolve unknown transactions through the UI when they know wh
 - **`getTransactionResourceProbabilities(id)`**: Get resource probabilities for a transaction
 
 ### `src/variantTransactions.ts`
+
 - **`processUnknownSteal()`**: Creates variants for each possible stolen resource
 - **`getTransactionResourceProbabilities()`**: Calculates resource probabilities for a transaction
 - **`resolveUnknownTransaction()`**: Marks transaction as resolved and prunes variants
 
 ### `src/overlay.ts`
+
 - **`generateUnknownTransactionsDisplay()`**: Renders unknown transactions with resolve buttons
 - **`showTransactionResolutionModal()`**: Opens modal for manual resolution
 - **`resolveTransaction()`**: Handles manual resolution and UI updates
@@ -108,6 +128,7 @@ Users can manually resolve unknown transactions through the UI when they know wh
 ## How Unknown Transactions Work
 
 ### Creation Process
+
 1. **unknownSteal()** called → checks if victim has only one resource type
 2. If multiple types → **processUnknownSteal()** creates variants
 3. For each current leaf node:
@@ -117,6 +138,7 @@ Users can manually resolve unknown transactions through the UI when they know wh
    - Assign unique transaction ID and stolen resource to new nodes
 
 ### Automatic Resolution Process
+
 1. **resolveAllUnknownTransactions()** called after each transaction
 2. For each unresolved transaction:
    - Find all leaf nodes with that transaction in their chain
@@ -126,6 +148,7 @@ Users can manually resolve unknown transactions through the UI when they know wh
    - If multiple nodes with different stolen resources → leave unresolved
 
 ### Manual Resolution Process
+
 1. User clicks "Resolve" button on unknown transaction
 2. **showTransactionResolutionModal()** displays possible resources
 3. User selects actual resource
@@ -134,15 +157,16 @@ Users can manually resolve unknown transactions through the UI when they know wh
 6. Display updates to show resolution
 
 ### Resource Probability Calculation
+
 - **getTransactionResourceProbabilities()** finds all leaf nodes with the transaction
-- Calculates cumulative probability for each node (node.probability * all parents)
+- Calculates cumulative probability for each node (node.probability \* all parents)
 - Groups by stolen resource type and normalizes probabilities
 - Used for both automatic resolution logic and manual resolution UI
 
 ## Transaction Processing Flow
 
 ```
-User Action (e.g., buyDevCard) 
+User Action (e.g., buyDevCard)
 → gameActions.ts function
 → probableGameState.processTransaction()
 → variantTransactions.processUnknownSteal() [if unknown steal]
@@ -163,6 +187,7 @@ User clicks "Resolve" button
 ## Debugging Common Issues
 
 ### Transaction Resolution Problems
+
 1. **Check transaction chains**: Use `node.getTransactionChain()` to see all transactions
 2. **Verify leaf node count**: `variantTree.getCurrentVariantNodes().length`
 3. **Check transaction node mapping**: `variantTree.getNodesWithTransactionId(transactionId)`
@@ -170,16 +195,19 @@ User clicks "Resolve" button
 5. **Check manual resolution**: Verify resolve buttons appear and modal opens correctly
 
 ### Variant Tree Issues
+
 1. **Invalid states**: Check `pruneInvalidNodes()` logic
 2. **Probability validation**: Ensure child probabilities sum to 1
 3. **Tree simplification**: `isUnary()` collapses single-path trees
 
 ### Manual Resolution Issues
+
 1. **UI Problems**: Check if resolve buttons render and have correct transaction IDs
 2. **Modal Issues**: Verify resource probabilities are calculated correctly
 3. **Resolution Failures**: Check console for error messages from `resolveTransaction()`
 
 ## Example Debug Flow
+
 ```typescript
 // Check current state
 console.log('Variant count:', gameState.getVariantCount());
@@ -187,7 +215,10 @@ console.log('Unknown transactions:', gameState.getUnknownTransactions().length);
 
 // Check transaction chains
 const leafNodes = gameState.variantTree.getCurrentVariantNodes();
-console.log('Leaf node transaction IDs:', leafNodes.map(n => n.transactionId));
+console.log(
+  'Leaf node transaction IDs:',
+  leafNodes.map(n => n.transactionId)
+);
 
 // Check specific transaction
 const transaction = gameState.getUnknownTransactions()[0];
@@ -195,15 +226,21 @@ const nodes = gameState.variantTree.getNodesWithTransactionId(transaction.id);
 console.log(`Transaction ${transaction.id} has ${nodes.length} nodes`);
 
 // Check manual resolution capabilities
-const probabilities = gameState.getTransactionResourceProbabilities(transaction.id);
+const probabilities = gameState.getTransactionResourceProbabilities(
+  transaction.id
+);
 console.log('Resource probabilities:', probabilities);
 
 // Test manual resolution
 gameState.resolveUnknownTransaction(transaction.id, 'brick');
-console.log('After manual resolution:', gameState.getUnknownTransactions().length);
+console.log(
+  'After manual resolution:',
+  gameState.getUnknownTransactions().length
+);
 ```
 
 ## Important Notes
+
 - **Transaction IDs are unique**: Format is `${thief}_${victim}_${timestamp}_${counter}`
 - **Only leaf nodes represent final game states**: Use `getCurrentVariantNodes()`
 - **Resolution is automatic**: Called after every transaction via `processTransaction()`
@@ -214,19 +251,26 @@ console.log('After manual resolution:', gameState.getUnknownTransactions().lengt
 - **Resource icons**: Available in `assets/` folder for UI display
 
 ## Testing Manual Resolution
+
 ```typescript
 // Create unknown transaction
 playerGetResources('Alice', { brick: 2, sheep: 1 });
 unknownSteal('Bob', 'Alice');
 
 // Check it's unknown
-console.log('Unknown transactions:', game.probableGameState.getUnknownTransactions().length);
+console.log(
+  'Unknown transactions:',
+  game.probableGameState.getUnknownTransactions().length
+);
 
 // Manually resolve
 game.probableGameState.resolveUnknownTransaction(transactionId, 'brick');
 
 // Verify resolution
-console.log('After resolution:', game.probableGameState.getUnknownTransactions().length);
+console.log(
+  'After resolution:',
+  game.probableGameState.getUnknownTransactions().length
+);
 ```
 
-This system enables probabilistic tracking of game states with uncertain information, automatically resolving unknowns when possible and providing manual resolution when needed. The combination of automatic and manual resolution ensures maximum flexibility and accuracy in tracking game state. 
+This system enables probabilistic tracking of game states with uncertain information, automatically resolving unknowns when possible and providing manual resolution when needed. The combination of automatic and manual resolution ensures maximum flexibility and accuracy in tracking game state.

@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Catan Counter — sample game</title>
+    <style>
+      @font-face {
+        font-family: Manrope;
+        src: url('assets/fonts/manrope-latin-var.woff2');
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      body {
+        background: #102b34;
+        color: #eaf2f0;
+        font-family: Manrope, sans-serif;
+      }
+      /* Same layout anchors as the plain preview; the shell reserves the gutters. */
+      #game-canvas {
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 100%;
+        height: 100%;
+        background: radial-gradient(ellipse at 50% 58%, #23515a, #102b34 75%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        padding: 34px;
+      }
+      .intro {
+        text-align: center;
+        flex-shrink: 0;
+      }
+      .eyebrow {
+        color: #ebac49;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.24em;
+      }
+      h1 {
+        font-size: clamp(26px, 3vw, 46px);
+        letter-spacing: -0.05em;
+        margin: 12px 0 8px;
+      }
+      .intro p {
+        color: #adc2c6;
+        font-size: 14px;
+        margin: 0;
+      }
+      #board {
+        width: min(650px, 90%);
+        min-height: 0;
+        flex: 1;
+        max-height: 530px;
+        margin: 14px 0;
+      }
+      .caption {
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        color: #90aaae;
+        text-transform: uppercase;
+      }
+      #ui-game {
+        position: absolute;
+        left: 0;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="game-canvas">
+      <div class="intro">
+        <div class="eyebrow">CATAN COUNTER</div>
+        <h1>Less counting. More Catan.</h1>
+        <p>Your cards, your odds, your next move. All in view.</p>
+      </div>
+      <svg
+        id="board"
+        viewBox="0 0 650 530"
+        role="img"
+        aria-label="Illustrative hex board with sample terrain and dice numbers"
+      ></svg>
+      <div class="caption">
+        Illustrative board · Synthetic game data · Real counter UI
+      </div>
+    </main>
+    <div id="ui-game"></div>
+    <script>
+      // Demo illustration only. This is not a decoded board or a Colonist screenshot.
+      const svg = document.getElementById('board');
+      const ns = 'http://www.w3.org/2000/svg';
+      function element(tag, attrs, text) {
+        const node = document.createElementNS(ns, tag);
+        for (const [key, value] of Object.entries(attrs))
+          node.setAttribute(key, value);
+        if (text !== undefined) node.textContent = text;
+        svg.append(node);
+        return node;
+      }
+      const colors = {
+        tree: '#397552',
+        sheep: '#91ad51',
+        wheat: '#d3ac50',
+        brick: '#b66b4e',
+        ore: '#81979a',
+        desert: '#c6b68b',
+      };
+      const terrain = [
+        'ore',
+        'sheep',
+        'desert',
+        'brick',
+        'tree',
+        'wheat',
+        'sheep',
+        'tree',
+        'sheep',
+        'wheat',
+        'tree',
+        'brick',
+        'ore',
+        'brick',
+        'ore',
+        'tree',
+        'wheat',
+        'wheat',
+        'sheep',
+      ];
+      const numbers = [
+        5, 2, 0, 8, 10, 9, 6, 4, 3, 11, 4, 3, 11, 6, 5, 8, 12, 9, 10,
+      ];
+      const centers = [];
+      let index = 0;
+      for (let row = 0; row < 5; row++) {
+        const length = [3, 4, 5, 4, 3][row];
+        for (let col = 0; col < length; col++) {
+          const x = 325 + (col - (length - 1) / 2) * 94;
+          const y = 98 + row * 81;
+          centers.push({ x, y });
+          const points = Array.from({ length: 6 }, (_, k) => {
+            const a = ((60 * k - 30) * Math.PI) / 180;
+            return `${x + 53 * Math.cos(a)},${y + 53 * Math.sin(a)}`;
+          }).join(' ');
+          element('polygon', {
+            points,
+            fill: colors[terrain[index]],
+            stroke: '#e6d9b6',
+            'stroke-width': 5,
+            'stroke-linejoin': 'round',
+          });
+          if (numbers[index]) {
+            element('image', {
+              href: `assets/${terrain[index]}.svg`,
+              x: x - 11,
+              y: y - 33,
+              width: 22,
+              height: 29,
+            });
+            element('circle', { cx: x, cy: y + 15, r: 18, fill: '#fff5da' });
+            element(
+              'text',
+              {
+                x,
+                y: y + 21,
+                'text-anchor': 'middle',
+                fill: [6, 8].includes(numbers[index]) ? '#b74c39' : '#243b38',
+                'font-family': 'Manrope, sans-serif',
+                'font-size': 18,
+                'font-weight': 800,
+              },
+              numbers[index]
+            );
+          } else {
+            element(
+              'text',
+              {
+                x,
+                y: y + 6,
+                'text-anchor': 'middle',
+                fill: '#685f49',
+                'font-family': 'Manrope, sans-serif',
+                'font-size': 11,
+                'letter-spacing': 1,
+              },
+              'DESERT'
+            );
+          }
+          index++;
+        }
+      }
+      for (const [cell, color] of [
+        [1, '#e35b5b'],
+        [7, '#f0a35e'],
+        [10, '#59a8e8'],
+        [15, '#e6edf3'],
+      ]) {
+        const { x, y } = centers[cell];
+        element('line', {
+          x1: x + 46,
+          y1: y - 25,
+          x2: x + 46,
+          y2: y + 20,
+          stroke: '#213e41',
+          'stroke-width': 10,
+          'stroke-linecap': 'round',
+        });
+        element('line', {
+          x1: x + 46,
+          y1: y - 25,
+          x2: x + 46,
+          y2: y + 20,
+          stroke: color,
+          'stroke-width': 6,
+          'stroke-linecap': 'round',
+        });
+        element('path', {
+          d: `M ${x + 35} ${y - 22} v -14 l 11 -10 l 11 10 v 14 z`,
+          fill: color,
+          stroke: '#213e41',
+          'stroke-width': 2.5,
+          'stroke-linejoin': 'round',
+        });
+      }
+    </script>
+    <script src="dev-preview.js"></script>
+  </body>
+</html>

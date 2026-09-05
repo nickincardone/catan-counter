@@ -1,5 +1,10 @@
 # Catan Counter — V2 "Gutter" UI Redesign
 
+Historical design notes for the shipped gutter interface. Some launch assumptions
+are superseded; use the [user guide](../getting-started.md) for current behavior
+and [architecture guide](../architecture.md) for the implementation map.
+Source paths below are relative to the repository root.
+
 ## Purpose
 
 Add a second, opt-in user interface ("v2") that lives in the **gutters** around a

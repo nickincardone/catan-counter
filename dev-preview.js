@@ -6643,10 +6643,10 @@
         runtime: { getURL: (path) => path },
     };
     const PLAYERS = [
-        ['emipaco', '#59a8e8'],
-        ['Shaum1928', '#e35b5b'],
-        ['Powdahhh', '#f0a35e'],
-        ['NickTheSwift', '#e6edf3'],
+        ['Harbor', '#59a8e8'],
+        ['Ember', '#e35b5b'],
+        ['Cedar', '#f0a35e'],
+        ['You', '#e6edf3'],
     ];
     function seedGame() {
         resetGameState();
@@ -6659,7 +6659,7 @@
         }
         // Set before the first roll: rollDice asks who you are otherwise, and here
         // there is no colonist page to auto-detect from.
-        setYouPlayerForTesting('NickTheSwift');
+        setYouPlayerForTesting('You');
         // Dice first, and not only for realism: the first roll deliberately rebuilds
         // the variant tree from scratch, because that is when tracking properly
         // begins. Anything dealt or stolen before it is discarded.
@@ -6684,63 +6684,63 @@
         // real to show. Everything here is affordable, as a real game's would be.
         // Kept within what the bank actually holds — 19 of each — so the bank row
         // does not go negative.
-        playerGetResources('Shaum1928', {
+        playerGetResources('Ember', {
             tree: 3,
             brick: 3,
             sheep: 4,
             wheat: 3,
             ore: 2,
         });
-        playerGetResources('Powdahhh', {
+        playerGetResources('Cedar', {
             tree: 2,
             brick: 2,
             sheep: 1,
             wheat: 3,
             ore: 3,
         });
-        playerGetResources('NickTheSwift', {
+        playerGetResources('You', {
             tree: 3,
             brick: 2,
             sheep: 2,
             wheat: 2,
             ore: 4,
         });
-        playerGetResources('emipaco', {
+        playerGetResources('Harbor', {
             tree: 1,
             brick: 1,
             sheep: 2,
             wheat: 2,
             ore: 4,
         });
-        playerTrade('Shaum1928', 'Powdahhh', { wheat: -2, tree: 1 });
-        bankTrade('NickTheSwift', { ore: -4, brick: 1 });
-        buildSettlement('Shaum1928');
-        buildRoad('Powdahhh');
-        buildCity('NickTheSwift');
-        buyDevCard('emipaco');
-        buyDevCard('Shaum1928');
-        playerDiscard('Powdahhh', { wheat: 2, ore: 1 });
-        playerGetResources('Shaum1928', { sheep: 3, wheat: 2 });
-        playerGetResources('Powdahhh', { wheat: 2, brick: 1 });
-        playerGetResources('NickTheSwift', { sheep: 1, wheat: 3 });
-        playerGetResources('emipaco', { ore: 1, wheat: 1 });
+        playerTrade('Ember', 'Cedar', { wheat: -2, tree: 1 });
+        bankTrade('You', { ore: -4, brick: 1 });
+        buildSettlement('Ember');
+        buildRoad('Cedar');
+        buildCity('You');
+        buyDevCard('Harbor');
+        buyDevCard('Ember');
+        playerDiscard('Cedar', { wheat: 2, ore: 1 });
+        playerGetResources('Ember', { sheep: 3, wheat: 2 });
+        playerGetResources('Cedar', { wheat: 2, brick: 1 });
+        playerGetResources('You', { sheep: 1, wheat: 3 });
+        playerGetResources('Harbor', { ore: 1, wheat: 1 });
         // Two open steals, so the probability columns and the chips have something
         // to show.
-        unknownSteal('emipaco', 'Powdahhh');
-        unknownSteal('Powdahhh', 'emipaco');
+        unknownSteal('Harbor', 'Cedar');
+        unknownSteal('Cedar', 'Harbor');
         blockedDiceRoll(5, 'tree');
         blockedDiceRoll(5, 'tree');
         blockedDiceRoll(5, 'tree');
         blockedDiceRoll(6, 'wheat');
         blockedDiceRoll(8, 'wheat');
-        useKnight('Shaum1928');
-        useKnight('emipaco');
-        useMonopoly('emipaco');
+        useKnight('Ember');
+        useKnight('Harbor');
+        useMonopoly('Harbor');
         // Gives the ledger's DEV column something to show: a monopoly haul counts as
         // cards gained through a development card.
-        monopolySteal('emipaco', 'sheep', 4);
-        useYearOfPlenty('Powdahhh');
-        yearOfPlentyTake('Powdahhh', { brick: 1, tree: 1 });
+        monopolySteal('Harbor', 'sheep', 4);
+        useYearOfPlenty('Cedar');
+        yearOfPlentyTake('Cedar', { brick: 1, tree: 1 });
     }
     seedGame();
     const shell = new Shell({

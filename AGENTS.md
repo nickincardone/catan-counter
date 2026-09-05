@@ -16,4 +16,5 @@ features, and tests.
 - Before committing, review the staged file list and diff. Do not force-add
   ignored files. Ignore rules do not remove files from earlier commits.
 
-Read `README.md` for setup and architecture. Use the Node version in `.nvmrc`.
+Read `docs/development.md` for setup and `docs/architecture.md` for the code map.
+Use the Node version in `.nvmrc`.
